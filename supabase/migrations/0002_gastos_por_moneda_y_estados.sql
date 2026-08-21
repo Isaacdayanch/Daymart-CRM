@@ -19,7 +19,7 @@ alter table contenedores add column flete_tipo_cambio numeric(6, 3) not null def
 
 alter table contenedores rename column aduana to aduana_pesos;
 
-alter table contenedores alter column estado drop default;
+alter table contenedores drop column estado;
 drop type estado_contenedor;
 create type estado_contenedor as enum (
   'CONFIGURANDOSE',
@@ -29,9 +29,7 @@ create type estado_contenedor as enum (
   'RECIBIDO_BODEGA'
 );
 alter table contenedores
-  add column estado_nuevo estado_contenedor not null default 'CONFIGURANDOSE';
-alter table contenedores drop column estado;
-alter table contenedores rename column estado_nuevo to estado;
+  add column estado estado_contenedor not null default 'CONFIGURANDOSE';
 
 create table pagos_mercancia (
   id uuid primary key default gen_random_uuid(),
