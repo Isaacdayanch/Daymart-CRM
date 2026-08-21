@@ -2,7 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { costoTotalContenedor } from "@/lib/calculos";
 import { formatoPesos, ESTILO_ESTADO } from "@/lib/formato";
-import { ESTADOS_CONTENEDOR, type Contenedor } from "@/lib/tipos";
+import { ESTADOS_CONTENEDOR, type Contenedor, type PagoMercancia } from "@/lib/tipos";
 
 function etiquetaEstado(estado: Contenedor["estado"]) {
   return ESTADOS_CONTENEDOR.find((e) => e.valor === estado)?.etiqueta ?? estado;
@@ -15,6 +15,15 @@ export default async function Home() {
     .select("*")
     .order("numero", { ascending: false })
     .returns<Contenedor[]>();
+
+  const { data: pagosMercancia } = await supabase
+    .from("pagos_mercancia")
+    .select("*")
+    .returns<PagoMercancia[]>();
+
+  function pagosDe(contenedorId: string) {
+    return pagosMercancia?.filter((p) => p.contenedor_id === contenedorId) ?? [];
+  }
 
   return (
     <div className="min-h-screen bg-zinc-50">
@@ -69,7 +78,7 @@ export default async function Home() {
                         Contenedor {contenedor.numero}
                       </p>
                       <p className="text-sm text-zinc-500">
-                        {contenedor.barco || contenedor.booking || "Sin barco/booking"}
+                        {contenedor.booking || "Sin booking"}
                       </p>
                     </div>
                     <span
@@ -81,7 +90,7 @@ export default async function Home() {
                   <div className="mt-4 flex items-baseline justify-between border-t border-zinc-100 pt-3">
                     <span className="text-xs text-zinc-500">Costo total del contenedor</span>
                     <span className="text-sm font-semibold text-zinc-900">
-                      {formatoPesos(costoTotalContenedor(contenedor))}
+                      {formatoPesos(costoTotalContenedor(contenedor, pagosDe(contenedor.id)))}
                     </span>
                   </div>
                 </Link>

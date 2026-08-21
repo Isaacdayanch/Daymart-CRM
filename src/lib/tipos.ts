@@ -1,30 +1,39 @@
 export type EstadoContenedor =
+  | "CONFIGURANDOSE"
   | "EN_TRANSITO"
-  | "DEPOSIT_PAID"
-  | "DEPOSIT_PAID_10K_RECEIVED"
-  | "FULLY_PAID"
-  | "RECEIVED";
+  | "RECIBIDO_PUERTO"
+  | "LIBERADO_ADUANA"
+  | "RECIBIDO_BODEGA";
 
 export const ESTADOS_CONTENEDOR: { valor: EstadoContenedor; etiqueta: string }[] = [
+  { valor: "CONFIGURANDOSE", etiqueta: "Configurándose" },
   { valor: "EN_TRANSITO", etiqueta: "En tránsito" },
-  { valor: "DEPOSIT_PAID", etiqueta: "Depósito pagado" },
-  { valor: "DEPOSIT_PAID_10K_RECEIVED", etiqueta: "Depósito 10K recibido" },
-  { valor: "FULLY_PAID", etiqueta: "Pagado completo" },
-  { valor: "RECEIVED", etiqueta: "Recibido" },
+  { valor: "RECIBIDO_PUERTO", etiqueta: "Recibido en puerto" },
+  { valor: "LIBERADO_ADUANA", etiqueta: "Liberado de aduana" },
+  { valor: "RECIBIDO_BODEGA", etiqueta: "Recibido en bodega" },
 ];
 
 export interface Contenedor {
   id: string;
   numero: number;
-  barco: string | null;
   booking: string | null;
   estado: EstadoContenedor;
-  flete: number;
-  aduana: number;
-  mercancia: number;
-  tipo_cambio: number;
+  flete_dolares: number;
+  flete_tipo_cambio: number;
+  aduana_pesos: number;
   creado_en: string;
   actualizado_en: string;
+}
+
+export interface PagoMercancia {
+  id: string;
+  contenedor_id: string;
+  monto_dolares: number;
+  tipo_cambio: number;
+  pagado: boolean;
+  fecha: string | null;
+  notas: string | null;
+  creado_en: string;
 }
 
 export interface Producto {

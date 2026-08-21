@@ -45,10 +45,11 @@ Fuente de referencia: Excel "Proveedores Dale Click", hoja "Daymart". Se leyeron
 
 **CONTENEDOR** (nivel 1):
 - Número de contenedor (ej. 11, 12, 13...)
-- Barco / booking (ej. MRKU2892234)
-- Estado — campo editable por Isaac, con opciones fijas (visto en su Excel: RECEIVED, DEPOSIT PAID, FULLY PAID, DEPOSIT PAID 10K RECEIVED, EN TRÁNSITO — se definirá una lista corta y clara de estados)
-- Gastos en 3 campos: **Flete**, **Aduana**, **Mercancía** (Mercancía es solo informativo/referencia — no se reparte por CBM, solo Flete+Aduana se reparten)
-- Tipo de cambio del dólar, configurable por contenedor (ej. 18.5, 17.5 — cada contenedor el suyo, uno solo, sin variar dentro del mismo contenedor)
+- Booking (ej. MRKU2892234) — ya no se usa "barco", se quitó por petición de Isaac
+- Estado — lista fija, en el orden real del proceso: Configurándose → En tránsito → Recibido en puerto → Liberado de aduana → Recibido en bodega
+- **Flete**: en dólares, con su propio tipo de cambio (se paga de una sola vez)
+- **Aduana**: en pesos, sin tipo de cambio (ya se cobra en pesos)
+- **Mercancía**: se paga en varios abonos a lo largo del tiempo, cada uno puede tener un tipo de cambio distinto. Por ahora los abonos son por contenedor completo (no por producto individual — eso se dejará para un sistema de pagos más completo en el futuro). El sistema calcula solo el tipo de cambio promedio ponderado (total pesos ÷ total dólares de los abonos).
 - Resumen calculado: costo por producto y costo total del contenedor
 
 **PRODUCTO** (nivel 2, varios por contenedor):
@@ -68,19 +69,22 @@ Fuente de referencia: Excel "Proveedores Dale Click", hoja "Daymart". Se leyeron
 - **Cartones** = Cantidad ÷ Piezas por caja
 - **CBM por producto** = (largo × ancho × alto en cm ÷ 1,000,000) × número de cartones
 - **Total USD por producto** = precio USD × cantidad
-- **Costo por CBM del contenedor** = (Flete + Aduana) ÷ CBM total real del contenedor
+- **Flete en pesos** = Flete USD × tipo de cambio del flete
+- **Tipo de cambio promedio de mercancía** = (suma de monto_USD × tipo_cambio de cada abono) ÷ (suma de monto_USD de todos los abonos)
+- **Costo por CBM del contenedor** = (Flete en pesos + Aduana) ÷ CBM total real del contenedor
   *(Nota: en el Excel original esto a veces se dividía entre un número de CBM escrito a mano en vez del CBM real — en el sistema nuevo siempre se usa el CBM real, calculado automáticamente. Esto corrige un error manual que existía.)*
 - **Gasto repartido por pieza** = (CBM del producto × Costo por CBM del contenedor) ÷ Cantidad del producto
-- **Costo final por pieza (pesos)** = Gasto repartido por pieza + (Precio USD × tipo de cambio del contenedor)
+- **Costo final por pieza (pesos)** = Gasto repartido por pieza + (Precio USD del producto × tipo de cambio promedio de mercancía)
 
 ### Decisiones ya tomadas
 
 1. Fábrica Y proveedor/contacto: los dos campos, contacto opcional.
 2. SKU autogenerado (categoría + nombre) pero editable a mano.
-3. Gastos del contenedor en 3 campos: flete, aduana, mercancía.
-4. Tipo de cambio configurable por contenedor (uno solo, no varía entre productos del mismo contenedor).
-5. Mercancía es campo informativo, no se reparte por CBM.
-6. Estado del contenedor: campo de primer nivel (por contenedor), con lista fija de opciones.
+3. Gastos del contenedor: Flete (USD + su tipo de cambio), Aduana (pesos, sin tipo de cambio), Mercancía (abonos en USD, cada uno con su tipo de cambio, promedio ponderado calculado por el sistema).
+4. El tipo de cambio "de los productos" es el promedio ponderado de los abonos de mercancía del contenedor — no un campo único fijo.
+5. Abonos de mercancía por ahora son por contenedor completo, no por producto (eso se dejará para un sistema de pagos más adelante).
+6. Estado del contenedor: campo de primer nivel (por contenedor), lista fija en el orden real del proceso (ver arriba).
+7. Campo "Barco" eliminado — solo se usa Booking.
 
 ## Lo que se deja para después (NO hacer todavía)
 

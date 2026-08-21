@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { crearContenedor } from "./actions";
+import { AbonosMercancia } from "./abonos-mercancia";
 import { ESTADOS_CONTENEDOR } from "@/lib/tipos";
 
 export default async function NuevoContenedor({
@@ -52,7 +53,7 @@ export default async function NuevoContenedor({
               <select
                 id="estado"
                 name="estado"
-                defaultValue="EN_TRANSITO"
+                defaultValue="CONFIGURANDOSE"
                 className="mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500"
               >
                 {ESTADOS_CONTENEDOR.map((e) => (
@@ -64,47 +65,31 @@ export default async function NuevoContenedor({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label htmlFor="barco" className="block text-sm font-medium text-zinc-700">
-                Barco
-              </label>
-              <input
-                type="text"
-                id="barco"
-                name="barco"
-                placeholder="Ej. MSC Katrina"
-                className="mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500"
-              />
-            </div>
-            <div>
-              <label htmlFor="booking" className="block text-sm font-medium text-zinc-700">
-                Booking
-              </label>
-              <input
-                type="text"
-                id="booking"
-                name="booking"
-                placeholder="Ej. MRKU2892234"
-                className="mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500"
-              />
-            </div>
+          <div>
+            <label htmlFor="booking" className="block text-sm font-medium text-zinc-700">
+              Booking
+            </label>
+            <input
+              type="text"
+              id="booking"
+              name="booking"
+              placeholder="Ej. MRKU2892234"
+              className="mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500"
+            />
           </div>
 
-          <div>
-            <p className="text-sm font-medium text-zinc-700">Gastos del contenedor (pesos)</p>
-            <p className="text-xs text-zinc-500">
-              Flete y aduana se reparten entre los productos según su CBM. Mercancía es solo informativo.
-            </p>
-            <div className="mt-2 grid grid-cols-3 gap-4">
+          <div className="border-t border-zinc-100 pt-4">
+            <p className="text-sm font-medium text-zinc-700">Flete (dólares)</p>
+            <p className="text-xs text-zinc-500">Se paga de una sola vez, con su propio tipo de cambio.</p>
+            <div className="mt-2 grid grid-cols-2 gap-4">
               <div>
-                <label htmlFor="flete" className="block text-xs font-medium text-zinc-500">
-                  Flete
+                <label htmlFor="flete_dolares" className="block text-xs font-medium text-zinc-500">
+                  Monto USD
                 </label>
                 <input
                   type="number"
-                  id="flete"
-                  name="flete"
+                  id="flete_dolares"
+                  name="flete_dolares"
                   step="0.01"
                   min={0}
                   defaultValue={0}
@@ -112,27 +97,13 @@ export default async function NuevoContenedor({
                 />
               </div>
               <div>
-                <label htmlFor="aduana" className="block text-xs font-medium text-zinc-500">
-                  Aduana
+                <label htmlFor="flete_tipo_cambio" className="block text-xs font-medium text-zinc-500">
+                  Tipo de cambio
                 </label>
                 <input
                   type="number"
-                  id="aduana"
-                  name="aduana"
-                  step="0.01"
-                  min={0}
-                  defaultValue={0}
-                  className="mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500"
-                />
-              </div>
-              <div>
-                <label htmlFor="mercancia" className="block text-xs font-medium text-zinc-500">
-                  Mercancía
-                </label>
-                <input
-                  type="number"
-                  id="mercancia"
-                  name="mercancia"
+                  id="flete_tipo_cambio"
+                  name="flete_tipo_cambio"
                   step="0.01"
                   min={0}
                   defaultValue={0}
@@ -142,20 +113,23 @@ export default async function NuevoContenedor({
             </div>
           </div>
 
-          <div>
-            <label htmlFor="tipo_cambio" className="block text-sm font-medium text-zinc-700">
-              Tipo de cambio del dólar
+          <div className="border-t border-zinc-100 pt-4">
+            <label htmlFor="aduana_pesos" className="block text-sm font-medium text-zinc-700">
+              Aduana (pesos)
             </label>
             <input
               type="number"
-              id="tipo_cambio"
-              name="tipo_cambio"
+              id="aduana_pesos"
+              name="aduana_pesos"
               step="0.01"
               min={0}
-              placeholder="Ej. 18.5"
-              required
+              defaultValue={0}
               className="mt-1 block w-40 rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500"
             />
+          </div>
+
+          <div className="border-t border-zinc-100 pt-4">
+            <AbonosMercancia />
           </div>
 
           <div className="flex justify-end gap-3 border-t border-zinc-100 pt-4">
