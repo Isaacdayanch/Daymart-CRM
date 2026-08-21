@@ -8,10 +8,18 @@ import {
   tipoCambioPromedioMercancia,
 } from "@/lib/calculos";
 import { formatoPesos, ESTILO_ESTADO } from "@/lib/formato";
-import { ESTADOS_CONTENEDOR, type Contenedor, type PagoMercancia, type Producto } from "@/lib/tipos";
+import {
+  ESTADOS_CONTENEDOR,
+  type Contenedor,
+  type DocumentoContenedor,
+  type PagoMercancia,
+  type Producto,
+  type TipoDocumento,
+} from "@/lib/tipos";
 import { FormularioContenedor } from "./formulario-contenedor";
 import { Abonos } from "./abonos";
 import { Productos } from "./productos";
+import { Documentos } from "./documentos";
 
 export default async function DetalleContenedor({
   params,
@@ -29,17 +37,31 @@ export default async function DetalleContenedor({
 
   if (!contenedor) notFound();
 
-  const [{ data: abonos }, { data: productos }] = await Promise.all([
+  const [{ data: abonos }, { data: productos }, { data: documentos }] = await Promise.all([
     supabase
       .from("pagos_mercancia")
       .select("*")
       .eq("contenedor_id", id)
       .returns<PagoMercancia[]>(),
     supabase.from("productos").select("*").eq("contenedor_id", id).returns<Producto[]>(),
+    supabase
+      .from("documentos_contenedor")
+      .select("*")
+      .eq("contenedor_id", id)
+      .returns<DocumentoContenedor[]>(),
   ]);
 
   const listaAbonos = abonos ?? [];
   const listaProductos = productos ?? [];
+  const listaDocumentos = documentos ?? [];
+
+  const documentosPorTipo: Partial<Record<TipoDocumento, DocumentoContenedor & { url: string | null }>> = {};
+  for (const doc of listaDocumentos) {
+    const { data: firmado } = await supabase.storage
+      .from("documentos")
+      .createSignedUrl(doc.ruta_archivo, 60 * 10);
+    documentosPorTipo[doc.tipo] = { ...doc, url: firmado?.signedUrl ?? null };
+  }
 
   const cbmTotal = cbmTotalContenedor(listaProductos);
   const costoPorCbm = costoPorCbmContenedor(contenedor, listaProductos);
@@ -93,7 +115,19 @@ export default async function DetalleContenedor({
           productos={listaProductos}
           costoPorCbm={costoPorCbm}
           tipoCambioMercancia={tipoCambioMercancia}
+          fabricaPrincipal={contenedor.fabrica_principal}
+          proveedorPrincipal={contenedor.proveedor_principal}
         />
+        <Documentos contenedorId={contenedor.id} documentosPorTipo={documentosPorTipo} />
+
+        <div className="flex justify-end">
+          <Link
+            href={`/contenedores/${contenedor.id}/imprimir`}
+            className="text-sm font-medium text-zinc-600 hover:text-zinc-900"
+          >
+            Ver / imprimir packing list →
+          </Link>
+        </div>
       </main>
     </div>
   );

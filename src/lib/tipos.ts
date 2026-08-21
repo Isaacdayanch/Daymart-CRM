@@ -21,8 +21,36 @@ export interface Contenedor {
   flete_dolares: number;
   flete_tipo_cambio: number;
   aduana_pesos: number;
+  fabrica_principal: string | null;
+  proveedor_principal: string | null;
   creado_en: string;
   actualizado_en: string;
+}
+
+export type TipoDocumento =
+  | "TELEX"
+  | "PACKING_LIST"
+  | "INVOICE"
+  | "TELEX_RELEASE"
+  | "BL"
+  | "HBL";
+
+export const TIPOS_DOCUMENTO: { valor: TipoDocumento; etiqueta: string }[] = [
+  { valor: "TELEX", etiqueta: "Telex" },
+  { valor: "PACKING_LIST", etiqueta: "Packing list (proveedor)" },
+  { valor: "INVOICE", etiqueta: "Invoice (proveedor)" },
+  { valor: "TELEX_RELEASE", etiqueta: "Telex release" },
+  { valor: "BL", etiqueta: "BL" },
+  { valor: "HBL", etiqueta: "HBL" },
+];
+
+export interface DocumentoContenedor {
+  id: string;
+  contenedor_id: string;
+  tipo: TipoDocumento;
+  ruta_archivo: string;
+  nombre_archivo: string;
+  subido_en: string;
 }
 
 export interface PagoMercancia {

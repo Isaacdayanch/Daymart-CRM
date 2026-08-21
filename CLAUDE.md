@@ -50,6 +50,8 @@ Fuente de referencia: Excel "Proveedores Dale Click", hoja "Daymart". Se leyeron
 - **Flete**: en dólares, con su propio tipo de cambio (se paga de una sola vez)
 - **Aduana**: en pesos, sin tipo de cambio (ya se cobra en pesos)
 - **Mercancía**: se paga en varios abonos a lo largo del tiempo, cada uno puede tener un tipo de cambio distinto. Por ahora los abonos son por contenedor completo (no por producto individual — eso se dejará para un sistema de pagos más completo en el futuro). El sistema calcula solo el tipo de cambio promedio ponderado (total pesos ÷ total dólares de los abonos).
+- **Fábrica/Proveedor principal**: campo a nivel contenedor. Rellena automáticamente el campo de cada producto nuevo (la mayoría de los contenedores son de un solo proveedor), pero se puede cambiar por producto si el contenedor es consolidado (varios proveedores). No se guarda como lista aparte — el resumen de "proveedores en este contenedor" se calcula solo, sacado de los productos reales.
+- **Documentación** (pestaña aparte): checklist con 6 documentos fijos — Telex, Packing list (proveedor), Invoice (proveedor), Telex release, BL, HBL. Cada uno se sube como archivo (bucket privado de Supabase Storage, acceso con link firmado temporal). Barra de progreso (X de 6), se pone verde cuando está completo. Pensado para que, cuando haya login, el equipo de Isaac (aduanal, importación) pueda cargar/ver esto también con permisos — por ahora un solo usuario, sin permisos diferenciados todavía.
 - Resumen calculado: costo por producto y costo total del contenedor
 
 **PRODUCTO** (nivel 2, varios por contenedor):
@@ -85,10 +87,15 @@ Fuente de referencia: Excel "Proveedores Dale Click", hoja "Daymart". Se leyeron
 5. Abonos de mercancía por ahora son por contenedor completo, no por producto (eso se dejará para un sistema de pagos más adelante).
 6. Estado del contenedor: campo de primer nivel (por contenedor), lista fija en el orden real del proceso (ver arriba).
 7. Campo "Barco" eliminado — solo se usa Booking.
+8. Vista de productos: tabla o galería (fotos), Isaac elige con un botón. Ambas muestran el costo final por pieza ya calculado.
+9. Packing list: vista de impresión (usa "Imprimir → Guardar como PDF" del navegador, sin librería de PDF), con opción de "con precios" / "sin precios". Un PDF generado por el sistema con diseño propio (logo, etc.) se deja para más adelante si esta versión no basta.
+10. Permisos/colaboradores todavía NO se construyen (no hay login). Isaac ya avisó que los quiere más adelante para que su equipo (aduanal, importación) pueda cargar documentos con permisos — dejarlo anotado como pendiente, no construir hasta que se hable con calma.
 
 ## Lo que se deja para después (NO hacer todavía)
 
+- Login / usuarios / permisos por colaborador (Isaac lo quiere, pero se platica aparte antes de construirlo).
 - Estudio de mercado, predicción de ventas, comparación "cómo me fue vs. lo esperado".
 - Detección de oportunidades / qué productos traer.
-- Manejo de stock, ventas, conexión con Mercado Libre / Amazon MX.
+- **Módulo 2 (Stock/Inventario)**: Isaac ya pidió que, al marcar un contenedor como "Recibido", se genere inventario automático. Es el arranque natural del módulo de stock — antes de construirlo hay que platicar con Isaac: ¿el stock se guarda por SKU? ¿qué pasa si el mismo producto viene en varios contenedores? ¿qué costo se guarda al entrar a stock? No meterlo de colado en cambios chicos de Pedidos/Contenedores.
+- Ventas, conexión con Mercado Libre / Amazon MX.
 - Migrar el histórico de contenedores anteriores al 10 (Isaac los borró del Excel por pesado; se agregarán después cuando el sistema esté listo).

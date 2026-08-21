@@ -46,6 +46,40 @@ export function FormularioContenedor({ contenedor }: { contenedor: Contenedor })
       </div>
 
       <div className="border-t border-zinc-100 pt-4">
+        <p className="text-sm font-medium text-zinc-700">Proveedor principal</p>
+        <p className="text-xs text-zinc-500">
+          Se usa para rellenar cada producto nuevo automáticamente. Si el contenedor es
+          consolidado (varios proveedores), lo puedes cambiar por producto.
+        </p>
+        <div className="mt-2 grid grid-cols-2 gap-4">
+          <div>
+            <label htmlFor="fabrica_principal" className="block text-xs font-medium text-zinc-500">
+              Fábrica
+            </label>
+            <input
+              type="text"
+              id="fabrica_principal"
+              name="fabrica_principal"
+              defaultValue={contenedor.fabrica_principal ?? ""}
+              className={claseCampo}
+            />
+          </div>
+          <div>
+            <label htmlFor="proveedor_principal" className="block text-xs font-medium text-zinc-500">
+              Proveedor / contacto
+            </label>
+            <input
+              type="text"
+              id="proveedor_principal"
+              name="proveedor_principal"
+              defaultValue={contenedor.proveedor_principal ?? ""}
+              className={claseCampo}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="border-t border-zinc-100 pt-4">
         <p className="text-sm font-medium text-zinc-700">Flete (dólares)</p>
         <div className="mt-2 grid grid-cols-2 gap-4">
           <div>

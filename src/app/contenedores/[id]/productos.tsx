@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+import Image from "next/image";
 import { CampoNumero } from "@/components/campo-numero";
 import { formatoPesos } from "@/lib/formato";
 import { cartones, cbmProducto, costoFinalPorPieza } from "@/lib/calculos";
@@ -14,12 +16,17 @@ export function Productos({
   productos,
   costoPorCbm,
   tipoCambioMercancia,
+  fabricaPrincipal,
+  proveedorPrincipal,
 }: {
   contenedorId: string;
   productos: Producto[];
   costoPorCbm: number;
   tipoCambioMercancia: number;
+  fabricaPrincipal: string | null;
+  proveedorPrincipal: string | null;
 }) {
+  const [vista, setVista] = useState<"tabla" | "galeria">("tabla");
   const agregar = agregarProducto.bind(null, contenedorId);
 
   const proveedores = Array.from(
@@ -30,12 +37,30 @@ export function Productos({
     <div className="rounded-xl border border-zinc-200 bg-white p-6">
       <div className="flex items-baseline justify-between">
         <p className="text-sm font-medium text-zinc-700">Productos</p>
-        {proveedores.length > 0 && (
-          <p className="text-xs text-zinc-500">Proveedores en este contenedor: {proveedores.join(", ")}</p>
-        )}
+        <div className="flex items-center gap-3">
+          {proveedores.length > 0 && (
+            <p className="text-xs text-zinc-500">Proveedores: {proveedores.join(", ")}</p>
+          )}
+          <div className="flex overflow-hidden rounded-lg border border-zinc-300 text-xs">
+            <button
+              type="button"
+              onClick={() => setVista("tabla")}
+              className={`px-2.5 py-1 ${vista === "tabla" ? "bg-zinc-900 text-white" : "bg-white text-zinc-600"}`}
+            >
+              Tabla
+            </button>
+            <button
+              type="button"
+              onClick={() => setVista("galeria")}
+              className={`px-2.5 py-1 ${vista === "galeria" ? "bg-zinc-900 text-white" : "bg-white text-zinc-600"}`}
+            >
+              Galería
+            </button>
+          </div>
+        </div>
       </div>
 
-      {productos.length > 0 && (
+      {productos.length > 0 && vista === "tabla" && (
         <div className="mt-3 overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead>
@@ -84,8 +109,52 @@ export function Productos({
         </div>
       )}
 
+      {productos.length > 0 && vista === "galeria" && (
+        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
+          {productos.map((producto) => (
+            <div key={producto.id} className="overflow-hidden rounded-lg border border-zinc-200">
+              <div className="relative aspect-square bg-zinc-100">
+                {producto.imagen_url ? (
+                  <Image
+                    src={producto.imagen_url}
+                    alt={producto.nombre}
+                    fill
+                    className="object-cover"
+                  />
+                ) : (
+                  <div className="flex h-full items-center justify-center text-xs text-zinc-400">
+                    Sin foto
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => eliminarProducto(contenedorId, producto.id)}
+                  className="absolute top-1 right-1 rounded-full bg-white/90 px-1.5 py-0.5 text-xs text-zinc-500 hover:text-red-600"
+                  aria-label="Quitar producto"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="p-2">
+                <p className="truncate text-xs font-medium text-zinc-900">{producto.nombre}</p>
+                <p className="truncate font-mono text-[11px] text-zinc-400">{producto.sku}</p>
+                <p className="mt-1 text-xs font-semibold text-zinc-900">
+                  {formatoPesos(costoFinalPorPieza(producto, costoPorCbm, tipoCambioMercancia))}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       <form action={agregar} className="mt-4 space-y-3 border-t border-zinc-100 pt-4">
         <p className="text-xs font-medium text-zinc-500">Agregar producto</p>
+
+        <div>
+          <label className="block text-xs font-medium text-zinc-500">Foto del producto</label>
+          <input type="file" name="imagen" accept="image/*" className={claseCampo} />
+        </div>
+
         <div className="grid grid-cols-3 gap-3">
           <div>
             <label className="block text-xs font-medium text-zinc-500">Categoría</label>
@@ -93,11 +162,21 @@ export function Productos({
           </div>
           <div>
             <label className="block text-xs font-medium text-zinc-500">Fábrica</label>
-            <input type="text" name="fabrica" className={claseCampo} />
+            <input
+              type="text"
+              name="fabrica"
+              defaultValue={fabricaPrincipal ?? ""}
+              className={claseCampo}
+            />
           </div>
           <div>
             <label className="block text-xs font-medium text-zinc-500">Proveedor / contacto</label>
-            <input type="text" name="proveedor" className={claseCampo} />
+            <input
+              type="text"
+              name="proveedor"
+              defaultValue={proveedorPrincipal ?? ""}
+              className={claseCampo}
+            />
           </div>
         </div>
 
