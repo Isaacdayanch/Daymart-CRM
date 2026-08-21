@@ -13,6 +13,7 @@ export default async function Home() {
   const { data: contenedores, error } = await supabase
     .from("contenedores")
     .select("*")
+    .is("eliminado_en", null)
     .order("numero", { ascending: false })
     .returns<Contenedor[]>();
 
@@ -33,12 +34,17 @@ export default async function Home() {
             <p className="text-xs font-medium tracking-wide text-zinc-400 uppercase">Daymart</p>
             <h1 className="text-lg font-semibold text-zinc-900">Pedidos / Contenedores</h1>
           </div>
-          <Link
-            href="/contenedores/nuevo"
-            className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700"
-          >
-            + Nuevo contenedor
-          </Link>
+          <div className="flex items-center gap-4">
+            <Link href="/papelera" className="text-sm font-medium text-zinc-500 hover:text-zinc-900">
+              Papelera
+            </Link>
+            <Link
+              href="/contenedores/nuevo"
+              className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700"
+            >
+              + Nuevo contenedor
+            </Link>
+          </div>
         </div>
       </header>
 

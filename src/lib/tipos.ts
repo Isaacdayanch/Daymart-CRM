@@ -25,6 +25,7 @@ export interface Contenedor {
   otros_gastos_tipo_cambio: number;
   fabrica_principal: string | null;
   proveedor_principal: string | null;
+  eliminado_en: string | null;
   creado_en: string;
   actualizado_en: string;
 }

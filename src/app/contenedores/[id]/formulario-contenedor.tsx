@@ -159,8 +159,13 @@ export function FormularioContenedor({ contenedor }: { contenedor: Contenedor })
         <button
           type="button"
           onClick={() => {
-            if (confirm(`¿Seguro que quieres borrar el contenedor ${contenedor.numero}? Esto borra también sus productos y abonos.`)) {
+            const escrito = prompt(
+              `Vas a mandar el contenedor ${contenedor.numero} a la papelera (lo puedes restaurar después). Escribe ${contenedor.numero} para confirmar.`,
+            );
+            if (escrito?.trim() === String(contenedor.numero)) {
               eliminarContenedor(contenedor.id);
+            } else if (escrito !== null) {
+              alert("No coincide el número, no se borró nada.");
             }
           }}
           className="text-sm font-medium text-red-600 hover:text-red-800"

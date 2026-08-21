@@ -95,6 +95,8 @@ Fuente de referencia: Excel "Proveedores Dale Click", hoja "Daymart". Se leyeron
 13. Restock: al agregar un producto, hay un selector "¿ya lo has traído antes?" con todos los productos de TODOS los contenedores (uno por SKU, el más reciente). Al elegir uno, se rellenan solos categoría/fábrica/proveedor/nombre/SKU/memo/precio/piezas/medidas/foto — la cantidad se deja vacía porque siempre cambia. Es cálculo directo sobre la tabla `productos` existente, no hay tabla de catálogo aparte todavía.
 14. Subida de fotos: si falla, ya no se guarda en silencio — se le avisa a Isaac con el error exacto de Supabase Storage (antes el error se ignoraba, por eso los productos guardaban "sin foto" sin explicación).
 15. "Otros gastos" del contenedor: campo opcional (dólares + su propio tipo de cambio), en un bloque desplegable cerrado por defecto (no siempre aplica). Para fletes internos en China u otros cargos. Se reparte por CBM junto con flete y aduana.
+16. Borrar un contenedor NUNCA es inmediato: es información valiosa. Se pide escribir el número del contenedor para confirmar, y el borrado real es un "soft delete" (columna `eliminado_en`) — se manda a una Papelera (`/papelera`) de donde se puede Restaurar o Borrar definitivo (con la misma confirmación de escribir el número). Sin límite de tiempo/borrado automático — se queda ahí hasta que Isaac decida a propósito. La lista principal (`/`) filtra `eliminado_en is null`.
+17. Límite de subida de archivos: Next.js Server Actions limitan el tamaño del formulario a 1 MB por defecto, lo cual rechazaba fotos de celular. Se subió a 10 MB en `next.config.ts` (`experimental.serverActions.bodySizeLimit`). Si algún archivo sigue sin subir, revisar esto primero.
 
 ## Lo que se deja para después (NO hacer todavía)
 

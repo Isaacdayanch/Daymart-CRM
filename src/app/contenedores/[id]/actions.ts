@@ -67,9 +67,13 @@ export async function cambiarEstado(contenedorId: string, estado: EstadoContened
   revalidatePath("/");
 }
 
+/** Manda el contenedor a la papelera (no se borra de verdad, se puede restaurar). */
 export async function eliminarContenedor(contenedorId: string) {
   const supabase = await createClient();
-  await supabase.from("contenedores").delete().eq("id", contenedorId);
+  await supabase
+    .from("contenedores")
+    .update({ eliminado_en: new Date().toISOString() })
+    .eq("id", contenedorId);
   redirect("/");
 }
 
