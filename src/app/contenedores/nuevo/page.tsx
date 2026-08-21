@@ -1,7 +1,11 @@
 import Link from "next/link";
 import { crearContenedor } from "./actions";
 import { AbonosMercancia } from "./abonos-mercancia";
+import { CampoNumero } from "@/components/campo-numero";
 import { ESTADOS_CONTENEDOR } from "@/lib/tipos";
+
+const claseCampo =
+  "mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500";
 
 export default async function NuevoContenedor({
   searchParams,
@@ -86,29 +90,13 @@ export default async function NuevoContenedor({
                 <label htmlFor="flete_dolares" className="block text-xs font-medium text-zinc-500">
                   Monto USD
                 </label>
-                <input
-                  type="number"
-                  id="flete_dolares"
-                  name="flete_dolares"
-                  step="0.01"
-                  min={0}
-                  defaultValue={0}
-                  className="mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500"
-                />
+                <CampoNumero id="flete_dolares" name="flete_dolares" className={claseCampo} />
               </div>
               <div>
                 <label htmlFor="flete_tipo_cambio" className="block text-xs font-medium text-zinc-500">
                   Tipo de cambio
                 </label>
-                <input
-                  type="number"
-                  id="flete_tipo_cambio"
-                  name="flete_tipo_cambio"
-                  step="0.01"
-                  min={0}
-                  defaultValue={0}
-                  className="mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500"
-                />
+                <CampoNumero id="flete_tipo_cambio" name="flete_tipo_cambio" className={claseCampo} />
               </div>
             </div>
           </div>
@@ -117,15 +105,7 @@ export default async function NuevoContenedor({
             <label htmlFor="aduana_pesos" className="block text-sm font-medium text-zinc-700">
               Aduana (pesos)
             </label>
-            <input
-              type="number"
-              id="aduana_pesos"
-              name="aduana_pesos"
-              step="0.01"
-              min={0}
-              defaultValue={0}
-              className="mt-1 block w-40 rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500"
-            />
+            <CampoNumero id="aduana_pesos" name="aduana_pesos" className={`${claseCampo} w-40`} />
           </div>
 
           <div className="border-t border-zinc-100 pt-4">

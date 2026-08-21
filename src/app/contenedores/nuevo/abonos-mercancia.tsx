@@ -1,6 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import { CampoNumero } from "@/components/campo-numero";
+
+const claseCampo =
+  "mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500";
 
 interface Fila {
   id: number;
@@ -22,25 +26,11 @@ export function AbonosMercancia() {
           <div key={fila.id} className="grid grid-cols-[1fr_1fr_auto_auto] items-end gap-2">
             <div>
               <label className="block text-xs font-medium text-zinc-500">Monto USD</label>
-              <input
-                type="number"
-                name="abono_monto"
-                step="0.01"
-                min={0}
-                defaultValue={0}
-                className="mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500"
-              />
+              <CampoNumero name="abono_monto" className={claseCampo} />
             </div>
             <div>
               <label className="block text-xs font-medium text-zinc-500">Tipo de cambio</label>
-              <input
-                type="number"
-                name="abono_tipo_cambio"
-                step="0.01"
-                min={0}
-                defaultValue={0}
-                className="mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500"
-              />
+              <CampoNumero name="abono_tipo_cambio" className={claseCampo} />
             </div>
             <div>
               <label className="block text-xs font-medium text-zinc-500">Estado</label>
