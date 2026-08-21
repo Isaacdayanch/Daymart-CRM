@@ -35,6 +35,13 @@ export async function actualizarContenedor(contenedorId: string, formData: FormD
   revalidatePath(`/contenedores/${contenedorId}`);
 }
 
+export async function cambiarEstado(contenedorId: string, estado: EstadoContenedor) {
+  const supabase = await createClient();
+  await supabase.from("contenedores").update({ estado }).eq("id", contenedorId);
+  revalidatePath(`/contenedores/${contenedorId}`);
+  revalidatePath("/");
+}
+
 export async function eliminarContenedor(contenedorId: string) {
   const supabase = await createClient();
   await supabase.from("contenedores").delete().eq("id", contenedorId);

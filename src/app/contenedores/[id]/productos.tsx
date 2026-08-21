@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Image from "next/image";
 import { CampoNumero } from "@/components/campo-numero";
+import { CampoImagen } from "@/components/campo-imagen";
 import { formatoPesos } from "@/lib/formato";
 import { cartones, cbmProducto, costoFinalPorPieza } from "@/lib/calculos";
 import type { Producto } from "@/lib/tipos";
@@ -150,10 +151,7 @@ export function Productos({
       <form action={agregar} className="mt-4 space-y-3 border-t border-zinc-100 pt-4">
         <p className="text-xs font-medium text-zinc-500">Agregar producto</p>
 
-        <div>
-          <label className="block text-xs font-medium text-zinc-500">Foto del producto</label>
-          <input type="file" name="imagen" accept="image/*" className={claseCampo} />
-        </div>
+        <CampoImagen name="imagen" />
 
         <div className="grid grid-cols-3 gap-3">
           <div>

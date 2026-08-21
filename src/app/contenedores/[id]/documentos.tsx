@@ -20,15 +20,18 @@ export function Documentos({
   const completo = completados === total;
 
   return (
-    <div className="rounded-xl border border-zinc-200 bg-white p-6">
-      <div className="flex items-baseline justify-between">
-        <p className="text-sm font-medium text-zinc-700">Documentación</p>
+    <details id="documentacion" className="group rounded-xl border border-zinc-200 bg-white p-6">
+      <summary className="flex cursor-pointer list-none items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-zinc-400 transition-transform group-open:rotate-90">▶</span>
+          <p className="text-sm font-medium text-zinc-700">Documentación</p>
+        </div>
         <p className={`text-xs font-medium ${completo ? "text-emerald-600" : "text-zinc-500"}`}>
           {completados} de {total} completo
         </p>
-      </div>
+      </summary>
 
-      <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-zinc-100">
+      <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-zinc-100">
         <div
           className={`h-full rounded-full transition-all ${completo ? "bg-emerald-500" : "bg-zinc-900"}`}
           style={{ width: `${porcentaje}%` }}
@@ -89,6 +92,6 @@ export function Documentos({
           );
         })}
       </ul>
-    </div>
+    </details>
   );
 }
