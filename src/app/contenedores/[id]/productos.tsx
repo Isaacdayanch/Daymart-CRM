@@ -5,7 +5,7 @@ import Image from "next/image";
 import { CampoNumero } from "@/components/campo-numero";
 import { CampoImagen } from "@/components/campo-imagen";
 import { formatoPesos } from "@/lib/formato";
-import { cartones, cbmProducto, costoFinalPorPieza } from "@/lib/calculos";
+import { cartones, cbmProducto, costoFinalPorPieza, skuSugerido } from "@/lib/calculos";
 import type { Producto } from "@/lib/tipos";
 import { agregarProducto, eliminarProducto } from "./actions";
 
@@ -29,6 +29,21 @@ export function Productos({
 }) {
   const [vista, setVista] = useState<"tabla" | "galeria">("tabla");
   const agregar = agregarProducto.bind(null, contenedorId);
+
+  const [categoria, setCategoria] = useState("");
+  const [nombre, setNombre] = useState("");
+  const [sku, setSku] = useState("");
+  const [skuEditadoManualmente, setSkuEditadoManualmente] = useState(false);
+
+  function alCambiarCategoria(valor: string) {
+    setCategoria(valor);
+    if (!skuEditadoManualmente) setSku(skuSugerido(valor, nombre));
+  }
+
+  function alCambiarNombre(valor: string) {
+    setNombre(valor);
+    if (!skuEditadoManualmente) setSku(skuSugerido(categoria, valor));
+  }
 
   const proveedores = Array.from(
     new Set(productos.map((p) => p.fabrica || p.proveedor).filter(Boolean)),
@@ -148,7 +163,7 @@ export function Productos({
         </div>
       )}
 
-      <form action={agregar} className="mt-4 space-y-3 border-t border-zinc-100 pt-4">
+      <form key={productos.length} action={agregar} className="mt-4 space-y-3 border-t border-zinc-100 pt-4">
         <p className="text-xs font-medium text-zinc-500">Agregar producto</p>
 
         <CampoImagen name="imagen" />
@@ -156,7 +171,14 @@ export function Productos({
         <div className="grid grid-cols-3 gap-3">
           <div>
             <label className="block text-xs font-medium text-zinc-500">Categoría</label>
-            <input type="text" name="categoria" required className={claseCampo} />
+            <input
+              type="text"
+              name="categoria"
+              required
+              value={categoria}
+              onChange={(e) => alCambiarCategoria(e.target.value)}
+              className={claseCampo}
+            />
           </div>
           <div>
             <label className="block text-xs font-medium text-zinc-500">Fábrica</label>
@@ -181,13 +203,27 @@ export function Productos({
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-xs font-medium text-zinc-500">Nombre del producto</label>
-            <input type="text" name="nombre" required className={claseCampo} />
+            <input
+              type="text"
+              name="nombre"
+              required
+              value={nombre}
+              onChange={(e) => alCambiarNombre(e.target.value)}
+              className={claseCampo}
+            />
           </div>
           <div>
-            <label className="block text-xs font-medium text-zinc-500">
-              SKU (déjalo vacío para autogenerarlo)
-            </label>
-            <input type="text" name="sku" className={claseCampo} />
+            <label className="block text-xs font-medium text-zinc-500">SKU (se sugiere solo, edítalo si quieres)</label>
+            <input
+              type="text"
+              name="sku"
+              value={sku}
+              onChange={(e) => {
+                setSkuEditadoManualmente(true);
+                setSku(e.target.value);
+              }}
+              className={`${claseCampo} font-mono`}
+            />
           </div>
         </div>
 
