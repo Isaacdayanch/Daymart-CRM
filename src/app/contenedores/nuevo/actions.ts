@@ -26,6 +26,8 @@ export async function crearContenedor(formData: FormData) {
       flete_dolares: numero(formData, "flete_dolares"),
       flete_tipo_cambio: numero(formData, "flete_tipo_cambio"),
       aduana_pesos: numero(formData, "aduana_pesos"),
+      otros_gastos_dolares: numero(formData, "otros_gastos_dolares"),
+      otros_gastos_tipo_cambio: numero(formData, "otros_gastos_tipo_cambio"),
     })
     .select("id")
     .single();

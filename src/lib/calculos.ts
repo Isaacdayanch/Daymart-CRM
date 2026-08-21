@@ -28,6 +28,13 @@ export function fletePesos(contenedor: Pick<Contenedor, "flete_dolares" | "flete
   return contenedor.flete_dolares * contenedor.flete_tipo_cambio;
 }
 
+/** Otros gastos (fletes internos en China, etc.) convertidos a pesos con su propio tipo de cambio. */
+export function otrosGastosPesos(
+  contenedor: Pick<Contenedor, "otros_gastos_dolares" | "otros_gastos_tipo_cambio">,
+) {
+  return contenedor.otros_gastos_dolares * contenedor.otros_gastos_tipo_cambio;
+}
+
 /** Total pagado de mercancía, en dólares y en pesos (según el tipo de cambio de cada abono). */
 export function totalesMercancia(pagos: PagoMercancia[]) {
   const totalDolares = pagos.reduce((suma, p) => suma + p.monto_dolares, 0);
@@ -43,12 +50,15 @@ export function tipoCambioPromedioMercancia(pagos: PagoMercancia[]) {
 }
 
 export function costoPorCbmContenedor(
-  contenedor: Pick<Contenedor, "flete_dolares" | "flete_tipo_cambio" | "aduana_pesos">,
+  contenedor: Pick<
+    Contenedor,
+    "flete_dolares" | "flete_tipo_cambio" | "aduana_pesos" | "otros_gastos_dolares" | "otros_gastos_tipo_cambio"
+  >,
   productos: Producto[],
 ) {
   const cbmTotal = cbmTotalContenedor(productos);
   if (!cbmTotal) return 0;
-  return (fletePesos(contenedor) + contenedor.aduana_pesos) / cbmTotal;
+  return (fletePesos(contenedor) + contenedor.aduana_pesos + otrosGastosPesos(contenedor)) / cbmTotal;
 }
 
 /** Gasto de flete+aduana repartido a este producto, por pieza. */
@@ -69,13 +79,16 @@ export function costoFinalPorPieza(
   return gastoRepartidoPorPieza(producto, costoPorCbm) + producto.precio_dolares * tipoCambioMercancia;
 }
 
-/** Costo total del contenedor: flete + aduana + lo abonado de mercancía, todo en pesos. */
+/** Costo total del contenedor: flete + aduana + otros gastos + lo abonado de mercancía, todo en pesos. */
 export function costoTotalContenedor(
-  contenedor: Pick<Contenedor, "flete_dolares" | "flete_tipo_cambio" | "aduana_pesos">,
+  contenedor: Pick<
+    Contenedor,
+    "flete_dolares" | "flete_tipo_cambio" | "aduana_pesos" | "otros_gastos_dolares" | "otros_gastos_tipo_cambio"
+  >,
   pagosMercancia: PagoMercancia[],
 ) {
   const { totalPesos: mercanciaPesos } = totalesMercancia(pagosMercancia);
-  return fletePesos(contenedor) + contenedor.aduana_pesos + mercanciaPesos;
+  return fletePesos(contenedor) + contenedor.aduana_pesos + otrosGastosPesos(contenedor) + mercanciaPesos;
 }
 
 /** SKU sugerido: 3 letras de la categoría + primeras 4 letras de hasta 3 palabras del nombre. */

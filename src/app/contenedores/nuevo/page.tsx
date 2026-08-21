@@ -108,6 +108,33 @@ export default async function NuevoContenedor({
             <CampoNumero id="aduana_pesos" name="aduana_pesos" className={`${claseCampo} w-40`} />
           </div>
 
+          <details className="border-t border-zinc-100 pt-4">
+            <summary className="cursor-pointer text-sm font-medium text-zinc-700">
+              + Otros gastos (opcional)
+            </summary>
+            <p className="mt-1 text-xs text-zinc-500">
+              Para fletes internos en China u otros cargos que no siempre aplican.
+            </p>
+            <div className="mt-2 grid grid-cols-2 gap-4">
+              <div>
+                <label htmlFor="otros_gastos_dolares" className="block text-xs font-medium text-zinc-500">
+                  Monto USD
+                </label>
+                <CampoNumero id="otros_gastos_dolares" name="otros_gastos_dolares" className={claseCampo} />
+              </div>
+              <div>
+                <label htmlFor="otros_gastos_tipo_cambio" className="block text-xs font-medium text-zinc-500">
+                  Tipo de cambio
+                </label>
+                <CampoNumero
+                  id="otros_gastos_tipo_cambio"
+                  name="otros_gastos_tipo_cambio"
+                  className={claseCampo}
+                />
+              </div>
+            </div>
+          </details>
+
           <div className="border-t border-zinc-100 pt-4">
             <AbonosMercancia />
           </div>

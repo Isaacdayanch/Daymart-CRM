@@ -21,6 +21,8 @@ export interface Contenedor {
   flete_dolares: number;
   flete_tipo_cambio: number;
   aduana_pesos: number;
+  otros_gastos_dolares: number;
+  otros_gastos_tipo_cambio: number;
   fabrica_principal: string | null;
   proveedor_principal: string | null;
   creado_en: string;
