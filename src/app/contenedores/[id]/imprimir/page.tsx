@@ -83,6 +83,7 @@ export default async function ImprimirContenedor({
         <table className="w-full border-collapse text-left text-xs">
           <thead>
             <tr className="border-b-2 border-zinc-900 text-zinc-500">
+              <th className="py-2 pr-2 font-medium">Foto</th>
               <th className="py-2 pr-2 font-medium">SKU</th>
               <th className="py-2 pr-2 font-medium">Producto</th>
               <th className="py-2 pr-2 font-medium">Memo</th>
@@ -97,6 +98,18 @@ export default async function ImprimirContenedor({
           <tbody className="divide-y divide-zinc-200">
             {listaProductos.map((producto) => (
               <tr key={producto.id}>
+                <td className="py-2 pr-2">
+                  {producto.imagen_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element -- se imprime/exporta a PDF, next/image no aplica
+                    <img
+                      src={producto.imagen_url}
+                      alt={producto.nombre}
+                      className="h-12 w-12 rounded object-cover"
+                    />
+                  ) : (
+                    <div className="h-12 w-12 rounded bg-zinc-100" />
+                  )}
+                </td>
                 <td className="py-2 pr-2 font-mono">{producto.sku}</td>
                 <td className="py-2 pr-2">{producto.nombre}</td>
                 <td className="py-2 pr-2 text-zinc-500">{producto.memo}</td>
@@ -117,7 +130,7 @@ export default async function ImprimirContenedor({
           </tbody>
           <tfoot>
             <tr className="border-t-2 border-zinc-900 font-medium">
-              <td className="py-2 pr-2" colSpan={3}>
+              <td className="py-2 pr-2" colSpan={4}>
                 Total
               </td>
               <td className="py-2 pr-2 text-right">{cantidadTotal}</td>
