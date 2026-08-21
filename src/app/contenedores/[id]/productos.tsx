@@ -15,6 +15,7 @@ export function Productos({
   tipoCambioMercancia,
   fabricaPrincipal,
   proveedorPrincipal,
+  catalogo,
 }: {
   contenedorId: string;
   productos: Producto[];
@@ -22,10 +23,18 @@ export function Productos({
   tipoCambioMercancia: number;
   fabricaPrincipal: string | null;
   proveedorPrincipal: string | null;
+  catalogo: Producto[];
 }) {
   const [vista, setVista] = useState<"tabla" | "galeria">("tabla");
   const [editandoId, setEditandoId] = useState<string | null>(null);
-  const agregar = agregarProducto.bind(null, contenedorId);
+  const [restockId, setRestockId] = useState("");
+  const productoRestock = catalogo.find((p) => p.id === restockId);
+
+  async function alAgregar(formData: FormData) {
+    const resultado = await agregarProducto(contenedorId, formData);
+    if (resultado?.error) alert(resultado.error);
+    setRestockId("");
+  }
 
   const proveedores = Array.from(
     new Set(productos.map((p) => p.fabrica || p.proveedor).filter(Boolean)),
@@ -89,7 +98,8 @@ export function Productos({
                     <td colSpan={8} className="py-3">
                       <form
                         action={async (formData) => {
-                          await actualizarProducto(contenedorId, producto.id, formData);
+                          const resultado = await actualizarProducto(contenedorId, producto.id, formData);
+                          if (resultado?.error) alert(resultado.error);
                           setEditandoId(null);
                         }}
                         className="rounded-lg border border-zinc-200 bg-zinc-50 p-4"
@@ -196,7 +206,8 @@ export function Productos({
               <div key={producto.id} className="col-span-2 rounded-lg border border-zinc-200 bg-zinc-50 p-4 sm:col-span-3">
                 <form
                   action={async (formData) => {
-                    await actualizarProducto(contenedorId, producto.id, formData);
+                    const resultado = await actualizarProducto(contenedorId, producto.id, formData);
+                    if (resultado?.error) alert(resultado.error);
                     setEditandoId(null);
                   }}
                 >
@@ -264,9 +275,39 @@ export function Productos({
         </div>
       )}
 
-      <form key={productos.length} action={agregar} className="mt-4 space-y-3 border-t border-zinc-100 pt-4">
+      <form
+        key={`${productos.length}-${restockId}`}
+        action={alAgregar}
+        className="mt-4 space-y-3 border-t border-zinc-100 pt-4"
+      >
         <p className="text-xs font-medium text-zinc-500">Agregar producto</p>
-        <CamposProducto fabricaPorDefecto={fabricaPrincipal} proveedorPorDefecto={proveedorPrincipal} />
+
+        {catalogo.length > 0 && (
+          <div>
+            <label className="block text-xs font-medium text-zinc-500">
+              ¿Es un producto que ya has traído antes? (restock)
+            </label>
+            <select
+              value={restockId}
+              onChange={(e) => setRestockId(e.target.value)}
+              className="mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500"
+            >
+              <option value="">— Producto nuevo, llenar desde cero —</option>
+              {catalogo.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.sku} — {p.nombre}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        <CamposProducto
+          inicial={productoRestock}
+          esRestock={Boolean(productoRestock)}
+          fabricaPorDefecto={fabricaPrincipal}
+          proveedorPorDefecto={proveedorPrincipal}
+        />
         <div className="flex justify-end">
           <button
             type="submit"

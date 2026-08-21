@@ -39,7 +39,7 @@ export default async function DetalleContenedor({
 
   if (!contenedor) notFound();
 
-  const [{ data: abonos }, { data: productos }, { data: documentos }, { data: historial }] =
+  const [{ data: abonos }, { data: productos }, { data: documentos }, { data: historial }, { data: catalogoCrudo }] =
     await Promise.all([
       supabase
         .from("pagos_mercancia")
@@ -62,12 +62,26 @@ export default async function DetalleContenedor({
         .select("*")
         .eq("contenedor_id", id)
         .returns<HistorialEstado[]>(),
+      supabase
+        .from("productos")
+        .select("*")
+        .order("creado_en", { ascending: false })
+        .returns<Producto[]>(),
     ]);
 
   const listaAbonos = abonos ?? [];
   const listaProductos = productos ?? [];
   const listaDocumentos = documentos ?? [];
   const listaHistorial = historial ?? [];
+
+  // Catálogo para "restock": un producto por SKU, el más reciente de
+  // cualquier contenedor, para poder rellenar el formulario sin volver
+  // a capturar todo desde cero.
+  const catalogoPorSku = new Map<string, Producto>();
+  for (const p of catalogoCrudo ?? []) {
+    if (!catalogoPorSku.has(p.sku)) catalogoPorSku.set(p.sku, p);
+  }
+  const catalogo = Array.from(catalogoPorSku.values()).sort((a, b) => a.nombre.localeCompare(b.nombre));
 
   const documentosPorTipo: Partial<Record<TipoDocumento, DocumentoContenedor & { url: string | null }>> = {};
   for (const doc of listaDocumentos) {
@@ -124,6 +138,7 @@ export default async function DetalleContenedor({
           tipoCambioMercancia={tipoCambioMercancia}
           fabricaPrincipal={contenedor.fabrica_principal}
           proveedorPrincipal={contenedor.proveedor_principal}
+          catalogo={catalogo}
         />
 
         <div className="flex justify-end">

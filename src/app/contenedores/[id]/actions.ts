@@ -90,18 +90,31 @@ export async function eliminarAbono(contenedorId: string, abonoId: string) {
   revalidatePath(`/contenedores/${contenedorId}`);
 }
 
+/** Quita acentos y cualquier carácter que no sea letra/número/guion, para
+ * que el nombre del archivo sea una llave de almacenamiento válida. */
+function nombreArchivoSeguro(nombre: string) {
+  const puntoFinal = nombre.lastIndexOf(".");
+  const base = puntoFinal > 0 ? nombre.slice(0, puntoFinal) : nombre;
+  const extension = puntoFinal > 0 ? nombre.slice(puntoFinal + 1) : "";
+  const baseLimpia = base.replace(/[^a-zA-Z0-9-_]+/g, "-").slice(0, 60) || "archivo";
+  const extensionLimpia = extension.toLowerCase().replace(/[^a-z0-9]/g, "");
+  return extensionLimpia ? `${baseLimpia}.${extensionLimpia}` : baseLimpia;
+}
+
 async function subirImagenProducto(
   supabase: Awaited<ReturnType<typeof createClient>>,
   contenedorId: string,
   formData: FormData,
-) {
+): Promise<{ url: string | null; error: string | null }> {
   const imagen = formData.get("imagen");
-  if (!(imagen instanceof File) || imagen.size === 0) return null;
+  if (!(imagen instanceof File) || imagen.size === 0) return { url: null, error: null };
 
-  const ruta = `${contenedorId}/${crypto.randomUUID()}-${imagen.name}`;
+  const ruta = `${contenedorId}/${crypto.randomUUID()}-${nombreArchivoSeguro(imagen.name)}`;
   const { error } = await supabase.storage.from("productos").upload(ruta, imagen);
-  if (error) return null;
-  return supabase.storage.from("productos").getPublicUrl(ruta).data.publicUrl;
+  if (error) return { url: null, error: error.message };
+
+  const url = supabase.storage.from("productos").getPublicUrl(ruta).data.publicUrl;
+  return { url, error: null };
 }
 
 export async function agregarProducto(contenedorId: string, formData: FormData) {
@@ -110,7 +123,12 @@ export async function agregarProducto(contenedorId: string, formData: FormData) 
   const categoria = texto(formData, "categoria") ?? "";
   const nombre = texto(formData, "nombre") ?? "";
   const sku = texto(formData, "sku") ?? skuSugerido(categoria, nombre);
-  const imagenUrl = await subirImagenProducto(supabase, contenedorId, formData);
+  const { url: imagenSubida, error: errorImagen } = await subirImagenProducto(
+    supabase,
+    contenedorId,
+    formData,
+  );
+  const imagenUrl = imagenSubida ?? texto(formData, "imagen_url_previa");
 
   const { data: ultimo } = await supabase
     .from("productos")
@@ -139,6 +157,7 @@ export async function agregarProducto(contenedorId: string, formData: FormData) 
   });
 
   revalidatePath(`/contenedores/${contenedorId}`);
+  return { error: errorImagen ? `La foto no se pudo subir: ${errorImagen}` : null };
 }
 
 export async function actualizarProducto(contenedorId: string, productoId: string, formData: FormData) {
@@ -147,7 +166,11 @@ export async function actualizarProducto(contenedorId: string, productoId: strin
   const categoria = texto(formData, "categoria") ?? "";
   const nombre = texto(formData, "nombre") ?? "";
   const sku = texto(formData, "sku") ?? skuSugerido(categoria, nombre);
-  const imagenUrl = await subirImagenProducto(supabase, contenedorId, formData);
+  const { url: imagenUrl, error: errorImagen } = await subirImagenProducto(
+    supabase,
+    contenedorId,
+    formData,
+  );
 
   await supabase
     .from("productos")
@@ -169,6 +192,7 @@ export async function actualizarProducto(contenedorId: string, productoId: strin
     .eq("id", productoId);
 
   revalidatePath(`/contenedores/${contenedorId}`);
+  return { error: errorImagen ? `La foto no se pudo subir: ${errorImagen}` : null };
 }
 
 export async function eliminarProducto(contenedorId: string, productoId: string) {
@@ -207,7 +231,7 @@ export async function subirDocumento(contenedorId: string, tipo: TipoDocumento, 
   const archivo = formData.get("archivo");
   if (!(archivo instanceof File) || archivo.size === 0) return;
 
-  const ruta = `${contenedorId}/${tipo}-${crypto.randomUUID()}-${archivo.name}`;
+  const ruta = `${contenedorId}/${tipo}-${crypto.randomUUID()}-${nombreArchivoSeguro(archivo.name)}`;
   const { error } = await supabase.storage.from("documentos").upload(ruta, archivo);
   if (error) return;
 

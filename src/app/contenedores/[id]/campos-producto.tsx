@@ -14,10 +14,14 @@ export function CamposProducto({
   inicial,
   fabricaPorDefecto,
   proveedorPorDefecto,
+  esRestock = false,
 }: {
   inicial?: Producto;
   fabricaPorDefecto?: string | null;
   proveedorPorDefecto?: string | null;
+  /** true cuando se rellenan los campos a partir de un producto anterior
+   * (restock): no se carga la cantidad ni el id, solo los datos fijos. */
+  esRestock?: boolean;
 }) {
   const [categoria, setCategoria] = useState(inicial?.categoria ?? "");
   const [nombre, setNombre] = useState(inicial?.nombre ?? "");
@@ -37,6 +41,9 @@ export function CamposProducto({
   return (
     <div className="space-y-3">
       <CampoImagen name="imagen" valorInicial={inicial?.imagen_url} />
+      {inicial?.imagen_url && (
+        <input type="hidden" name="imagen_url_previa" value={inicial.imagen_url} />
+      )}
 
       <div className="grid grid-cols-3 gap-3">
         <div>
@@ -111,7 +118,11 @@ export function CamposProducto({
       <div className="grid grid-cols-3 gap-3">
         <div>
           <label className="block text-xs font-medium text-zinc-500">Cantidad</label>
-          <CampoNumero name="cantidad" defaultValue={inicial?.cantidad} className={claseCampo} />
+          <CampoNumero
+            name="cantidad"
+            defaultValue={esRestock ? undefined : inicial?.cantidad}
+            className={claseCampo}
+          />
         </div>
         <div>
           <label className="block text-xs font-medium text-zinc-500">Precio USD</label>

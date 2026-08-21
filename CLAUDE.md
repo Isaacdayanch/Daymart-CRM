@@ -92,6 +92,8 @@ Fuente de referencia: Excel "Proveedores Dale Click", hoja "Daymart". Se leyeron
 10. Permisos/colaboradores todavía NO se construyen (no hay login). Isaac ya avisó que los quiere más adelante para que su equipo (aduanal, importación) pueda cargar documentos con permisos — dejarlo anotado como pendiente, no construir hasta que se hable con calma. Técnicamente no está "loco" — Supabase Auth ya trae login/roles integrado, es trabajo normal cuando se defina qué rol ve/edita qué.
 11. Historial de fechas: cada vez que cambia el estado del contenedor (desde el menú rápido o el formulario grande), se guarda automático en una tabla de historial (`historial_estados_contenedor`). En el contenedor se muestra una línea de tiempo con la primera fecha en que se alcanzó cada estado.
 12. Productos: se pueden editar todos sus campos (incluida la foto) después de creados, y se pueden reordenar a mano (subir/bajar) — el orden se guarda en la base de datos (columna `orden`), no es solo visual.
+13. Restock: al agregar un producto, hay un selector "¿ya lo has traído antes?" con todos los productos de TODOS los contenedores (uno por SKU, el más reciente). Al elegir uno, se rellenan solos categoría/fábrica/proveedor/nombre/SKU/memo/precio/piezas/medidas/foto — la cantidad se deja vacía porque siempre cambia. Es cálculo directo sobre la tabla `productos` existente, no hay tabla de catálogo aparte todavía.
+14. Subida de fotos: si falla, ya no se guarda en silencio — se le avisa a Isaac con el error exacto de Supabase Storage (antes el error se ignoraba, por eso los productos guardaban "sin foto" sin explicación).
 
 ## Lo que se deja para después (NO hacer todavía)
 
