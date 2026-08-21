@@ -11,6 +11,7 @@ import { formatoPesos } from "@/lib/formato";
 import {
   type Contenedor,
   type DocumentoContenedor,
+  type HistorialEstado,
   type PagoMercancia,
   type Producto,
   type TipoDocumento,
@@ -20,6 +21,7 @@ import { Abonos } from "./abonos";
 import { Productos } from "./productos";
 import { Documentos } from "./documentos";
 import { TarjetaEstado } from "./tarjeta-estado";
+import { Historial } from "./historial";
 
 export default async function DetalleContenedor({
   params,
@@ -37,23 +39,35 @@ export default async function DetalleContenedor({
 
   if (!contenedor) notFound();
 
-  const [{ data: abonos }, { data: productos }, { data: documentos }] = await Promise.all([
-    supabase
-      .from("pagos_mercancia")
-      .select("*")
-      .eq("contenedor_id", id)
-      .returns<PagoMercancia[]>(),
-    supabase.from("productos").select("*").eq("contenedor_id", id).returns<Producto[]>(),
-    supabase
-      .from("documentos_contenedor")
-      .select("*")
-      .eq("contenedor_id", id)
-      .returns<DocumentoContenedor[]>(),
-  ]);
+  const [{ data: abonos }, { data: productos }, { data: documentos }, { data: historial }] =
+    await Promise.all([
+      supabase
+        .from("pagos_mercancia")
+        .select("*")
+        .eq("contenedor_id", id)
+        .returns<PagoMercancia[]>(),
+      supabase
+        .from("productos")
+        .select("*")
+        .eq("contenedor_id", id)
+        .order("orden", { ascending: true })
+        .returns<Producto[]>(),
+      supabase
+        .from("documentos_contenedor")
+        .select("*")
+        .eq("contenedor_id", id)
+        .returns<DocumentoContenedor[]>(),
+      supabase
+        .from("historial_estados_contenedor")
+        .select("*")
+        .eq("contenedor_id", id)
+        .returns<HistorialEstado[]>(),
+    ]);
 
   const listaAbonos = abonos ?? [];
   const listaProductos = productos ?? [];
   const listaDocumentos = documentos ?? [];
+  const listaHistorial = historial ?? [];
 
   const documentosPorTipo: Partial<Record<TipoDocumento, DocumentoContenedor & { url: string | null }>> = {};
   for (const doc of listaDocumentos) {
@@ -99,6 +113,7 @@ export default async function DetalleContenedor({
           </div>
         </div>
 
+        <Historial historial={listaHistorial} />
         <Documentos contenedorId={contenedor.id} documentosPorTipo={documentosPorTipo} />
         <FormularioContenedor contenedor={contenedor} />
         <Abonos contenedorId={contenedor.id} abonos={listaAbonos} />

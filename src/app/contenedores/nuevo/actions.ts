@@ -34,6 +34,11 @@ export async function crearContenedor(formData: FormData) {
     redirect(`/contenedores/nuevo?error=${encodeURIComponent(error?.message ?? "error desconocido")}`);
   }
 
+  await supabase.from("historial_estados_contenedor").insert({
+    contenedor_id: contenedor.id,
+    estado: formData.get("estado") as EstadoContenedor,
+  });
+
   const montos = formData.getAll("abono_monto").map(Number);
   const tiposCambio = formData.getAll("abono_tipo_cambio").map(Number);
   const pagados = formData.getAll("abono_pagado").map((v) => v === "true");

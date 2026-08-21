@@ -89,7 +89,9 @@ Fuente de referencia: Excel "Proveedores Dale Click", hoja "Daymart". Se leyeron
 7. Campo "Barco" eliminado — solo se usa Booking.
 8. Vista de productos: tabla o galería (fotos), Isaac elige con un botón. Ambas muestran el costo final por pieza ya calculado.
 9. Packing list: vista de impresión (usa "Imprimir → Guardar como PDF" del navegador, sin librería de PDF), con opción de "con precios" / "sin precios". Un PDF generado por el sistema con diseño propio (logo, etc.) se deja para más adelante si esta versión no basta.
-10. Permisos/colaboradores todavía NO se construyen (no hay login). Isaac ya avisó que los quiere más adelante para que su equipo (aduanal, importación) pueda cargar documentos con permisos — dejarlo anotado como pendiente, no construir hasta que se hable con calma.
+10. Permisos/colaboradores todavía NO se construyen (no hay login). Isaac ya avisó que los quiere más adelante para que su equipo (aduanal, importación) pueda cargar documentos con permisos — dejarlo anotado como pendiente, no construir hasta que se hable con calma. Técnicamente no está "loco" — Supabase Auth ya trae login/roles integrado, es trabajo normal cuando se defina qué rol ve/edita qué.
+11. Historial de fechas: cada vez que cambia el estado del contenedor (desde el menú rápido o el formulario grande), se guarda automático en una tabla de historial (`historial_estados_contenedor`). En el contenedor se muestra una línea de tiempo con la primera fecha en que se alcanzó cada estado.
+12. Productos: se pueden editar todos sus campos (incluida la foto) después de creados, y se pueden reordenar a mano (subir/bajar) — el orden se guarda en la base de datos (columna `orden`), no es solo visual.
 
 ## Lo que se deja para después (NO hacer todavía)
 

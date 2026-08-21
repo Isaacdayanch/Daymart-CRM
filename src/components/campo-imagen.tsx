@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 
-export function CampoImagen({ name }: { name: string }) {
-  const [previa, setPrevia] = useState<string | null>(null);
+export function CampoImagen({ name, valorInicial }: { name: string; valorInicial?: string | null }) {
+  const [previa, setPrevia] = useState<string | null>(valorInicial ?? null);
 
   return (
     <label className="flex aspect-square w-28 cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-zinc-300 bg-zinc-50 text-center text-xs text-zinc-500 hover:border-zinc-400 hover:bg-zinc-100">

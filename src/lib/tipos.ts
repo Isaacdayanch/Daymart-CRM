@@ -53,6 +53,13 @@ export interface DocumentoContenedor {
   subido_en: string;
 }
 
+export interface HistorialEstado {
+  id: string;
+  contenedor_id: string;
+  estado: EstadoContenedor;
+  fecha: string;
+}
+
 export interface PagoMercancia {
   id: string;
   contenedor_id: string;
@@ -80,6 +87,7 @@ export interface Producto {
   largo_cm: number;
   ancho_cm: number;
   alto_cm: number;
+  orden: number;
   creado_en: string;
   actualizado_en: string;
 }
