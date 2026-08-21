@@ -73,6 +73,7 @@ export function Productos({
             <thead>
               <tr className="border-b border-zinc-200 text-xs text-zinc-500">
                 <th className="py-2 pr-3 font-medium"></th>
+                <th className="py-2 pr-3 font-medium"></th>
                 <th className="py-2 pr-3 font-medium">SKU</th>
                 <th className="py-2 pr-3 font-medium">Producto</th>
                 <th className="py-2 pr-3 font-medium">Cant.</th>
@@ -85,7 +86,7 @@ export function Productos({
               {productos.map((producto, i) =>
                 editandoId === producto.id ? (
                   <tr key={producto.id}>
-                    <td colSpan={7} className="py-3">
+                    <td colSpan={8} className="py-3">
                       <form
                         action={async (formData) => {
                           await actualizarProducto(contenedorId, producto.id, formData);
@@ -135,6 +136,17 @@ export function Productos({
                           ▼
                         </button>
                       </div>
+                    </td>
+                    <td className="py-2 pr-3">
+                      {producto.imagen_url ? (
+                        <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-md bg-zinc-100">
+                          <Image src={producto.imagen_url} alt={producto.nombre} fill className="object-cover" />
+                        </div>
+                      ) : (
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-zinc-100 text-[9px] text-zinc-400">
+                          Sin foto
+                        </div>
+                      )}
                     </td>
                     <td className="py-2 pr-3 font-mono text-xs text-zinc-500">{producto.sku}</td>
                     <td className="py-2 pr-3">
