@@ -7,12 +7,15 @@ import {
   costoTotalContenedor,
   tipoCambioPromedioMercancia,
 } from "@/lib/calculos";
+import { reconciliacionContenedor } from "@/lib/calculos-stock";
 import { formatoPesos } from "@/lib/formato";
 import {
   type Contenedor,
   type DocumentoContenedor,
   type HistorialEstado,
+  type MovimientoStock,
   type PagoMercancia,
+  type PendienteChina,
   type Producto,
   type TipoDocumento,
 } from "@/lib/tipos";
@@ -39,35 +42,53 @@ export default async function DetalleContenedor({
 
   if (!contenedor) notFound();
 
-  const [{ data: abonos }, { data: productos }, { data: documentos }, { data: historial }, { data: catalogoCrudo }] =
-    await Promise.all([
-      supabase
-        .from("pagos_mercancia")
-        .select("*")
-        .eq("contenedor_id", id)
-        .returns<PagoMercancia[]>(),
-      supabase
-        .from("productos")
-        .select("*")
-        .eq("contenedor_id", id)
-        .order("orden", { ascending: true })
-        .returns<Producto[]>(),
-      supabase
-        .from("documentos_contenedor")
-        .select("*")
-        .eq("contenedor_id", id)
-        .returns<DocumentoContenedor[]>(),
-      supabase
-        .from("historial_estados_contenedor")
-        .select("*")
-        .eq("contenedor_id", id)
-        .returns<HistorialEstado[]>(),
-      supabase
-        .from("productos")
-        .select("*")
-        .order("creado_en", { ascending: false })
-        .returns<Producto[]>(),
-    ]);
+  const [
+    { data: abonos },
+    { data: productos },
+    { data: documentos },
+    { data: historial },
+    { data: catalogoCrudo },
+    { data: movimientosEntrada },
+    { data: pendientesChina },
+  ] = await Promise.all([
+    supabase
+      .from("pagos_mercancia")
+      .select("*")
+      .eq("contenedor_id", id)
+      .returns<PagoMercancia[]>(),
+    supabase
+      .from("productos")
+      .select("*")
+      .eq("contenedor_id", id)
+      .order("orden", { ascending: true })
+      .returns<Producto[]>(),
+    supabase
+      .from("documentos_contenedor")
+      .select("*")
+      .eq("contenedor_id", id)
+      .returns<DocumentoContenedor[]>(),
+    supabase
+      .from("historial_estados_contenedor")
+      .select("*")
+      .eq("contenedor_id", id)
+      .returns<HistorialEstado[]>(),
+    supabase
+      .from("productos")
+      .select("*")
+      .order("creado_en", { ascending: false })
+      .returns<Producto[]>(),
+    supabase
+      .from("movimientos_stock")
+      .select("*")
+      .eq("contenedor_id", id)
+      .returns<MovimientoStock[]>(),
+    supabase
+      .from("pendientes_china")
+      .select("*")
+      .eq("estado", "PENDIENTE")
+      .order("creado_en", { ascending: true })
+      .returns<PendienteChina[]>(),
+  ]);
 
   const listaAbonos = abonos ?? [];
   const listaProductos = productos ?? [];
@@ -95,6 +116,7 @@ export default async function DetalleContenedor({
   const costoPorCbm = costoPorCbmContenedor(contenedor, listaProductos);
   const tipoCambioMercancia = tipoCambioPromedioMercancia(listaAbonos);
   const costoTotal = costoTotalContenedor(contenedor, listaAbonos);
+  const valorEntradoStock = reconciliacionContenedor(id, movimientosEntrada ?? []);
 
   return (
     <div className="min-h-screen bg-zinc-50">
@@ -104,15 +126,24 @@ export default async function DetalleContenedor({
             <p className="text-xs font-medium tracking-wide text-zinc-400 uppercase">Daymart</p>
             <h1 className="text-lg font-semibold text-zinc-900">Contenedor {contenedor.numero}</h1>
           </div>
-          <Link href="/" className="text-sm font-medium text-zinc-500 hover:text-zinc-900">
-            ← Volver a la lista
-          </Link>
+          <div className="flex items-center gap-4">
+            <Link href="/stock" className="text-sm font-medium text-zinc-500 hover:text-zinc-900">
+              Stock
+            </Link>
+            <Link href="/" className="text-sm font-medium text-zinc-500 hover:text-zinc-900">
+              ← Volver a la lista
+            </Link>
+          </div>
         </div>
       </header>
 
       <main className="mx-auto max-w-3xl space-y-6 px-4 py-8 sm:px-6">
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <TarjetaEstado contenedorId={contenedor.id} estado={contenedor.estado} />
+          <TarjetaEstado
+            contenedorId={contenedor.id}
+            estado={contenedor.estado}
+            stockGeneradoEn={contenedor.stock_generado_en}
+          />
           <div className="rounded-xl border border-zinc-200 bg-white p-4">
             <p className="text-xs text-zinc-500">CBM total</p>
             <p className="mt-1 text-sm font-semibold text-zinc-900">{cbmTotal.toFixed(2)} m³</p>
@@ -127,6 +158,37 @@ export default async function DetalleContenedor({
           </div>
         </div>
 
+        {contenedor.stock_generado_en && (
+          <div className="rounded-xl border border-zinc-200 bg-white p-4">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <p className="text-xs text-zinc-500">Costo del contenedor</p>
+                <p className="mt-1 text-sm font-semibold text-zinc-900">{formatoPesos(costoTotal)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-zinc-500">Valor que entró a stock</p>
+                <p className="mt-1 text-sm font-semibold text-zinc-900">{formatoPesos(valorEntradoStock)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-zinc-500">Diferencia</p>
+                <p
+                  className={`mt-1 text-sm font-semibold ${
+                    Math.abs(costoTotal - valorEntradoStock) < 1 ? "text-emerald-600" : "text-amber-600"
+                  }`}
+                >
+                  {formatoPesos(costoTotal - valorEntradoStock)}
+                </p>
+              </div>
+            </div>
+            {Math.abs(costoTotal - valorEntradoStock) >= 1 && (
+              <p className="mt-2 text-xs text-zinc-500">
+                No cuadra del todo — revisa si falta algún abono de mercancía o si hay mercancía pendiente
+                en China de este contenedor.
+              </p>
+            )}
+          </div>
+        )}
+
         <Historial historial={listaHistorial} />
         <Documentos contenedorId={contenedor.id} documentosPorTipo={documentosPorTipo} />
         <FormularioContenedor contenedor={contenedor} />
@@ -139,6 +201,7 @@ export default async function DetalleContenedor({
           fabricaPrincipal={contenedor.fabrica_principal}
           proveedorPrincipal={contenedor.proveedor_principal}
           catalogo={catalogo}
+          pendientesChina={pendientesChina ?? []}
         />
 
         <div className="flex justify-end">

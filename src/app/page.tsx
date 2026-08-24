@@ -35,6 +35,9 @@ export default async function Home() {
             <h1 className="text-lg font-semibold text-zinc-900">Pedidos / Contenedores</h1>
           </div>
           <div className="flex items-center gap-4">
+            <Link href="/stock" className="text-sm font-medium text-zinc-500 hover:text-zinc-900">
+              Stock
+            </Link>
             <Link href="/papelera" className="text-sm font-medium text-zinc-500 hover:text-zinc-900">
               Papelera
             </Link>

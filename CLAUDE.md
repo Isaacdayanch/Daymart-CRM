@@ -98,11 +98,24 @@ Fuente de referencia: Excel "Proveedores Dale Click", hoja "Daymart". Se leyeron
 16. Borrar un contenedor NUNCA es inmediato: es información valiosa. Se pide escribir el número del contenedor para confirmar, y el borrado real es un "soft delete" (columna `eliminado_en`) — se manda a una Papelera (`/papelera`) de donde se puede Restaurar o Borrar definitivo (con la misma confirmación de escribir el número). Sin límite de tiempo/borrado automático — se queda ahí hasta que Isaac decida a propósito. La lista principal (`/`) filtra `eliminado_en is null`.
 17. Límite de subida de archivos: Next.js Server Actions limitan el tamaño del formulario a 1 MB por defecto, lo cual rechazaba fotos de celular. Se subió a 10 MB en `next.config.ts` (`experimental.serverActions.bodySizeLimit`). Si algún archivo sigue sin subir, revisar esto primero.
 
+## Módulo 2 (en construcción): Stock / Inventario
+
+Fuente de referencia: Excel "Stock y Envíos Daymart", hojas Stock/Entradas/Salidas. Se dejaron fuera del alcance: "Etiquetas" (herramienta de impresión de códigos para Mercado Libre, no es inventario), "Cotización" (lista de ideas de compra futura, no es stock real), "Temporadas" (Isaac pidió explícitamente dejarla para el futuro bloque de análisis), y el tablero de finanzas personales que estaba mezclado en columnas sueltas de la hoja Stock.
+
+### Decisiones tomadas
+
+1. **Bodegas**: tabla propia, empieza con "Bodega Principal" pero se pueden agregar más en `/stock/bodegas`. Cada movimiento de stock queda ligado a una bodega.
+2. **Un solo libro de movimientos** (`movimientos_stock`, tipo ENTRADA o SALIDA) en vez de tablas separadas de entradas/salidas — más fácil de auditar todo junto. El stock actual y el valor de inventario NUNCA se guardan a mano, siempre se calculan sumando/restando este libro.
+3. **Entrada automática al recibir un contenedor**: elegir "Recibido en bodega" en el estado ya no es un clic — abre `/contenedores/[id]/recibir`, donde Isaac confirma cuánto llegó de verdad de cada producto (por defecto, lo mismo que se pidió). Al confirmar: se generan movimientos de ENTRADA con el costo real por pieza (recalculado con las cantidades reales, para que el CBM/flete/aduana se reparta sobre lo que de verdad viajó), se ajusta `productos.cantidad` a lo real, y se marca `contenedores.stock_generado_en` para no duplicar si se vuelve a tocar el estado.
+4. **Mercancía pendiente en China**: si algo no llegó completo, la diferencia se guarda en `pendientes_china` (con todos los datos del producto, si ya está pagada, y de qué contenedor viene). Se ve en `/stock/pendientes`. Al armar un contenedor futuro, en "Agregar producto" hay un selector "¿es mercancía pendiente de China?" que precarga esos datos; al guardar, el pendiente se cierra (o se reduce si solo se consolidó una parte).
+5. **Costo de inventario**: cada SKU tiene un costo promedio ponderado (de todas sus entradas históricas). Valor de inventario = stock actual × costo promedio. En el contenedor, una vez recibido, se muestra una tarjeta comparando el costo total del contenedor contra el valor que realmente entró a stock — si no cuadra, es señal de que falta un abono o hay mercancía pendiente sin registrar.
+6. **Reórdenes por rotación real**: cada SKU calcula su rotación diaria (salidas de los últimos 90 días ÷ 90) y su punto de reorden = rotación × "tiempo de espera" (días que tarda en llegar un pedido nuevo, configurable en `/stock/configuracion`, empieza en 60 días). Se marca "sugerido reordenar" cuando el stock actual cae a ese punto o menos.
+7. **Salidas**: por ahora es un formulario simple en `/stock/movimientos` (sin login, cualquiera con acceso puede registrar) — igual que hoy Isaac trabaja. La "firma" de salida con encargado, permisos y auditoría se deja pendiente hasta que Isaac delegue esa tarea a alguien (ver abajo): requiere login real primero.
+8. **Stock en Full** (lo que Mercado Libre tiene en sus centros de distribución) se deja para el Módulo 3, cuando se conecte la API de Mercado Libre — ahí se podrá reconciliar automáticamente contra lo que salió de bodega.
+
 ## Lo que se deja para después (NO hacer todavía)
 
-- Login / usuarios / permisos por colaborador (Isaac lo quiere, pero se platica aparte antes de construirlo).
-- Estudio de mercado, predicción de ventas, comparación "cómo me fue vs. lo esperado".
-- Detección de oportunidades / qué productos traer.
-- **Módulo 2 (Stock/Inventario)**: Isaac ya pidió que, al marcar un contenedor como "Recibido", se genere inventario automático. Es el arranque natural del módulo de stock — antes de construirlo hay que platicar con Isaac: ¿el stock se guarda por SKU? ¿qué pasa si el mismo producto viene en varios contenedores? ¿qué costo se guarda al entrar a stock? No meterlo de colado en cambios chicos de Pedidos/Contenedores.
-- Ventas, conexión con Mercado Libre / Amazon MX.
+- Login / usuarios / permisos por colaborador. Isaac ya confirmó que por ahora solo él usa el sistema, así que no hace falta todavía — pero es un REQUISITO antes de construir la "firma" de salidas con encargado: sin cuentas de usuario no hay forma de saber quién hizo qué, y eso es justo lo que Isaac pidió para prevenir robo hormiga. Cuando llegue el momento: dos roles (Administrador / Encargado de bodega), cada salida queda con usuario+fecha, no se puede editar/borrar después (solo cancelar con motivo), y una pantalla de auditoría para que Isaac revise al encargado.
+- Estudio de mercado, predicción de ventas, comparación "cómo me fue vs. lo esperado", temporadas por categoría.
+- Ventas, conexión con Mercado Libre / Amazon MX (Módulo 3) — incluye sincronizar "Stock en Full" y reconciliar salidas contra lo que ML confirmó recibido.
 - Migrar el histórico de contenedores anteriores al 10 (Isaac los borró del Excel por pesado; se agregarán después cuando el sistema esté listo).

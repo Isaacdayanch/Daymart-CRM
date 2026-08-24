@@ -16,7 +16,7 @@ export function CamposProducto({
   proveedorPorDefecto,
   esRestock = false,
 }: {
-  inicial?: Producto;
+  inicial?: Partial<Producto>;
   fabricaPorDefecto?: string | null;
   proveedorPorDefecto?: string | null;
   /** true cuando se rellenan los campos a partir de un producto anterior

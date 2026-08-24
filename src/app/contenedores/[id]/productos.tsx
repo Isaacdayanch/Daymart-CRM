@@ -4,7 +4,7 @@ import { useState } from "react";
 import Image from "next/image";
 import { formatoPesos } from "@/lib/formato";
 import { cartones, cbmProducto, costoFinalPorPieza } from "@/lib/calculos";
-import type { Producto } from "@/lib/tipos";
+import type { PendienteChina, Producto } from "@/lib/tipos";
 import { agregarProducto, actualizarProducto, eliminarProducto, moverProducto } from "./actions";
 import { CamposProducto } from "./campos-producto";
 
@@ -16,6 +16,7 @@ export function Productos({
   fabricaPrincipal,
   proveedorPrincipal,
   catalogo,
+  pendientesChina,
 }: {
   contenedorId: string;
   productos: Producto[];
@@ -24,16 +25,20 @@ export function Productos({
   fabricaPrincipal: string | null;
   proveedorPrincipal: string | null;
   catalogo: Producto[];
+  pendientesChina: PendienteChina[];
 }) {
   const [vista, setVista] = useState<"tabla" | "galeria">("tabla");
   const [editandoId, setEditandoId] = useState<string | null>(null);
   const [restockId, setRestockId] = useState("");
+  const [pendienteId, setPendienteId] = useState("");
   const productoRestock = catalogo.find((p) => p.id === restockId);
+  const pendiente = pendientesChina.find((p) => p.id === pendienteId);
 
   async function alAgregar(formData: FormData) {
     const resultado = await agregarProducto(contenedorId, formData);
     if (resultado?.error) alert(resultado.error);
     setRestockId("");
+    setPendienteId("");
   }
 
   const proveedores = Array.from(
@@ -276,11 +281,34 @@ export function Productos({
       )}
 
       <form
-        key={`${productos.length}-${restockId}`}
+        key={`${productos.length}-${restockId}-${pendienteId}`}
         action={alAgregar}
         className="mt-4 space-y-3 border-t border-zinc-100 pt-4"
       >
         <p className="text-xs font-medium text-zinc-500">Agregar producto</p>
+
+        {pendientesChina.length > 0 && (
+          <div>
+            <label className="block text-xs font-medium text-amber-700">
+              ¿Es mercancía pendiente de China?
+            </label>
+            <select
+              value={pendienteId}
+              onChange={(e) => {
+                setPendienteId(e.target.value);
+                setRestockId("");
+              }}
+              className="mt-1 block w-full rounded-lg border border-amber-300 px-3 py-2 text-sm focus:border-amber-500 focus:ring-amber-500"
+            >
+              <option value="">— No, es otra cosa —</option>
+              {pendientesChina.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.sku} — {p.nombre} ({p.cantidad_pendiente} pzas pendientes)
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {catalogo.length > 0 && (
           <div>
@@ -289,7 +317,10 @@ export function Productos({
             </label>
             <select
               value={restockId}
-              onChange={(e) => setRestockId(e.target.value)}
+              onChange={(e) => {
+                setRestockId(e.target.value);
+                setPendienteId("");
+              }}
               className="mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500"
             >
               <option value="">— Producto nuevo, llenar desde cero —</option>
@@ -302,9 +333,29 @@ export function Productos({
           </div>
         )}
 
+        {pendiente && <input type="hidden" name="pendiente_origen_id" value={pendiente.id} />}
+
         <CamposProducto
-          inicial={productoRestock}
-          esRestock={Boolean(productoRestock)}
+          inicial={
+            pendiente
+              ? {
+                  categoria: pendiente.categoria ?? "",
+                  fabrica: pendiente.fabrica,
+                  proveedor: pendiente.proveedor,
+                  imagen_url: pendiente.imagen_url,
+                  sku: pendiente.sku,
+                  nombre: pendiente.nombre,
+                  memo: pendiente.memo,
+                  cantidad: pendiente.cantidad_pendiente,
+                  precio_dolares: pendiente.precio_dolares,
+                  piezas_por_caja: pendiente.piezas_por_caja,
+                  largo_cm: pendiente.largo_cm,
+                  ancho_cm: pendiente.ancho_cm,
+                  alto_cm: pendiente.alto_cm,
+                }
+              : productoRestock
+          }
+          esRestock={Boolean(productoRestock) && !pendiente}
           fabricaPorDefecto={fabricaPrincipal}
           proveedorPorDefecto={proveedorPrincipal}
         />

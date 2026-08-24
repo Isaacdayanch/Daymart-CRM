@@ -4,20 +4,11 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { skuSugerido } from "@/lib/calculos";
+import { numero, texto } from "@/lib/form-helpers";
 import type { EstadoContenedor, TipoDocumento } from "@/lib/tipos";
 
-function numero(formData: FormData, campo: string) {
-  const valor = formData.get(campo);
-  return valor ? Number(valor) : 0;
-}
-
-function texto(formData: FormData, campo: string) {
-  const valor = formData.get(campo);
-  return typeof valor === "string" && valor.trim() ? valor.trim() : null;
-}
-
 /** Si el estado cambió, guarda el momento en el historial del contenedor. */
-async function registrarHistorialSiCambia(
+export async function registrarHistorialSiCambia(
   supabase: Awaited<ReturnType<typeof createClient>>,
   contenedorId: string,
   estadoNuevo: EstadoContenedor,
@@ -123,6 +114,43 @@ async function subirImagenProducto(
   return { url, error: null };
 }
 
+/** Si el producto se cargó desde "mercancía pendiente en China", descuenta o
+ * cierra ese pendiente según cuánto se acaba de consolidar. */
+async function resolverPendienteChinaSiAplica(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  contenedorId: string,
+  formData: FormData,
+  cantidadAgregada: number,
+) {
+  const pendienteId = texto(formData, "pendiente_origen_id");
+  if (!pendienteId) return;
+
+  const { data: pendiente } = await supabase
+    .from("pendientes_china")
+    .select("cantidad_pendiente")
+    .eq("id", pendienteId)
+    .single();
+  if (!pendiente) return;
+
+  const restante = pendiente.cantidad_pendiente - cantidadAgregada;
+  if (restante <= 0) {
+    await supabase
+      .from("pendientes_china")
+      .update({
+        estado: "ASIGNADA",
+        contenedor_asignado_id: contenedorId,
+        actualizado_en: new Date().toISOString(),
+      })
+      .eq("id", pendienteId);
+  } else {
+    await supabase
+      .from("pendientes_china")
+      .update({ cantidad_pendiente: restante, actualizado_en: new Date().toISOString() })
+      .eq("id", pendienteId);
+  }
+  revalidatePath("/stock/pendientes");
+}
+
 export async function agregarProducto(contenedorId: string, formData: FormData) {
   const supabase = await createClient();
 
@@ -135,6 +163,7 @@ export async function agregarProducto(contenedorId: string, formData: FormData) 
     formData,
   );
   const imagenUrl = imagenSubida ?? texto(formData, "imagen_url_previa");
+  const cantidad = numero(formData, "cantidad");
 
   const { data: ultimo } = await supabase
     .from("productos")
@@ -153,7 +182,7 @@ export async function agregarProducto(contenedorId: string, formData: FormData) 
     sku,
     nombre,
     memo: texto(formData, "memo"),
-    cantidad: numero(formData, "cantidad"),
+    cantidad,
     precio_dolares: numero(formData, "precio_dolares"),
     piezas_por_caja: numero(formData, "piezas_por_caja") || 1,
     largo_cm: numero(formData, "largo_cm"),
@@ -161,6 +190,8 @@ export async function agregarProducto(contenedorId: string, formData: FormData) 
     alto_cm: numero(formData, "alto_cm"),
     orden: (ultimo?.orden ?? 0) + 1,
   });
+
+  await resolverPendienteChinaSiAplica(supabase, contenedorId, formData, cantidad);
 
   revalidatePath(`/contenedores/${contenedorId}`);
   return { error: errorImagen ? `La foto no se pudo subir: ${errorImagen}` : null };

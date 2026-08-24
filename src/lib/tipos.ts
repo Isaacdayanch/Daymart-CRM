@@ -26,6 +26,7 @@ export interface Contenedor {
   fabrica_principal: string | null;
   proveedor_principal: string | null;
   eliminado_en: string | null;
+  stock_generado_en: string | null;
   creado_en: string;
   actualizado_en: string;
 }
@@ -93,4 +94,58 @@ export interface Producto {
   orden: number;
   creado_en: string;
   actualizado_en: string;
+}
+
+export interface Bodega {
+  id: string;
+  nombre: string;
+  eliminado_en: string | null;
+  creado_en: string;
+}
+
+export type TipoMovimiento = "ENTRADA" | "SALIDA";
+
+export interface MovimientoStock {
+  id: string;
+  tipo: TipoMovimiento;
+  sku: string;
+  nombre: string;
+  bodega_id: string;
+  cantidad: number;
+  costo_unitario_pesos: number;
+  contenedor_id: string | null;
+  destino: string | null;
+  referencia: string | null;
+  creado_en: string;
+}
+
+export type EstadoPendienteChina = "PENDIENTE" | "ASIGNADA" | "CANCELADA";
+
+export interface PendienteChina {
+  id: string;
+  contenedor_origen_id: string | null;
+  sku: string;
+  nombre: string;
+  categoria: string | null;
+  fabrica: string | null;
+  proveedor: string | null;
+  imagen_url: string | null;
+  memo: string | null;
+  precio_dolares: number;
+  piezas_por_caja: number;
+  largo_cm: number;
+  ancho_cm: number;
+  alto_cm: number;
+  cantidad_pendiente: number;
+  pagado: boolean;
+  notas: string | null;
+  estado: EstadoPendienteChina;
+  contenedor_asignado_id: string | null;
+  creado_en: string;
+  actualizado_en: string;
+}
+
+export interface ConfiguracionStock {
+  id: number;
+  dias_espera: number;
 }
