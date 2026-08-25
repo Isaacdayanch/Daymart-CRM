@@ -68,6 +68,7 @@ export async function agregarStockManual(formData: FormData) {
     bodega_id: bodegaId,
     cantidad,
     piezas_por_caja: Number(formData.get("piezas_por_caja")) || 1,
+    imagen_url: texto(formData, "imagen_url"),
     costo_unitario_pesos: Number(formData.get("costo_unitario_pesos")) || 0,
     referencia: texto(formData, "referencia") ?? "Carga manual de stock existente",
   });

@@ -27,36 +27,51 @@ export function FormularioStockManual({ bodegas, catalogo }: { bodegas: Bodega[]
     >
       {error && <p className="text-sm text-red-600">{error}</p>}
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div>
-          <label className="block text-xs font-medium text-zinc-500">SKU</label>
-          <input
-            type="text"
-            name="sku"
-            list="catalogo-skus"
-            required
-            value={sku}
-            onChange={(e) => setSku(e.target.value)}
-            className="mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm font-mono focus:border-zinc-500 focus:ring-zinc-500"
+      <div className="flex items-start gap-4">
+        {productoCatalogo?.imagen_url ? (
+          // eslint-disable-next-line @next/next/no-img-element -- vista previa rápida en un form
+          <img
+            src={productoCatalogo.imagen_url}
+            alt={productoCatalogo.nombre}
+            className="h-16 w-16 shrink-0 rounded-lg object-cover"
           />
-          <datalist id="catalogo-skus">
-            {catalogo.map((p) => (
-              <option key={p.sku} value={p.sku}>
-                {p.nombre}
-              </option>
-            ))}
-          </datalist>
+        ) : (
+          <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-zinc-100 text-[10px] text-zinc-400">
+            Sin foto
+          </div>
+        )}
+        <div className="grid flex-1 gap-3 sm:grid-cols-2">
+          <div>
+            <label className="block text-xs font-medium text-zinc-500">SKU</label>
+            <input
+              type="text"
+              name="sku"
+              list="catalogo-skus"
+              required
+              value={sku}
+              onChange={(e) => setSku(e.target.value)}
+              className="mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm font-mono focus:border-zinc-500 focus:ring-zinc-500"
+            />
+            <datalist id="catalogo-skus">
+              {catalogo.map((p) => (
+                <option key={p.sku} value={p.sku}>
+                  {p.nombre}
+                </option>
+              ))}
+            </datalist>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-zinc-500">Nombre del producto</label>
+            <input
+              type="text"
+              name="nombre"
+              required
+              defaultValue={productoCatalogo?.nombre ?? ""}
+              className="mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500"
+            />
+          </div>
         </div>
-        <div>
-          <label className="block text-xs font-medium text-zinc-500">Nombre del producto</label>
-          <input
-            type="text"
-            name="nombre"
-            required
-            defaultValue={productoCatalogo?.nombre ?? ""}
-            className="mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500"
-          />
-        </div>
+        <input type="hidden" name="imagen_url" value={productoCatalogo?.imagen_url ?? ""} />
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">

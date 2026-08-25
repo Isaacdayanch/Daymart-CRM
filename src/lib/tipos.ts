@@ -113,6 +113,7 @@ export interface MovimientoStock {
   bodega_id: string;
   cantidad: number;
   piezas_por_caja: number;
+  imagen_url: string | null;
   costo_unitario_pesos: number;
   contenedor_id: string | null;
   destino: string | null;

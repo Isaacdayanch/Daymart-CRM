@@ -107,8 +107,24 @@ export default async function ResumenStock() {
                 {resumenes.map((r) => (
                   <tr key={r.sku} className={r.necesitaReorden && r.stockActual > 0 ? "bg-amber-50/40" : ""}>
                     <td className="px-6 py-3">
-                      <p className="font-medium text-zinc-900">{r.nombre}</p>
-                      <p className="font-mono text-xs text-zinc-400">{r.sku}</p>
+                      <div className="flex items-center gap-3">
+                        {r.imagenUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element -- miniatura en tabla, tamaño fijo
+                          <img
+                            src={r.imagenUrl}
+                            alt={r.nombre}
+                            className="h-10 w-10 shrink-0 rounded-lg object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-100 text-[9px] text-zinc-400">
+                            Sin foto
+                          </div>
+                        )}
+                        <div>
+                          <p className="font-medium text-zinc-900">{r.nombre}</p>
+                          <p className="font-mono text-xs text-zinc-400">{r.sku}</p>
+                        </div>
+                      </div>
                     </td>
                     <td className="px-6 py-3 text-right font-semibold text-zinc-900">{r.stockActual}</td>
                     <td className="px-6 py-3 text-right text-xs text-zinc-400">

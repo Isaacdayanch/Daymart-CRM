@@ -13,6 +13,7 @@ export interface ResumenSku {
   valorInventario: number;
   piezasPorCaja: number;
   cajas: number;
+  imagenUrl: string | null;
   rotacionDiaria: number;
   puntoReorden: number;
   necesitaReorden: boolean;
@@ -84,10 +85,12 @@ export function resumenPorSku(movimientos: MovimientoStock[], diasEspera: number
     const actual = stockActual(movs);
     const punto = puntoReorden(rotacion, diasEspera);
 
-    // Piezas por caja: la de la entrada/ajuste más reciente (las salidas no
-    // siempre la conocen con precisión, así que no se toman en cuenta aquí).
+    // Piezas por caja y foto: las de la entrada/ajuste más reciente (las
+    // salidas no siempre las conocen con precisión, así que no se toman en
+    // cuenta aquí).
     const movsConEmpaque = movs.filter((m) => m.tipo === "ENTRADA" || m.tipo === "AJUSTE");
-    const piezasPorCaja = movsConEmpaque.length ? masReciente(movsConEmpaque).piezas_por_caja || 1 : 1;
+    const masRecienteConEmpaque = movsConEmpaque.length ? masReciente(movsConEmpaque) : null;
+    const piezasPorCaja = masRecienteConEmpaque?.piezas_por_caja || 1;
 
     resumenes.push({
       sku,
@@ -98,6 +101,7 @@ export function resumenPorSku(movimientos: MovimientoStock[], diasEspera: number
       valorInventario: actual * costoProm,
       piezasPorCaja,
       cajas: piezasPorCaja > 0 ? actual / piezasPorCaja : 0,
+      imagenUrl: masRecienteConEmpaque?.imagen_url ?? null,
       rotacionDiaria: rotacion,
       puntoReorden: punto,
       necesitaReorden: actual <= punto,
