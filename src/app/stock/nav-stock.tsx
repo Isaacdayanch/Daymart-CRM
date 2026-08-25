@@ -7,6 +7,7 @@ const PESTANAS = [
   { href: "/stock", etiqueta: "Resumen" },
   { href: "/stock/movimientos", etiqueta: "Movimientos" },
   { href: "/stock/pendientes", etiqueta: "Pendiente en China" },
+  { href: "/stock/agregar", etiqueta: "+ Agregar stock" },
   { href: "/stock/bodegas", etiqueta: "Bodegas" },
   { href: "/stock/configuracion", etiqueta: "Configuración" },
 ];

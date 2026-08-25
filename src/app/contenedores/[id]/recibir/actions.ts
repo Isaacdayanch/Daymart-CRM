@@ -76,6 +76,7 @@ export async function confirmarRecepcion(contenedorId: string, formData: FormDat
       nombre: p.nombre,
       bodega_id: bodegaId,
       cantidad: p.cantidad,
+      piezas_por_caja: p.piezas_por_caja,
       costo_unitario_pesos: costoFinalPorPieza(p, costoPorCbm, tipoCambioMercancia),
       contenedor_id: contenedorId,
       referencia: `Recepción contenedor ${contenedor.numero}`,
@@ -94,5 +95,59 @@ export async function confirmarRecepcion(contenedorId: string, formData: FormDat
   revalidatePath(`/contenedores/${contenedorId}`);
   revalidatePath("/stock");
   revalidatePath("/stock/pendientes");
+  redirect(`/contenedores/${contenedorId}`);
+}
+
+/** Corrige una recepción ya confirmada (Isaac hizo un conteo físico y algo
+ * no cuadraba). No vuelve a crear ENTRADAs — solo guarda la diferencia como
+ * un movimiento de AJUSTE, para no duplicar lo que ya estaba en stock. */
+export async function editarRecepcion(contenedorId: string, formData: FormData) {
+  const supabase = await createClient();
+  const bodegaId = formData.get("bodega_id") as string;
+  if (!bodegaId) return;
+
+  const [{ data: contenedor }, { data: productos }, { data: entradasPrevias }] = await Promise.all([
+    supabase.from("contenedores").select("*").eq("id", contenedorId).single<Contenedor>(),
+    supabase.from("productos").select("*").eq("contenedor_id", contenedorId).returns<Producto[]>(),
+    supabase
+      .from("movimientos_stock")
+      .select("*")
+      .eq("contenedor_id", contenedorId)
+      .eq("tipo", "ENTRADA")
+      .returns<{ sku: string; costo_unitario_pesos: number }[]>(),
+  ]);
+
+  if (!contenedor || !productos || !contenedor.stock_generado_en) return;
+
+  const costoPorSku = new Map((entradasPrevias ?? []).map((m) => [m.sku, m.costo_unitario_pesos]));
+  const ajustes: Record<string, unknown>[] = [];
+
+  for (const producto of productos) {
+    const cantidadNueva = Number(formData.get(`cantidad_${producto.id}`)) || 0;
+    const diferencia = cantidadNueva - producto.cantidad;
+    if (diferencia === 0) continue;
+
+    ajustes.push({
+      tipo: "AJUSTE",
+      sku: producto.sku,
+      nombre: producto.nombre,
+      bodega_id: bodegaId,
+      cantidad: diferencia,
+      piezas_por_caja: producto.piezas_por_caja,
+      costo_unitario_pesos: costoPorSku.get(producto.sku) ?? 0,
+      contenedor_id: contenedorId,
+      referencia: `Corrección de conteo — contenedor ${contenedor.numero}`,
+    });
+
+    await supabase.from("productos").update({ cantidad: cantidadNueva }).eq("id", producto.id);
+  }
+
+  if (ajustes.length) {
+    await supabase.from("movimientos_stock").insert(ajustes);
+  }
+
+  revalidatePath(`/contenedores/${contenedorId}`);
+  revalidatePath("/stock");
+  revalidatePath("/stock/movimientos");
   redirect(`/contenedores/${contenedorId}`);
 }

@@ -26,8 +26,9 @@ export async function registrarSalida(formData: FormData) {
   const nombre = texto(formData, "nombre");
   const bodegaId = formData.get("bodega_id") as string;
   const cantidad = Number(formData.get("cantidad")) || 0;
-  if (!sku || !nombre || !bodegaId || cantidad <= 0) {
-    return { error: "Falta el SKU, la bodega o la cantidad." };
+  const destino = texto(formData, "destino");
+  if (!sku || !nombre || !bodegaId || !destino || cantidad <= 0) {
+    return { error: "Falta el SKU, la bodega, la categoría o la cantidad." };
   }
 
   await supabase.from("movimientos_stock").insert({
@@ -36,8 +37,39 @@ export async function registrarSalida(formData: FormData) {
     nombre,
     bodega_id: bodegaId,
     cantidad,
-    destino: texto(formData, "destino"),
+    piezas_por_caja: Number(formData.get("piezas_por_caja")) || 1,
+    destino,
     referencia: texto(formData, "referencia"),
+  });
+
+  revalidatePath("/stock");
+  revalidatePath("/stock/movimientos");
+  return { error: null };
+}
+
+/** Da de alta stock que ya existe físicamente pero no pasó por el flujo
+ * normal de "recibir contenedor" — pensado para cargar de una vez el
+ * inventario de contenedores anteriores sin tener que recrearlos completos. */
+export async function agregarStockManual(formData: FormData) {
+  const supabase = await createClient();
+
+  const sku = texto(formData, "sku");
+  const nombre = texto(formData, "nombre");
+  const bodegaId = formData.get("bodega_id") as string;
+  const cantidad = Number(formData.get("cantidad")) || 0;
+  if (!sku || !nombre || !bodegaId || cantidad <= 0) {
+    return { error: "Falta el SKU, el nombre, la bodega o la cantidad." };
+  }
+
+  await supabase.from("movimientos_stock").insert({
+    tipo: "ENTRADA",
+    sku,
+    nombre,
+    bodega_id: bodegaId,
+    cantidad,
+    piezas_por_caja: Number(formData.get("piezas_por_caja")) || 1,
+    costo_unitario_pesos: Number(formData.get("costo_unitario_pesos")) || 0,
+    referencia: texto(formData, "referencia") ?? "Carga manual de stock existente",
   });
 
   revalidatePath("/stock");

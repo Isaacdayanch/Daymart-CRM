@@ -76,8 +76,14 @@ export default async function ResumenStock() {
       )}
 
       <div className="rounded-2xl border border-zinc-200 bg-white shadow-sm">
-        <div className="border-b border-zinc-100 p-6">
+        <div className="flex items-center justify-between border-b border-zinc-100 p-6">
           <h2 className="text-sm font-semibold text-zinc-900">Stock por producto</h2>
+          <Link
+            href="/stock/imprimir"
+            className="text-xs font-medium text-zinc-500 transition hover:text-zinc-900"
+          >
+            Imprimir hoja de conteo →
+          </Link>
         </div>
         {resumenes.length === 0 ? (
           <p className="p-6 text-sm text-zinc-500">
@@ -89,7 +95,8 @@ export default async function ResumenStock() {
               <thead>
                 <tr className="border-b border-zinc-100 text-xs text-zinc-400">
                   <th className="px-6 py-2.5 font-medium">Producto</th>
-                  <th className="px-6 py-2.5 font-medium text-right">Stock</th>
+                  <th className="px-6 py-2.5 font-medium text-right">Piezas</th>
+                  <th className="px-6 py-2.5 font-medium text-right">Cajas</th>
                   <th className="px-6 py-2.5 font-medium text-right">Costo prom.</th>
                   <th className="px-6 py-2.5 font-medium text-right">Valor</th>
                   <th className="px-6 py-2.5 font-medium text-right">Rotación/día</th>
@@ -104,6 +111,9 @@ export default async function ResumenStock() {
                       <p className="font-mono text-xs text-zinc-400">{r.sku}</p>
                     </td>
                     <td className="px-6 py-3 text-right font-semibold text-zinc-900">{r.stockActual}</td>
+                    <td className="px-6 py-3 text-right text-xs text-zinc-400">
+                      {r.cajas > 0 ? r.cajas.toFixed(1) : "—"}
+                    </td>
                     <td className="px-6 py-3 text-right text-zinc-600">{formatoPesos(r.costoPromedio)}</td>
                     <td className="px-6 py-3 text-right text-zinc-600">{formatoPesos(r.valorInventario)}</td>
                     <td className="px-6 py-3 text-right text-zinc-600">{r.rotacionDiaria.toFixed(2)}</td>

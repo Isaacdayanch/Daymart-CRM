@@ -33,7 +33,12 @@ export default async function MovimientosStock() {
     <div className="space-y-6">
       <div className="flex justify-end">
         <FormularioSalida
-          opciones={resumenes.map((r) => ({ sku: r.sku, nombre: r.nombre, stockActual: r.stockActual }))}
+          opciones={resumenes.map((r) => ({
+            sku: r.sku,
+            nombre: r.nombre,
+            stockActual: r.stockActual,
+            piezasPorCaja: r.piezasPorCaja,
+          }))}
           bodegas={listaBodegas}
         />
       </div>
@@ -73,10 +78,12 @@ export default async function MovimientosStock() {
                         className={`rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${
                           m.tipo === "ENTRADA"
                             ? "bg-emerald-50 text-emerald-700 ring-emerald-600/20"
-                            : "bg-sky-50 text-sky-700 ring-sky-600/20"
+                            : m.tipo === "SALIDA"
+                              ? "bg-sky-50 text-sky-700 ring-sky-600/20"
+                              : "bg-violet-50 text-violet-700 ring-violet-600/20"
                         }`}
                       >
-                        {m.tipo === "ENTRADA" ? "Entrada" : "Salida"}
+                        {m.tipo === "ENTRADA" ? "Entrada" : m.tipo === "SALIDA" ? "Salida" : "Ajuste"}
                       </span>
                     </td>
                     <td className="px-6 py-3">
@@ -85,7 +92,7 @@ export default async function MovimientosStock() {
                     </td>
                     <td className="px-6 py-3 text-zinc-600">{bodegasPorId.get(m.bodega_id) ?? "—"}</td>
                     <td className="px-6 py-3 text-right font-semibold text-zinc-900">
-                      {m.tipo === "ENTRADA" ? "+" : "-"}
+                      {m.tipo === "SALIDA" ? "-" : m.tipo === "AJUSTE" && m.cantidad < 0 ? "" : "+"}
                       {m.cantidad}
                     </td>
                     <td className="px-6 py-3 text-xs text-zinc-500">

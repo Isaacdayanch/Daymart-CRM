@@ -179,6 +179,12 @@ export default async function DetalleContenedor({
                   {formatoPesos(costoTotal - valorEntradoStock)}
                 </p>
               </div>
+              <Link
+                href={`/contenedores/${contenedor.id}/recibir`}
+                className="text-xs font-medium text-zinc-500 hover:text-zinc-900"
+              >
+                Editar recepción →
+              </Link>
             </div>
             {Math.abs(costoTotal - valorEntradoStock) >= 1 && (
               <p className="mt-2 text-xs text-zinc-500">

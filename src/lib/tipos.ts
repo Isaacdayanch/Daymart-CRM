@@ -103,7 +103,7 @@ export interface Bodega {
   creado_en: string;
 }
 
-export type TipoMovimiento = "ENTRADA" | "SALIDA";
+export type TipoMovimiento = "ENTRADA" | "SALIDA" | "AJUSTE";
 
 export interface MovimientoStock {
   id: string;
@@ -112,12 +112,15 @@ export interface MovimientoStock {
   nombre: string;
   bodega_id: string;
   cantidad: number;
+  piezas_por_caja: number;
   costo_unitario_pesos: number;
   contenedor_id: string | null;
   destino: string | null;
   referencia: string | null;
   creado_en: string;
 }
+
+export const CATEGORIAS_SALIDA = ["Full", "Paquetería", "Piezas", "Muestra", "Devolución", "Ajuste"] as const;
 
 export type EstadoPendienteChina = "PENDIENTE" | "ASIGNADA" | "CANCELADA";
 

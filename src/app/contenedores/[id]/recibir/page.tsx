@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import type { Bodega, Contenedor, Producto } from "@/lib/tipos";
+import type { Bodega, Contenedor, MovimientoStock, Producto } from "@/lib/tipos";
 import { FormularioRecepcion } from "./formulario-recepcion";
 
 export default async function RecibirContenedor({
@@ -20,7 +20,9 @@ export default async function RecibirContenedor({
 
   if (!contenedor) notFound();
 
-  const [{ data: productos }, { data: bodegas }] = await Promise.all([
+  const modoEdicion = Boolean(contenedor.stock_generado_en);
+
+  const [{ data: productos }, { data: bodegas }, { data: entradasPrevias }] = await Promise.all([
     supabase
       .from("productos")
       .select("*")
@@ -28,10 +30,19 @@ export default async function RecibirContenedor({
       .order("orden", { ascending: true })
       .returns<Producto[]>(),
     supabase.from("bodegas").select("*").is("eliminado_en", null).order("nombre").returns<Bodega[]>(),
+    modoEdicion
+      ? supabase
+          .from("movimientos_stock")
+          .select("*")
+          .eq("contenedor_id", id)
+          .eq("tipo", "ENTRADA")
+          .returns<MovimientoStock[]>()
+      : Promise.resolve({ data: null }),
   ]);
 
   const listaProductos = productos ?? [];
   const listaBodegas = bodegas ?? [];
+  const bodegaOriginalId = entradasPrevias?.[0]?.bodega_id ?? listaBodegas[0]?.id;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-zinc-50 to-white">
@@ -40,7 +51,7 @@ export default async function RecibirContenedor({
           <div>
             <p className="text-xs font-medium tracking-wide text-zinc-400 uppercase">Daymart · Stock</p>
             <h1 className="text-xl font-semibold tracking-tight text-zinc-900">
-              Recibir contenedor {contenedor.numero}
+              {modoEdicion ? "Editar recepción — " : "Recibir "}contenedor {contenedor.numero}
             </h1>
           </div>
           <Link
@@ -53,15 +64,7 @@ export default async function RecibirContenedor({
       </header>
 
       <main className="mx-auto max-w-3xl px-4 py-10 sm:px-6">
-        {contenedor.stock_generado_en ? (
-          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-6 text-sm text-emerald-800">
-            Este contenedor ya se recibió a stock. Si necesitas hacer un ajuste, ve a{" "}
-            <Link href="/stock/movimientos" className="font-medium underline">
-              el libro de movimientos
-            </Link>
-            .
-          </div>
-        ) : listaProductos.length === 0 ? (
+        {listaProductos.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-zinc-300 bg-white p-10 text-center text-sm text-zinc-500">
             Este contenedor no tiene productos capturados todavía.
           </div>
@@ -76,10 +79,17 @@ export default async function RecibirContenedor({
         ) : (
           <>
             <p className="mb-6 text-sm leading-relaxed text-zinc-500">
-              Confirma cuánto llegó realmente de cada producto. Si algo se quedó en China, ajusta la
-              cantidad y cuéntanos qué pasó — queda guardado como pendiente para tu siguiente pedido.
+              {modoEdicion
+                ? "Hiciste un conteo físico y algo no cuadra. Corrige la cantidad de cada producto — el stock se ajusta solo con la diferencia, sin duplicar lo que ya estaba."
+                : "Confirma cuánto llegó realmente de cada producto. Si algo se quedó en China, ajusta la cantidad y cuéntanos qué pasó — queda guardado como pendiente para tu siguiente pedido."}
             </p>
-            <FormularioRecepcion contenedorId={id} productos={listaProductos} bodegas={listaBodegas} />
+            <FormularioRecepcion
+              contenedorId={id}
+              productos={listaProductos}
+              bodegas={listaBodegas}
+              modoEdicion={modoEdicion}
+              bodegaOriginalId={bodegaOriginalId}
+            />
           </>
         )}
       </main>

@@ -1,13 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import type { Bodega } from "@/lib/tipos";
+import { CATEGORIAS_SALIDA, type Bodega } from "@/lib/tipos";
 import { registrarSalida } from "../actions";
 
 interface Opcion {
   sku: string;
   nombre: string;
   stockActual: number;
+  piezasPorCaja: number;
 }
 
 export function FormularioSalida({ opciones, bodegas }: { opciones: Opcion[]; bodegas: Bodega[] }) {
@@ -66,6 +67,7 @@ export function FormularioSalida({ opciones, bodegas }: { opciones: Opcion[]; bo
             </select>
             <input type="hidden" name="sku" value={sku} />
             <input type="hidden" name="nombre" value={opcionActual?.nombre ?? ""} />
+            <input type="hidden" name="piezas_por_caja" value={opcionActual?.piezasPorCaja ?? 1} />
           </div>
           <div>
             <label className="block text-xs font-medium text-zinc-500">Bodega</label>
@@ -95,13 +97,22 @@ export function FormularioSalida({ opciones, bodegas }: { opciones: Opcion[]; bo
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-zinc-500">Destino</label>
-            <input
-              type="text"
+            <label className="block text-xs font-medium text-zinc-500">Categoría</label>
+            <select
               name="destino"
-              placeholder="Ej. Full, venta directa"
+              required
+              defaultValue=""
               className="mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500"
-            />
+            >
+              <option value="" disabled>
+                Selecciona
+              </option>
+              {CATEGORIAS_SALIDA.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
           </div>
           <div>
             <label className="block text-xs font-medium text-zinc-500">Comentario</label>

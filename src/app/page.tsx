@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { costoTotalContenedor } from "@/lib/calculos";
 import { formatoPesos, ESTILO_ESTADO } from "@/lib/formato";
 import { ESTADOS_CONTENEDOR, type Contenedor, type PagoMercancia } from "@/lib/tipos";
+import { MenuMas } from "./menu-mas";
 
 function etiquetaEstado(estado: Contenedor["estado"]) {
   return ESTADOS_CONTENEDOR.find((e) => e.valor === estado)?.etiqueta ?? estado;
@@ -34,19 +35,20 @@ export default async function Home() {
             <p className="text-xs font-medium tracking-wide text-zinc-400 uppercase">Daymart</p>
             <h1 className="text-lg font-semibold text-zinc-900">Pedidos / Contenedores</h1>
           </div>
-          <div className="flex items-center gap-4">
-            <Link href="/stock" className="text-sm font-medium text-zinc-500 hover:text-zinc-900">
+          <div className="flex items-center gap-2">
+            <Link
+              href="/stock"
+              className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 transition hover:border-zinc-400 hover:bg-zinc-50"
+            >
               Stock
-            </Link>
-            <Link href="/papelera" className="text-sm font-medium text-zinc-500 hover:text-zinc-900">
-              Papelera
             </Link>
             <Link
               href="/contenedores/nuevo"
-              className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700"
+              className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-700"
             >
               + Nuevo contenedor
             </Link>
+            <MenuMas />
           </div>
         </div>
       </header>
