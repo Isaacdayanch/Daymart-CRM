@@ -12,6 +12,15 @@ export async function confirmarRecepcion(contenedorId: string, formData: FormDat
   const bodegaId = formData.get("bodega_id") as string;
   if (!bodegaId) return;
 
+  // Por defecto es "ahora", pero Isaac puede poner una fecha pasada al
+  // cargar contenedores históricos, para que el inventario quede fechado
+  // como realmente llegó.
+  const fechaCampo = formData.get("fecha_recepcion");
+  const fechaRecepcion =
+    typeof fechaCampo === "string" && fechaCampo
+      ? new Date(`${fechaCampo}T12:00:00`).toISOString()
+      : new Date().toISOString();
+
   const [{ data: contenedor }, { data: productos }, { data: abonos }] = await Promise.all([
     supabase.from("contenedores").select("*").eq("id", contenedorId).single<Contenedor>(),
     supabase
@@ -81,16 +90,17 @@ export async function confirmarRecepcion(contenedorId: string, formData: FormDat
       costo_unitario_pesos: costoFinalPorPieza(p, costoPorCbm, tipoCambioMercancia),
       contenedor_id: contenedorId,
       referencia: `Recepción contenedor ${contenedor.numero}`,
+      creado_en: fechaRecepcion,
     }));
 
   if (movimientos.length) {
     await supabase.from("movimientos_stock").insert(movimientos);
   }
 
-  await registrarHistorialSiCambia(supabase, contenedorId, "RECIBIDO_BODEGA");
+  await registrarHistorialSiCambia(supabase, contenedorId, "RECIBIDO_BODEGA", fechaRecepcion);
   await supabase
     .from("contenedores")
-    .update({ estado: "RECIBIDO_BODEGA", stock_generado_en: new Date().toISOString() })
+    .update({ estado: "RECIBIDO_BODEGA", stock_generado_en: fechaRecepcion })
     .eq("id", contenedorId);
 
   revalidatePath(`/contenedores/${contenedorId}`);

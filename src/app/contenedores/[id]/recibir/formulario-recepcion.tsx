@@ -23,6 +23,8 @@ export function FormularioRecepcion({
   const [enviando, setEnviando] = useState(false);
 
   const accion = (modoEdicion ? editarRecepcion : confirmarRecepcion).bind(null, contenedorId);
+  const hoy = new Date();
+  const hoyTexto = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, "0")}-${String(hoy.getDate()).padStart(2, "0")}`;
 
   return (
     <form
@@ -33,19 +35,39 @@ export function FormularioRecepcion({
       className="space-y-4"
     >
       <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-        <label className="block text-xs font-medium text-zinc-500">Bodega</label>
-        <select
-          name="bodega_id"
-          required
-          defaultValue={bodegaOriginalId ?? bodegas[0]?.id}
-          className="mt-1.5 block w-full max-w-xs rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500"
-        >
-          {bodegas.map((b) => (
-            <option key={b.id} value={b.id}>
-              {b.nombre}
-            </option>
-          ))}
-        </select>
+        <div className={`grid gap-4 ${modoEdicion ? "" : "sm:grid-cols-2"}`}>
+          <div>
+            <label className="block text-xs font-medium text-zinc-500">Bodega</label>
+            <select
+              name="bodega_id"
+              required
+              defaultValue={bodegaOriginalId ?? bodegas[0]?.id}
+              className="mt-1.5 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500"
+            >
+              {bodegas.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.nombre}
+                </option>
+              ))}
+            </select>
+          </div>
+          {!modoEdicion && (
+            <div>
+              <label className="block text-xs font-medium text-zinc-500">Fecha de recepción</label>
+              <input
+                type="date"
+                name="fecha_recepcion"
+                defaultValue={hoyTexto}
+                max={hoyTexto}
+                required
+                className="mt-1.5 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500"
+              />
+              <p className="mt-1 text-xs text-zinc-400">
+                Hoy por defecto — cámbiala si estás cargando un contenedor de hace tiempo.
+              </p>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="space-y-3">

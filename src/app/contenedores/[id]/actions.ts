@@ -7,11 +7,14 @@ import { skuSugerido } from "@/lib/calculos";
 import { nombreArchivoSeguro, numero, texto } from "@/lib/form-helpers";
 import type { EstadoContenedor, TipoDocumento } from "@/lib/tipos";
 
-/** Si el estado cambió, guarda el momento en el historial del contenedor. */
+/** Si el estado cambió, guarda el momento en el historial del contenedor.
+ * Por defecto usa la fecha/hora actual, pero se puede pasar una fecha
+ * explícita (ej. al recibir un contenedor histórico con fecha pasada). */
 export async function registrarHistorialSiCambia(
   supabase: Awaited<ReturnType<typeof createClient>>,
   contenedorId: string,
   estadoNuevo: EstadoContenedor,
+  fecha?: string,
 ) {
   const { data: actual } = await supabase
     .from("contenedores")
@@ -22,7 +25,7 @@ export async function registrarHistorialSiCambia(
   if (actual?.estado !== estadoNuevo) {
     await supabase
       .from("historial_estados_contenedor")
-      .insert({ contenedor_id: contenedorId, estado: estadoNuevo });
+      .insert({ contenedor_id: contenedorId, estado: estadoNuevo, ...(fecha ? { fecha } : {}) });
   }
 }
 
