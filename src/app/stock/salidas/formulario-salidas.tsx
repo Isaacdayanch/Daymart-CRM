@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { CATEGORIAS_SALIDA, type Bodega } from "@/lib/tipos";
 import { registrarSalidasLote } from "../actions";
+import { SelectorProducto } from "./selector-producto";
 
 interface Opcion {
   sku: string;
@@ -69,18 +70,7 @@ export function FormularioSalidas({ opciones, bodegas }: { opciones: Opcion[]; b
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
           <div>
             <label className="block text-xs font-medium text-zinc-500">Producto</label>
-            <select
-              value={sku}
-              onChange={(e) => setSku(e.target.value)}
-              className="mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500"
-            >
-              <option value="">Selecciona un producto</option>
-              {opciones.map((o) => (
-                <option key={o.sku} value={o.sku}>
-                  {o.nombre} — {o.stockActual} en stock
-                </option>
-              ))}
-            </select>
+            <SelectorProducto opciones={opciones} value={sku} onChange={setSku} />
           </div>
           <div>
             <label className="block text-xs font-medium text-zinc-500">Categoría</label>
