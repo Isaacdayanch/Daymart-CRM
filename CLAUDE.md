@@ -35,6 +35,10 @@ Un CRM/sistema de gestión propio para Daymart:
 
 **Principio de portabilidad:** todo el código vive en GitHub (propiedad de Isaac). La base de datos es PostgreSQL estándar, exportable en cualquier momento. Ninguna pieza es propietaria/cerrada — si aparece mejor tecnología, se puede migrar sin perder nada.
 
+### Marca
+
+Logo de Daymart (casita azul + wordmark) en `src/components/logo.tsx`, con "CRM" a un lado en la misma tipografía para distinguir que es el sistema interno, no la tienda. Aparece en el encabezado de todas las pantallas (incluidas las que se imprimen). Isaac mandó la imagen del logo por el chat, pero en este ambiente remoto las imágenes pegadas en el chat no llegan como archivo al disco — solo se pueden ver, no guardar — así que el logo actual es una recreación en SVG a partir de lo que se vio, no el archivo original. Tipografía: Baloo 2 (Google Font, redondeada, similar a la del logo real), cargada en `src/app/layout.tsx`. Si Isaac consigue el archivo original (SVG/PNG/AI del diseñador) y lo puede subir como archivo del proyecto (no pegado en el chat), se reemplaza por el exacto.
+
 ## Módulo 1 (en construcción): Pedidos / Contenedores
 
 Flujo de "hacer un pedido en China". Todavía NADA de ventas, stock ni Mercado Libre (eso viene después).

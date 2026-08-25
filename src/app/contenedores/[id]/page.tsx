@@ -9,6 +9,7 @@ import {
 } from "@/lib/calculos";
 import { reconciliacionContenedor } from "@/lib/calculos-stock";
 import { formatoPesos } from "@/lib/formato";
+import { Logo } from "@/components/logo";
 import {
   type Contenedor,
   type DocumentoContenedor,
@@ -123,8 +124,8 @@ export default async function DetalleContenedor({
       <header className="border-b border-zinc-200 bg-white">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-4 sm:px-6">
           <div>
-            <p className="text-xs font-medium tracking-wide text-zinc-400 uppercase">Daymart</p>
-            <h1 className="text-lg font-semibold text-zinc-900">Contenedor {contenedor.numero}</h1>
+            <Logo />
+            <h1 className="mt-1 text-lg font-semibold text-zinc-900">Contenedor {contenedor.numero}</h1>
           </div>
           <div className="flex items-center gap-4">
             <Link href="/stock" className="text-sm font-medium text-zinc-500 hover:text-zinc-900">

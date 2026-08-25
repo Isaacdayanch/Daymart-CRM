@@ -5,6 +5,7 @@ import { cartones, cbmProducto, cbmTotalContenedor, costoFinalPorPieza, costoPor
 import { formatoFecha, formatoPesos } from "@/lib/formato";
 import type { Contenedor, PagoMercancia, Producto } from "@/lib/tipos";
 import { BotonImprimir } from "./boton-imprimir";
+import { Logo } from "@/components/logo";
 
 export default async function ImprimirContenedor({
   params,
@@ -69,8 +70,8 @@ export default async function ImprimirContenedor({
       <main className="mx-auto max-w-4xl bg-white px-4 py-8 sm:px-6 print:px-0 print:py-0">
         <div className="mb-6 flex items-start justify-between">
           <div>
-            <p className="text-xs font-medium tracking-wide text-zinc-400 uppercase">Daymart</p>
-            <h1 className="text-xl font-semibold text-zinc-900">
+            <Logo />
+            <h1 className="mt-1 text-xl font-semibold text-zinc-900">
               Packing list — Contenedor {contenedor.numero}
             </h1>
             <p className="text-sm text-zinc-500">

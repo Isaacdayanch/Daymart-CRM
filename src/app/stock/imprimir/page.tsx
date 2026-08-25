@@ -3,6 +3,7 @@ import { resumenPorSku } from "@/lib/calculos-stock";
 import { formatoFecha } from "@/lib/formato";
 import type { ConfiguracionStock, MovimientoStock } from "@/lib/tipos";
 import { BotonImprimir } from "../../contenedores/[id]/imprimir/boton-imprimir";
+import { Logo } from "@/components/logo";
 
 export default async function ImprimirInventario() {
   const supabase = await createClient();
@@ -26,8 +27,8 @@ export default async function ImprimirInventario() {
       <main className="mx-auto max-w-4xl px-4 py-8 sm:px-6 print:px-0 print:py-0">
         <div className="mb-6 flex items-start justify-between">
           <div>
-            <p className="text-xs font-medium tracking-wide text-zinc-400 uppercase">Daymart</p>
-            <h1 className="text-xl font-semibold text-zinc-900">Hoja de revisión de inventario</h1>
+            <Logo />
+            <h1 className="mt-1 text-xl font-semibold text-zinc-900">Hoja de revisión de inventario</h1>
           </div>
           <p className="text-sm text-zinc-500">{formatoFecha(new Date().toISOString())}</p>
         </div>

@@ -3,6 +3,7 @@ import { crearContenedor } from "./actions";
 import { AbonosMercancia } from "./abonos-mercancia";
 import { CampoNumero } from "@/components/campo-numero";
 import { ESTADOS_CONTENEDOR } from "@/lib/tipos";
+import { Logo } from "@/components/logo";
 
 const claseCampo =
   "mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500";
@@ -19,8 +20,8 @@ export default async function NuevoContenedor({
       <header className="border-b border-zinc-200 bg-white">
         <div className="mx-auto flex max-w-2xl items-center justify-between px-4 py-4 sm:px-6">
           <div>
-            <p className="text-xs font-medium tracking-wide text-zinc-400 uppercase">Daymart</p>
-            <h1 className="text-lg font-semibold text-zinc-900">Nuevo contenedor</h1>
+            <Logo />
+            <h1 className="mt-1 text-lg font-semibold text-zinc-900">Nuevo contenedor</h1>
           </div>
           <Link href="/" className="text-sm font-medium text-zinc-500 hover:text-zinc-900">
             Cancelar

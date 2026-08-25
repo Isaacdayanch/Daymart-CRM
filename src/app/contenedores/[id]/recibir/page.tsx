@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import type { Bodega, Contenedor, MovimientoStock, Producto } from "@/lib/tipos";
 import { FormularioRecepcion } from "./formulario-recepcion";
+import { Logo } from "@/components/logo";
 
 export default async function RecibirContenedor({
   params,
@@ -49,8 +50,8 @@ export default async function RecibirContenedor({
       <header className="border-b border-zinc-200/70 bg-white/80 backdrop-blur-sm">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-5 sm:px-6">
           <div>
-            <p className="text-xs font-medium tracking-wide text-zinc-400 uppercase">Daymart · Stock</p>
-            <h1 className="text-xl font-semibold tracking-tight text-zinc-900">
+            <Logo />
+            <h1 className="mt-1 text-xl font-semibold tracking-tight text-zinc-900">
               {modoEdicion ? "Editar recepción — " : "Recibir "}contenedor {contenedor.numero}
             </h1>
           </div>

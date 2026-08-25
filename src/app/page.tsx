@@ -4,6 +4,7 @@ import { costoTotalContenedor } from "@/lib/calculos";
 import { formatoPesos, ESTILO_ESTADO } from "@/lib/formato";
 import { ESTADOS_CONTENEDOR, type Contenedor, type PagoMercancia } from "@/lib/tipos";
 import { MenuMas } from "./menu-mas";
+import { Logo } from "@/components/logo";
 
 function etiquetaEstado(estado: Contenedor["estado"]) {
   return ESTADOS_CONTENEDOR.find((e) => e.valor === estado)?.etiqueta ?? estado;
@@ -32,8 +33,8 @@ export default async function Home() {
       <header className="border-b border-zinc-200 bg-white">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4 sm:px-6">
           <div>
-            <p className="text-xs font-medium tracking-wide text-zinc-400 uppercase">Daymart</p>
-            <h1 className="text-lg font-semibold text-zinc-900">Pedidos / Contenedores</h1>
+            <Logo />
+            <h1 className="mt-1 text-lg font-semibold text-zinc-900">Pedidos / Contenedores</h1>
           </div>
           <div className="flex items-center gap-2">
             <Link

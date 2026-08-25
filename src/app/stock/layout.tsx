@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { NavStock } from "./nav-stock";
+import { Logo } from "@/components/logo";
 
 export default function StockLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -8,8 +9,8 @@ export default function StockLayout({ children }: { children: React.ReactNode })
         <div className="mx-auto max-w-5xl px-4 py-5 sm:px-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs font-medium tracking-wide text-zinc-400 uppercase">Daymart</p>
-              <h1 className="text-xl font-semibold tracking-tight text-zinc-900">Stock</h1>
+              <Logo />
+              <h1 className="mt-1 text-xl font-semibold tracking-tight text-zinc-900">Stock</h1>
             </div>
             <Link href="/" className="text-sm font-medium text-zinc-500 transition hover:text-zinc-900">
               ← Contenedores
