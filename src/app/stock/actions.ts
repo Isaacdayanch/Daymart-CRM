@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { texto } from "@/lib/form-helpers";
+import { nombreArchivoSeguro, texto } from "@/lib/form-helpers";
 import { costoPromedioPonderado } from "@/lib/calculos-stock";
 import type { MovimientoStock } from "@/lib/tipos";
 
@@ -103,9 +103,25 @@ export async function registrarSalidasLote(formData: FormData) {
   return { error: null };
 }
 
+async function subirImagenStock(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  formData: FormData,
+): Promise<{ url: string | null; error: string | null }> {
+  const imagen = formData.get("imagen");
+  if (!(imagen instanceof File) || imagen.size === 0) return { url: null, error: null };
+
+  const ruta = `stock-manual/${crypto.randomUUID()}-${nombreArchivoSeguro(imagen.name)}`;
+  const { error } = await supabase.storage.from("productos").upload(ruta, imagen);
+  if (error) return { url: null, error: error.message };
+
+  const url = supabase.storage.from("productos").getPublicUrl(ruta).data.publicUrl;
+  return { url, error: null };
+}
+
 /** Da de alta stock que ya existe físicamente pero no pasó por el flujo
  * normal de "recibir contenedor" — pensado para cargar de una vez el
- * inventario de contenedores anteriores sin tener que recrearlos completos. */
+ * inventario de contenedores anteriores sin tener que recrearlos completos,
+ * o para mercancía que nunca llegó en un contenedor formal. */
 export async function agregarStockManual(formData: FormData) {
   const supabase = await createClient();
 
@@ -117,6 +133,9 @@ export async function agregarStockManual(formData: FormData) {
     return { error: "Falta el SKU, el nombre, la bodega o la cantidad." };
   }
 
+  const { url: imagenSubida, error: errorImagen } = await subirImagenStock(supabase, formData);
+  const imagenUrl = imagenSubida ?? texto(formData, "imagen_url_previa");
+
   await supabase.from("movimientos_stock").insert({
     tipo: "ENTRADA",
     sku,
@@ -124,14 +143,14 @@ export async function agregarStockManual(formData: FormData) {
     bodega_id: bodegaId,
     cantidad,
     piezas_por_caja: Number(formData.get("piezas_por_caja")) || 1,
-    imagen_url: texto(formData, "imagen_url"),
+    imagen_url: imagenUrl,
     costo_unitario_pesos: Number(formData.get("costo_unitario_pesos")) || 0,
     referencia: texto(formData, "referencia") ?? "Carga manual de stock existente",
   });
 
   revalidatePath("/stock");
   revalidatePath("/stock/movimientos");
-  return { error: null };
+  return { error: errorImagen ? `La foto no se pudo subir: ${errorImagen}` : null };
 }
 
 export async function actualizarDiasEspera(formData: FormData) {

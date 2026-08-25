@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { CampoImagen } from "@/components/campo-imagen";
 import type { Bodega, Producto } from "@/lib/tipos";
 import { agregarStockManual } from "../actions";
 
@@ -28,18 +29,10 @@ export function FormularioStockManual({ bodegas, catalogo }: { bodegas: Bodega[]
       {error && <p className="text-sm text-red-600">{error}</p>}
 
       <div className="flex items-start gap-4">
-        {productoCatalogo?.imagen_url ? (
-          // eslint-disable-next-line @next/next/no-img-element -- vista previa rápida en un form
-          <img
-            src={productoCatalogo.imagen_url}
-            alt={productoCatalogo.nombre}
-            className="h-16 w-16 shrink-0 rounded-lg object-cover"
-          />
-        ) : (
-          <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-zinc-100 text-[10px] text-zinc-400">
-            Sin foto
-          </div>
-        )}
+        <div className="shrink-0">
+          <CampoImagen name="imagen" valorInicial={productoCatalogo?.imagen_url} />
+          <input type="hidden" name="imagen_url_previa" value={productoCatalogo?.imagen_url ?? ""} />
+        </div>
         <div className="grid flex-1 gap-3 sm:grid-cols-2">
           <div>
             <label className="block text-xs font-medium text-zinc-500">SKU</label>
@@ -71,7 +64,6 @@ export function FormularioStockManual({ bodegas, catalogo }: { bodegas: Bodega[]
             />
           </div>
         </div>
-        <input type="hidden" name="imagen_url" value={productoCatalogo?.imagen_url ?? ""} />
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">

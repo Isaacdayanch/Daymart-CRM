@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { skuSugerido } from "@/lib/calculos";
-import { numero, texto } from "@/lib/form-helpers";
+import { nombreArchivoSeguro, numero, texto } from "@/lib/form-helpers";
 import type { EstadoContenedor, TipoDocumento } from "@/lib/tipos";
 
 /** Si el estado cambió, guarda el momento en el historial del contenedor. */
@@ -85,17 +85,6 @@ export async function eliminarAbono(contenedorId: string, abonoId: string) {
   const supabase = await createClient();
   await supabase.from("pagos_mercancia").delete().eq("id", abonoId);
   revalidatePath(`/contenedores/${contenedorId}`);
-}
-
-/** Quita acentos y cualquier carácter que no sea letra/número/guion, para
- * que el nombre del archivo sea una llave de almacenamiento válida. */
-function nombreArchivoSeguro(nombre: string) {
-  const puntoFinal = nombre.lastIndexOf(".");
-  const base = puntoFinal > 0 ? nombre.slice(0, puntoFinal) : nombre;
-  const extension = puntoFinal > 0 ? nombre.slice(puntoFinal + 1) : "";
-  const baseLimpia = base.replace(/[^a-zA-Z0-9-_]+/g, "-").slice(0, 60) || "archivo";
-  const extensionLimpia = extension.toLowerCase().replace(/[^a-z0-9]/g, "");
-  return extensionLimpia ? `${baseLimpia}.${extensionLimpia}` : baseLimpia;
 }
 
 async function subirImagenProducto(
