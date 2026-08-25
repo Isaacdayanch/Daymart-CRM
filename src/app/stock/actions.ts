@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { texto } from "@/lib/form-helpers";
+import { costoPromedioPonderado } from "@/lib/calculos-stock";
+import type { MovimientoStock } from "@/lib/tipos";
 
 export async function agregarBodega(formData: FormData) {
   const supabase = await createClient();
@@ -19,28 +21,82 @@ export async function eliminarBodega(bodegaId: string) {
   revalidatePath("/stock/bodegas");
 }
 
-export async function registrarSalida(formData: FormData) {
+interface LineaSalida {
+  sku: string;
+  nombre: string;
+  cantidad: number;
+  piezasPorCaja: number;
+  imagenUrl: string | null;
+  categoria: string;
+  colorFull: string | null;
+  notas: string | null;
+}
+
+/** Registra varias salidas (o devoluciones) de una sola vez — Isaac arma la
+ * lista en pantalla ("salió esto, salió esto...") y aquí se guardan todas
+ * juntas. "Devolución" es especial: en vez de restar, SUMA al stock (es
+ * mercancía que regresa), guardada como un ajuste positivo. */
+export async function registrarSalidasLote(formData: FormData) {
   const supabase = await createClient();
 
-  const sku = texto(formData, "sku");
-  const nombre = texto(formData, "nombre");
   const bodegaId = formData.get("bodega_id") as string;
-  const cantidad = Number(formData.get("cantidad")) || 0;
-  const destino = texto(formData, "destino");
-  if (!sku || !nombre || !bodegaId || !destino || cantidad <= 0) {
-    return { error: "Falta el SKU, la bodega, la categoría o la cantidad." };
+  const lineasCrudo = formData.get("lineas");
+  if (!bodegaId || typeof lineasCrudo !== "string") {
+    return { error: "Falta la bodega o las líneas a registrar." };
   }
 
-  await supabase.from("movimientos_stock").insert({
-    tipo: "SALIDA",
-    sku,
-    nombre,
-    bodega_id: bodegaId,
-    cantidad,
-    piezas_por_caja: Number(formData.get("piezas_por_caja")) || 1,
-    destino,
-    referencia: texto(formData, "referencia"),
+  let lineas: LineaSalida[];
+  try {
+    lineas = JSON.parse(lineasCrudo);
+  } catch {
+    return { error: "No se pudieron leer las líneas." };
+  }
+  if (!Array.isArray(lineas) || lineas.length === 0) {
+    return { error: "Agrega al menos una línea antes de registrar." };
+  }
+
+  // Para las devoluciones necesitamos un costo por pieza razonable (para que
+  // el valor de inventario no se distorsione): se usa el costo promedio
+  // actual de cada SKU.
+  const skusDevolucion = Array.from(
+    new Set(lineas.filter((l) => l.categoria === "Devolución").map((l) => l.sku)),
+  );
+  const costoPorSku = new Map<string, number>();
+  if (skusDevolucion.length) {
+    const { data: movimientosSkus } = await supabase
+      .from("movimientos_stock")
+      .select("*")
+      .in("sku", skusDevolucion)
+      .returns<MovimientoStock[]>();
+    for (const sku of skusDevolucion) {
+      const movs = (movimientosSkus ?? []).filter((m) => m.sku === sku);
+      costoPorSku.set(sku, costoPromedioPonderado(movs));
+    }
+  }
+
+  const movimientos = lineas.map((linea) => {
+    const esDevolucion = linea.categoria === "Devolución";
+    const referencia =
+      linea.categoria === "Full" && linea.colorFull
+        ? `Full ${linea.colorFull}${linea.notas ? ` — ${linea.notas}` : ""}`
+        : linea.notas || null;
+
+    return {
+      tipo: esDevolucion ? "AJUSTE" : "SALIDA",
+      sku: linea.sku,
+      nombre: linea.nombre,
+      bodega_id: bodegaId,
+      cantidad: linea.cantidad,
+      piezas_por_caja: linea.piezasPorCaja || 1,
+      imagen_url: linea.imagenUrl,
+      costo_unitario_pesos: esDevolucion ? (costoPorSku.get(linea.sku) ?? 0) : 0,
+      destino: linea.categoria,
+      referencia,
+    };
   });
+
+  const { error } = await supabase.from("movimientos_stock").insert(movimientos);
+  if (error) return { error: error.message };
 
   revalidatePath("/stock");
   revalidatePath("/stock/movimientos");

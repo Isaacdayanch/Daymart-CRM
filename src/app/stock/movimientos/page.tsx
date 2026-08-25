@@ -1,52 +1,40 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { resumenPorSku } from "@/lib/calculos-stock";
 import { formatoPesos } from "@/lib/formato";
-import type { Bodega, ConfiguracionStock, Contenedor, MovimientoStock } from "@/lib/tipos";
-import { FormularioSalida } from "./formulario-salida";
+import type { Bodega, Contenedor, MovimientoStock } from "@/lib/tipos";
 
 export default async function MovimientosStock() {
   const supabase = await createClient();
-  const [{ data: movimientos }, { data: bodegas }, { data: configuracion }, { data: contenedores }] =
-    await Promise.all([
-      supabase
-        .from("movimientos_stock")
-        .select("*")
-        .order("creado_en", { ascending: false })
-        .limit(200)
-        .returns<MovimientoStock[]>(),
-      supabase.from("bodegas").select("*").is("eliminado_en", null).returns<Bodega[]>(),
-      supabase.from("configuracion_stock").select("*").single<ConfiguracionStock>(),
-      supabase.from("contenedores").select("*").returns<Contenedor[]>(),
-    ]);
+  const [{ data: movimientos }, { data: bodegas }, { data: contenedores }] = await Promise.all([
+    supabase
+      .from("movimientos_stock")
+      .select("*")
+      .order("creado_en", { ascending: false })
+      .limit(200)
+      .returns<MovimientoStock[]>(),
+    supabase.from("bodegas").select("*").is("eliminado_en", null).returns<Bodega[]>(),
+    supabase.from("contenedores").select("*").returns<Contenedor[]>(),
+  ]);
 
   const listaMovimientos = movimientos ?? [];
-  const listaBodegas = bodegas ?? [];
-  const bodegasPorId = new Map(listaBodegas.map((b) => [b.id, b.nombre]));
+  const bodegasPorId = new Map((bodegas ?? []).map((b) => [b.id, b.nombre]));
   const contenedoresPorId = new Map((contenedores ?? []).map((c) => [c.id, c.numero]));
-
-  const resumenes = resumenPorSku(listaMovimientos, configuracion?.dias_espera ?? 60).filter(
-    (r) => r.stockActual > 0,
-  );
 
   return (
     <div className="space-y-6">
       <div className="flex justify-end">
-        <FormularioSalida
-          opciones={resumenes.map((r) => ({
-            sku: r.sku,
-            nombre: r.nombre,
-            stockActual: r.stockActual,
-            piezasPorCaja: r.piezasPorCaja,
-          }))}
-          bodegas={listaBodegas}
-        />
+        <Link
+          href="/stock/salidas"
+          className="rounded-xl bg-zinc-900 px-5 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-zinc-700"
+        >
+          + Registrar salidas
+        </Link>
       </div>
 
       <div className="rounded-2xl border border-zinc-200 bg-white shadow-sm">
         <div className="border-b border-zinc-100 p-6">
           <h2 className="text-sm font-semibold text-zinc-900">Libro de movimientos</h2>
-          <p className="mt-1 text-xs text-zinc-500">Entradas y salidas, más recientes primero.</p>
+          <p className="mt-1 text-xs text-zinc-500">Entradas, salidas y ajustes, más recientes primero.</p>
         </div>
         {listaMovimientos.length === 0 ? (
           <p className="p-6 text-sm text-zinc-500">Todavía no hay movimientos.</p>
@@ -87,8 +75,22 @@ export default async function MovimientosStock() {
                       </span>
                     </td>
                     <td className="px-6 py-3">
-                      <p className="font-medium text-zinc-900">{m.nombre}</p>
-                      <p className="font-mono text-xs text-zinc-400">{m.sku}</p>
+                      <div className="flex items-center gap-2.5">
+                        {m.imagen_url ? (
+                          // eslint-disable-next-line @next/next/no-img-element -- miniatura en tabla, tamaño fijo
+                          <img
+                            src={m.imagen_url}
+                            alt={m.nombre}
+                            className="h-8 w-8 shrink-0 rounded-md object-cover"
+                          />
+                        ) : (
+                          <div className="h-8 w-8 shrink-0 rounded-md bg-zinc-100" />
+                        )}
+                        <div>
+                          <p className="font-medium text-zinc-900">{m.nombre}</p>
+                          <p className="font-mono text-xs text-zinc-400">{m.sku}</p>
+                        </div>
+                      </div>
                     </td>
                     <td className="px-6 py-3 text-zinc-600">{bodegasPorId.get(m.bodega_id) ?? "—"}</td>
                     <td className="px-6 py-3 text-right font-semibold text-zinc-900">
