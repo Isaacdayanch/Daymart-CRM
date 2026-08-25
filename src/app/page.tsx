@@ -30,27 +30,13 @@ export default async function Home() {
 
   return (
     <div className="min-h-screen bg-zinc-50">
-      <header className="border-b border-zinc-200 bg-white">
+      <header className="sticky top-0 z-10 border-b border-zinc-200/70 bg-white/80 backdrop-blur-sm">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4 sm:px-6">
-          <div>
+          <div className="flex items-baseline gap-3">
             <Logo />
-            <h1 className="mt-1 text-lg font-semibold text-zinc-900">Pedidos / Contenedores</h1>
+            <span className="hidden text-sm text-zinc-400 sm:inline">Pedidos / Contenedores</span>
           </div>
-          <div className="flex items-center gap-2">
-            <Link
-              href="/stock"
-              className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 transition hover:border-zinc-400 hover:bg-zinc-50"
-            >
-              Stock
-            </Link>
-            <Link
-              href="/contenedores/nuevo"
-              className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-700"
-            >
-              + Nuevo contenedor
-            </Link>
-            <MenuMas />
-          </div>
+          <MenuMas />
         </div>
       </header>
 

@@ -37,7 +37,9 @@ Un CRM/sistema de gestión propio para Daymart:
 
 ### Marca
 
-Logo de Daymart (casita azul + wordmark) en `src/components/logo.tsx`, con "CRM" a un lado en la misma tipografía para distinguir que es el sistema interno, no la tienda. Aparece en el encabezado de todas las pantallas (incluidas las que se imprimen). Isaac mandó la imagen del logo por el chat, pero en este ambiente remoto las imágenes pegadas en el chat no llegan como archivo al disco — solo se pueden ver, no guardar — así que el logo actual es una recreación en SVG a partir de lo que se vio, no el archivo original. Tipografía: Baloo 2 (Google Font, redondeada, similar a la del logo real), cargada en `src/app/layout.tsx`. Si Isaac consigue el archivo original (SVG/PNG/AI del diseñador) y lo puede subir como archivo del proyecto (no pegado en el chat), se reemplaza por el exacto.
+Logo de Daymart en `src/components/logo.tsx` — solo texto ("Daymart" + tag "CRM" al lado, misma tipografía), sin ícono (Isaac pidió quitar la figura de casita que se había recreado al inicio). Aparece en el encabezado de todas las pantallas (incluidas las que se imprimen). Tipografía: Baloo 2 (Google Font, redondeada), cargada en `src/app/layout.tsx`. Nota histórica: Isaac mandó la imagen del logo real por el chat, pero en este ambiente remoto las imágenes pegadas ahí no llegan como archivo al disco — solo se pueden ver, no guardar. Si algún día consigue el archivo original y lo sube como archivo (no pegado en el chat), se puede retomar la idea del ícono con el diseño real.
+
+**Header de inicio**: minimalista, tipo Apple — sticky con blur, solo el logo a la izquierda y un menú ☰ a la derecha. "Nuevo contenedor", "Stock" y "Papelera" viven dentro del menú desplegable (`src/app/menu-mas.tsx`), no como botones sueltos.
 
 ## Módulo 1 (en construcción): Pedidos / Contenedores
 
