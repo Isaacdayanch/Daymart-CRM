@@ -44,6 +44,9 @@ export default async function RecibirContenedor({
   const listaProductos = productos ?? [];
   const listaBodegas = bodegas ?? [];
   const bodegaOriginalId = entradasPrevias?.[0]?.bodega_id ?? listaBodegas[0]?.id;
+  const fechaActual = contenedor.stock_generado_en
+    ? contenedor.stock_generado_en.slice(0, 10)
+    : undefined;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-zinc-50 to-white">
@@ -90,6 +93,7 @@ export default async function RecibirContenedor({
               bodegas={listaBodegas}
               modoEdicion={modoEdicion}
               bodegaOriginalId={bodegaOriginalId}
+              fechaActual={fechaActual}
             />
           </>
         )}

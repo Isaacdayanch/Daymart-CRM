@@ -117,6 +117,12 @@ export async function editarRecepcion(contenedorId: string, formData: FormData) 
   const bodegaId = formData.get("bodega_id") as string;
   if (!bodegaId) return;
 
+  const fechaCampo = formData.get("fecha_recepcion");
+  const fechaNueva =
+    typeof fechaCampo === "string" && fechaCampo
+      ? new Date(`${fechaCampo}T12:00:00`).toISOString()
+      : null;
+
   const [{ data: contenedor }, { data: productos }, { data: entradasPrevias }] = await Promise.all([
     supabase.from("contenedores").select("*").eq("id", contenedorId).single<Contenedor>(),
     supabase.from("productos").select("*").eq("contenedor_id", contenedorId).returns<Producto[]>(),
@@ -156,6 +162,25 @@ export async function editarRecepcion(contenedorId: string, formData: FormData) 
 
   if (ajustes.length) {
     await supabase.from("movimientos_stock").insert(ajustes);
+  }
+
+  // Si Isaac corrigió la fecha de recepción, se actualiza en los tres
+  // lugares donde queda registrada — sin esto, la línea de tiempo y el
+  // libro de movimientos se quedarían con la fecha original equivocada.
+  if (fechaNueva && fechaNueva !== contenedor.stock_generado_en) {
+    await Promise.all([
+      supabase.from("contenedores").update({ stock_generado_en: fechaNueva }).eq("id", contenedorId),
+      supabase
+        .from("historial_estados_contenedor")
+        .update({ fecha: fechaNueva })
+        .eq("contenedor_id", contenedorId)
+        .eq("estado", "RECIBIDO_BODEGA"),
+      supabase
+        .from("movimientos_stock")
+        .update({ creado_en: fechaNueva })
+        .eq("contenedor_id", contenedorId)
+        .eq("tipo", "ENTRADA"),
+    ]);
   }
 
   revalidatePath(`/contenedores/${contenedorId}`);

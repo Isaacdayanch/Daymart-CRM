@@ -10,12 +10,14 @@ export function FormularioRecepcion({
   bodegas,
   modoEdicion,
   bodegaOriginalId,
+  fechaActual,
 }: {
   contenedorId: string;
   productos: Producto[];
   bodegas: Bodega[];
   modoEdicion: boolean;
   bodegaOriginalId?: string;
+  fechaActual?: string;
 }) {
   const [cantidades, setCantidades] = useState<Record<string, string>>(
     Object.fromEntries(productos.map((p) => [p.id, String(p.cantidad)])),
@@ -35,7 +37,7 @@ export function FormularioRecepcion({
       className="space-y-4"
     >
       <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-        <div className={`grid gap-4 ${modoEdicion ? "" : "sm:grid-cols-2"}`}>
+        <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <label className="block text-xs font-medium text-zinc-500">Bodega</label>
             <select
@@ -51,22 +53,22 @@ export function FormularioRecepcion({
               ))}
             </select>
           </div>
-          {!modoEdicion && (
-            <div>
-              <label className="block text-xs font-medium text-zinc-500">Fecha de recepción</label>
-              <input
-                type="date"
-                name="fecha_recepcion"
-                defaultValue={hoyTexto}
-                max={hoyTexto}
-                required
-                className="mt-1.5 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500"
-              />
-              <p className="mt-1 text-xs text-zinc-400">
-                Hoy por defecto — cámbiala si estás cargando un contenedor de hace tiempo.
-              </p>
-            </div>
-          )}
+          <div>
+            <label className="block text-xs font-medium text-zinc-500">Fecha de recepción</label>
+            <input
+              type="date"
+              name="fecha_recepcion"
+              defaultValue={fechaActual ?? hoyTexto}
+              max={hoyTexto}
+              required
+              className="mt-1.5 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500"
+            />
+            <p className="mt-1 text-xs text-zinc-400">
+              {modoEdicion
+                ? "Cámbiala si la fecha original quedó mal."
+                : "Hoy por defecto — cámbiala si estás cargando un contenedor de hace tiempo."}
+            </p>
+          </div>
         </div>
       </div>
 
