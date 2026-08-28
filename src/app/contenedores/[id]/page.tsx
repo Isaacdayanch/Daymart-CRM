@@ -26,6 +26,7 @@ import { Abonos } from "./abonos";
 import { Productos } from "./productos";
 import { Documentos } from "./documentos";
 import { TarjetaEstado } from "./tarjeta-estado";
+import { BotonRecalcularCosto } from "./boton-recalcular-costo";
 import { Historial } from "./historial";
 
 export default async function DetalleContenedor({
@@ -183,17 +184,21 @@ export default async function DetalleContenedor({
                   {formatoPesos(costoTotal - valorEntradoStock)}
                 </p>
               </div>
-              <Link
-                href={`/contenedores/${contenedor.id}/recibir`}
-                className="text-xs font-medium text-zinc-500 hover:text-zinc-900"
-              >
-                Editar recepción →
-              </Link>
+              <div className="flex flex-col items-end gap-1">
+                <Link
+                  href={`/contenedores/${contenedor.id}/recibir`}
+                  className="text-xs font-medium text-zinc-500 hover:text-zinc-900"
+                >
+                  Editar recepción →
+                </Link>
+                <BotonRecalcularCosto contenedorId={contenedor.id} />
+              </div>
             </div>
             {Math.abs(costoTotal - valorEntradoStock) >= 1 && (
               <p className="mt-2 text-xs text-zinc-500">
-                No cuadra del todo — revisa si falta algún abono de mercancía o si hay mercancía pendiente
-                en China de este contenedor.
+                No cuadra del todo — si acabas de llenar el flete/aduana o un abono después de recibir el
+                contenedor, dale a &ldquo;Recalcular costo&rdquo;. Si sigue sin cuadrar, revisa si falta
+                algún abono o si hay mercancía pendiente en China de este contenedor.
               </p>
             )}
           </div>

@@ -3,9 +3,14 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { skuSugerido } from "@/lib/calculos";
+import {
+  costoFinalPorPieza,
+  costoPorCbmContenedor,
+  skuSugerido,
+  tipoCambioPromedioMercancia,
+} from "@/lib/calculos";
 import { nombreArchivoSeguro, numero, texto } from "@/lib/form-helpers";
-import type { EstadoContenedor, TipoDocumento } from "@/lib/tipos";
+import type { Contenedor, EstadoContenedor, PagoMercancia, Producto, TipoDocumento } from "@/lib/tipos";
 
 /** Si el estado cambió, guarda el momento en el historial del contenedor.
  * Por defecto usa la fecha/hora actual, pero se puede pasar una fecha
@@ -29,6 +34,42 @@ export async function registrarHistorialSiCambia(
   }
 }
 
+/** El costo por pieza que entra a stock se calcula con el flete/aduana/
+ * abonos que haya AL MOMENTO de recibir el contenedor. Si Isaac llena esos
+ * gastos después (algo muy normal: la mercancía llega antes de que se
+ * terminen de pagar/capturar), el costo que ya quedó guardado en las
+ * entradas de stock se queda desactualizado — esto lo vuelve a calcular
+ * con los datos actuales, sin duplicar ni mover cantidades. */
+export async function recalcularCostoEntradasContenedor(contenedorId: string) {
+  const supabase = await createClient();
+
+  const [{ data: contenedor }, { data: productos }, { data: abonos }] = await Promise.all([
+    supabase.from("contenedores").select("*").eq("id", contenedorId).single<Contenedor>(),
+    supabase.from("productos").select("*").eq("contenedor_id", contenedorId).returns<Producto[]>(),
+    supabase.from("pagos_mercancia").select("*").eq("contenedor_id", contenedorId).returns<PagoMercancia[]>(),
+  ]);
+
+  if (!contenedor || !productos || !contenedor.stock_generado_en) return;
+
+  const costoPorCbm = costoPorCbmContenedor(contenedor, productos);
+  const tipoCambioMercancia = tipoCambioPromedioMercancia(abonos ?? []);
+
+  await Promise.all(
+    productos.map((p) =>
+      supabase
+        .from("movimientos_stock")
+        .update({ costo_unitario_pesos: costoFinalPorPieza(p, costoPorCbm, tipoCambioMercancia) })
+        .eq("contenedor_id", contenedorId)
+        .eq("sku", p.sku)
+        .eq("tipo", "ENTRADA"),
+    ),
+  );
+
+  revalidatePath(`/contenedores/${contenedorId}`);
+  revalidatePath("/stock");
+  revalidatePath("/stock/movimientos");
+}
+
 export async function actualizarContenedor(contenedorId: string, formData: FormData) {
   const supabase = await createClient();
   const estado = formData.get("estado") as EstadoContenedor;
@@ -50,6 +91,7 @@ export async function actualizarContenedor(contenedorId: string, formData: FormD
     })
     .eq("id", contenedorId);
 
+  await recalcularCostoEntradasContenedor(contenedorId);
   revalidatePath(`/contenedores/${contenedorId}`);
 }
 
@@ -84,12 +126,14 @@ export async function agregarAbono(contenedorId: string, formData: FormData) {
     fecha: fecha ? new Date(`${fecha}T12:00:00`).toISOString() : new Date().toISOString(),
   });
 
+  await recalcularCostoEntradasContenedor(contenedorId);
   revalidatePath(`/contenedores/${contenedorId}`);
 }
 
 export async function eliminarAbono(contenedorId: string, abonoId: string) {
   const supabase = await createClient();
   await supabase.from("pagos_mercancia").delete().eq("id", abonoId);
+  await recalcularCostoEntradasContenedor(contenedorId);
   revalidatePath(`/contenedores/${contenedorId}`);
 }
 
