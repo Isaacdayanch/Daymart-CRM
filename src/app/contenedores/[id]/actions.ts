@@ -401,10 +401,16 @@ export async function actualizarProducto(contenedorId: string, productoId: strin
   return { error: errorImagen ? `La foto no se pudo subir: ${errorImagen}` : null };
 }
 
+/** Al borrar un producto también se borra el stock que haya entrado a su
+ * nombre — si no, se queda "fantasma" en Stock (con piezas y valor) aunque
+ * el producto ya no exista en el contenedor. */
 export async function eliminarProducto(contenedorId: string, productoId: string) {
   const supabase = await createClient();
+  await supabase.from("movimientos_stock").delete().eq("producto_id", productoId);
   await supabase.from("productos").delete().eq("id", productoId);
   revalidatePath(`/contenedores/${contenedorId}`);
+  revalidatePath("/stock");
+  revalidatePath("/stock/movimientos");
 }
 
 export async function moverProducto(
