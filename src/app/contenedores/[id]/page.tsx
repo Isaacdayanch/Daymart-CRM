@@ -181,10 +181,12 @@ export default async function DetalleContenedor({
                 <p className="text-xs text-zinc-500">Diferencia</p>
                 <p
                   className={`mt-1 text-sm font-semibold ${
-                    Math.abs(diferenciaFinal) < 1 ? "text-emerald-600" : "text-amber-600"
+                    diferenciaFinal > 1 ? "text-red-600" : "text-emerald-600"
                   }`}
                 >
-                  {formatoPesos(diferenciaFinal)}
+                  {formatoPesos(Math.abs(diferenciaFinal))}
+                  {diferenciaFinal > 1 && <span className="ml-1 text-xs font-normal">en tu contra</span>}
+                  {diferenciaFinal < -1 && <span className="ml-1 text-xs font-normal text-zinc-400">a tu favor</span>}
                 </p>
               </div>
               <div className="flex flex-col items-end gap-1">
@@ -197,11 +199,17 @@ export default async function DetalleContenedor({
                 <BotonRecalcularCosto contenedorId={contenedor.id} />
               </div>
             </div>
-            {Math.abs(diferenciaFinal) >= 1 && (
-              <p className="mt-2 text-xs text-zinc-500">
-                No cuadra del todo — si acabas de llenar el flete/aduana o un abono después de recibir el
-                contenedor, dale a &ldquo;Recalcular costo&rdquo;. Si sigue sin cuadrar, revisa si falta
-                algún abono o si hay mercancía pendiente en China de este contenedor.
+            {diferenciaFinal > 1 && (
+              <p className="mt-2 text-xs text-red-700">
+                ⚠ El stock vale menos de lo que realmente invertiste en este contenedor — hay dinero sin
+                reflejarse. Si acabas de llenar el flete/aduana o un abono, dale a &ldquo;Recalcular
+                costo&rdquo;. Si sigue así, revisa si falta algún abono, hay mercancía pendiente en China, o
+                usa &ldquo;Explicar esta diferencia&rdquo; de abajo.
+              </p>
+            )}
+            {diferenciaFinal < -1 && (
+              <p className="mt-2 text-xs text-zinc-400">
+                El stock vale más de lo que invertiste registrado — es a tu favor, no es un problema.
               </p>
             )}
             <AjusteDiferencia

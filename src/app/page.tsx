@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { costoTotalContenedor } from "@/lib/calculos";
+import { reconciliacionContenedor } from "@/lib/calculos-stock";
 import { formatoPesos, ESTILO_ESTADO } from "@/lib/formato";
-import { ESTADOS_CONTENEDOR, type Contenedor, type PagoMercancia } from "@/lib/tipos";
+import { ESTADOS_CONTENEDOR, type Contenedor, type MovimientoStock, type PagoMercancia } from "@/lib/tipos";
 import { MenuMas } from "./menu-mas";
 import { Logo } from "@/components/logo";
 
@@ -24,8 +25,24 @@ export default async function Home() {
     .select("*")
     .returns<PagoMercancia[]>();
 
+  const { data: movimientosEntrada } = await supabase
+    .from("movimientos_stock")
+    .select("*")
+    .eq("tipo", "ENTRADA")
+    .returns<MovimientoStock[]>();
+
   function pagosDe(contenedorId: string) {
     return pagosMercancia?.filter((p) => p.contenedor_id === contenedorId) ?? [];
+  }
+
+  // Diferencia en contra: lo que de verdad se invirtió en el contenedor es
+  // más de lo que quedó reflejado en Stock — dinero sin explicar. Un
+  // excedente (stock vale más de lo invertido) no se marca, no es problema.
+  function diferenciaEnContra(contenedor: Contenedor) {
+    const costoTotal = costoTotalContenedor(contenedor, pagosDe(contenedor.id));
+    const valorEntradoStock = reconciliacionContenedor(contenedor.id, movimientosEntrada ?? []);
+    const diferencia = costoTotal - valorEntradoStock - contenedor.ajuste_diferencia_pesos;
+    return diferencia > 1 ? diferencia : 0;
   }
 
   return (
@@ -91,6 +108,11 @@ export default async function Home() {
                       {formatoPesos(costoTotalContenedor(contenedor, pagosDe(contenedor.id)))}
                     </span>
                   </div>
+                  {contenedor.stock_generado_en && diferenciaEnContra(contenedor) > 0 && (
+                    <p className="mt-2 text-xs font-medium text-red-600">
+                      ⚠ {formatoPesos(diferenciaEnContra(contenedor))} en tu contra sin explicar
+                    </p>
+                  )}
                 </Link>
               </li>
             ))}
