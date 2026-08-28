@@ -4,6 +4,7 @@ import { useState } from "react";
 import Image from "next/image";
 import { formatoPesos } from "@/lib/formato";
 import { cartones, cbmProducto, costoFinalPorPieza } from "@/lib/calculos";
+import { Selector } from "@/components/selector";
 import type { PendienteChina, Producto } from "@/lib/tipos";
 import { agregarProducto, actualizarProducto, eliminarProducto, moverProducto } from "./actions";
 import { CamposProducto } from "./campos-producto";
@@ -17,6 +18,9 @@ export function Productos({
   proveedorPrincipal,
   catalogo,
   pendientesChina,
+  categoriasSugeridas,
+  fabricasSugeridas,
+  proveedoresSugeridos,
 }: {
   contenedorId: string;
   productos: Producto[];
@@ -26,6 +30,9 @@ export function Productos({
   proveedorPrincipal: string | null;
   catalogo: Producto[];
   pendientesChina: PendienteChina[];
+  categoriasSugeridas: string[];
+  fabricasSugeridas: string[];
+  proveedoresSugeridos: string[];
 }) {
   const [vista, setVista] = useState<"tabla" | "galeria">("tabla");
   const [editandoId, setEditandoId] = useState<string | null>(null);
@@ -33,6 +40,9 @@ export function Productos({
   const [pendienteId, setPendienteId] = useState("");
   const productoRestock = catalogo.find((p) => p.id === restockId);
   const pendiente = pendientesChina.find((p) => p.id === pendienteId);
+  // Casi siempre un contenedor trae puros productos de la misma categoría,
+  // así que se precarga la del último que ya está en la lista.
+  const categoriaPorDefecto = productos[productos.length - 1]?.categoria;
 
   async function alAgregar(formData: FormData) {
     const resultado = await agregarProducto(contenedorId, formData);
@@ -109,7 +119,12 @@ export function Productos({
                         }}
                         className="rounded-lg border border-zinc-200 bg-zinc-50 p-4"
                       >
-                        <CamposProducto inicial={producto} />
+                        <CamposProducto
+                          inicial={producto}
+                          categorias={categoriasSugeridas}
+                          fabricas={fabricasSugeridas}
+                          proveedores={proveedoresSugeridos}
+                        />
                         <div className="mt-3 flex justify-end gap-2">
                           <button
                             type="button"
@@ -292,21 +307,25 @@ export function Productos({
             <label className="block text-xs font-medium text-amber-700">
               ¿Es mercancía pendiente de China?
             </label>
-            <select
-              value={pendienteId}
-              onChange={(e) => {
-                setPendienteId(e.target.value);
-                setRestockId("");
-              }}
-              className="mt-1 block w-full rounded-lg border border-amber-300 px-3 py-2 text-sm focus:border-amber-500 focus:ring-amber-500"
-            >
-              <option value="">— No, es otra cosa —</option>
-              {pendientesChina.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.sku} — {p.nombre} ({p.cantidad_pendiente} pzas pendientes)
-                </option>
-              ))}
-            </select>
+            <div className="mt-1">
+              <Selector
+                key={`pendiente-${pendienteId}`}
+                defaultValue={pendienteId}
+                onChange={(v) => {
+                  setPendienteId(v);
+                  setRestockId("");
+                }}
+                placeholder="— No, es otra cosa —"
+                claseTrigger="flex w-full items-center justify-between gap-2 rounded-lg border border-amber-300 bg-white px-3 py-2 text-left text-sm transition focus:border-amber-500 focus:ring-2 focus:ring-amber-200 focus:outline-none"
+                opciones={[
+                  { value: "", label: "— No, es otra cosa —" },
+                  ...pendientesChina.map((p) => ({
+                    value: p.id,
+                    label: `${p.sku} — ${p.nombre} (${p.cantidad_pendiente} pzas pendientes)`,
+                  })),
+                ]}
+              />
+            </div>
           </div>
         )}
 
@@ -315,21 +334,21 @@ export function Productos({
             <label className="block text-xs font-medium text-zinc-500">
               ¿Es un producto que ya has traído antes? (restock)
             </label>
-            <select
-              value={restockId}
-              onChange={(e) => {
-                setRestockId(e.target.value);
-                setPendienteId("");
-              }}
-              className="mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500"
-            >
-              <option value="">— Producto nuevo, llenar desde cero —</option>
-              {catalogo.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.sku} — {p.nombre}
-                </option>
-              ))}
-            </select>
+            <div className="mt-1">
+              <Selector
+                key={`restock-${restockId}`}
+                defaultValue={restockId}
+                onChange={(v) => {
+                  setRestockId(v);
+                  setPendienteId("");
+                }}
+                placeholder="— Producto nuevo, llenar desde cero —"
+                opciones={[
+                  { value: "", label: "— Producto nuevo, llenar desde cero —" },
+                  ...catalogo.map((p) => ({ value: p.id, label: `${p.sku} — ${p.nombre}` })),
+                ]}
+              />
+            </div>
           </div>
         )}
 
@@ -358,6 +377,10 @@ export function Productos({
           esRestock={Boolean(productoRestock) && !pendiente}
           fabricaPorDefecto={fabricaPrincipal}
           proveedorPorDefecto={proveedorPrincipal}
+          categoriaPorDefecto={!productoRestock && !pendiente ? categoriaPorDefecto : undefined}
+          categorias={categoriasSugeridas}
+          fabricas={fabricasSugeridas}
+          proveedores={proveedoresSugeridos}
         />
         <div className="flex justify-end">
           <button

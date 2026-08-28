@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { Selector } from "@/components/selector";
+import { CampoSugerencias } from "@/components/campo-sugerencias";
 import { CATEGORIAS_SALIDA, type Bodega } from "@/lib/tipos";
 import { registrarSalidasLote } from "../actions";
 import { SelectorProducto } from "./selector-producto";
@@ -30,6 +32,7 @@ export function FormularioSalidas({ opciones, bodegas }: { opciones: Opcion[]; b
   const [categoria, setCategoria] = useState<string>("");
   const [colorFull, setColorFull] = useState("");
   const [notas, setNotas] = useState("");
+  const [bodegaId, setBodegaId] = useState(bodegas[0]?.id ?? "");
   const [error, setError] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
   const [exito, setExito] = useState<string | null>(null);
@@ -74,18 +77,15 @@ export function FormularioSalidas({ opciones, bodegas }: { opciones: Opcion[]; b
           </div>
           <div>
             <label className="block text-xs font-medium text-zinc-500">Categoría</label>
-            <select
-              value={categoria}
-              onChange={(e) => setCategoria(e.target.value)}
-              className="mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500"
-            >
-              <option value="">Selecciona</option>
-              {CATEGORIAS_SALIDA.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
+            <div className="mt-1">
+              <Selector
+                key={categoria}
+                defaultValue={categoria}
+                onChange={setCategoria}
+                placeholder="Selecciona"
+                opciones={CATEGORIAS_SALIDA.map((c) => ({ value: c, label: c }))}
+              />
+            </div>
           </div>
         </div>
 
@@ -103,19 +103,12 @@ export function FormularioSalidas({ opciones, bodegas }: { opciones: Opcion[]; b
           {categoria === "Full" && (
             <div>
               <label className="block text-xs font-medium text-zinc-500">Color de la etiqueta del Full</label>
-              <input
-                type="text"
-                list="colores-full"
+              <CampoSugerencias
                 value={colorFull}
-                onChange={(e) => setColorFull(e.target.value)}
+                onChange={setColorFull}
+                sugerencias={COLORES_FULL}
                 placeholder="Ej. Azul"
-                className="mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500"
               />
-              <datalist id="colores-full">
-                {COLORES_FULL.map((c) => (
-                  <option key={c} value={c} />
-                ))}
-              </datalist>
             </div>
           )}
         </div>
@@ -148,17 +141,13 @@ export function FormularioSalidas({ opciones, bodegas }: { opciones: Opcion[]; b
         <div className="rounded-2xl border border-zinc-200 bg-white shadow-sm">
           <div className="border-b border-zinc-100 p-6">
             <label className="block text-xs font-medium text-zinc-500">Bodega de esta tanda</label>
-            <select
-              id="bodega-lote"
-              defaultValue={bodegas[0]?.id}
-              className="mt-1 block w-full max-w-xs rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500"
-            >
-              {bodegas.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.nombre}
-                </option>
-              ))}
-            </select>
+            <div className="mt-1 max-w-xs">
+              <Selector
+                defaultValue={bodegaId}
+                onChange={setBodegaId}
+                opciones={bodegas.map((b) => ({ value: b.id, label: b.nombre }))}
+              />
+            </div>
           </div>
           <div className="divide-y divide-zinc-100">
             {lineas.map((l) => (
@@ -207,7 +196,6 @@ export function FormularioSalidas({ opciones, bodegas }: { opciones: Opcion[]; b
                 onClick={async () => {
                   setEnviando(true);
                   setExito(null);
-                  const bodegaId = (document.getElementById("bodega-lote") as HTMLSelectElement | null)?.value;
                   const formData = new FormData();
                   formData.set("bodega_id", bodegaId ?? "");
                   formData.set(

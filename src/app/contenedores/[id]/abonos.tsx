@@ -1,6 +1,7 @@
 "use client";
 
 import { CampoNumero } from "@/components/campo-numero";
+import { Selector } from "@/components/selector";
 import { formatoPesos } from "@/lib/formato";
 import { tipoCambioPromedioMercancia } from "@/lib/calculos";
 import type { PagoMercancia } from "@/lib/tipos";
@@ -68,10 +69,16 @@ export function Abonos({ contenedorId, abonos }: { contenedorId: string; abonos:
         </div>
         <div>
           <label className="block text-xs font-medium text-zinc-500">Estado</label>
-          <select name="pagado" defaultValue="true" className={claseCampo}>
-            <option value="true">Pagado</option>
-            <option value="false">Pendiente</option>
-          </select>
+          <div className="mt-1">
+            <Selector
+              name="pagado"
+              defaultValue="true"
+              opciones={[
+                { value: "true", label: "Pagado" },
+                { value: "false", label: "Pendiente" },
+              ]}
+            />
+          </div>
         </div>
         <button
           type="submit"

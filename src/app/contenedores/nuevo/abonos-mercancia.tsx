@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { CampoNumero } from "@/components/campo-numero";
+import { Selector } from "@/components/selector";
 
 const claseCampo =
   "mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500";
@@ -34,14 +35,16 @@ export function AbonosMercancia() {
             </div>
             <div>
               <label className="block text-xs font-medium text-zinc-500">Estado</label>
-              <select
-                name="abono_pagado"
-                defaultValue="true"
-                className="mt-1 block rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500"
-              >
-                <option value="true">Pagado</option>
-                <option value="false">Pendiente</option>
-              </select>
+              <div className="mt-1">
+                <Selector
+                  name="abono_pagado"
+                  defaultValue="true"
+                  opciones={[
+                    { value: "true", label: "Pagado" },
+                    { value: "false", label: "Pendiente" },
+                  ]}
+                />
+              </div>
             </div>
             <button
               type="button"

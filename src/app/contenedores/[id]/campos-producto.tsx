@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { CampoNumero } from "@/components/campo-numero";
 import { CampoImagen } from "@/components/campo-imagen";
+import { CampoSugerencias } from "@/components/campo-sugerencias";
 import { skuSugerido } from "@/lib/calculos";
 import type { Producto } from "@/lib/tipos";
 
@@ -14,18 +15,30 @@ export function CamposProducto({
   inicial,
   fabricaPorDefecto,
   proveedorPorDefecto,
+  categoriaPorDefecto,
+  categorias = [],
+  fabricas = [],
+  proveedores = [],
   esRestock = false,
 }: {
   inicial?: Partial<Producto>;
   fabricaPorDefecto?: string | null;
   proveedorPorDefecto?: string | null;
+  /** Categoría del último producto agregado a este contenedor — casi
+   * siempre se repite, así que se precarga en productos nuevos. */
+  categoriaPorDefecto?: string | null;
+  categorias?: string[];
+  fabricas?: string[];
+  proveedores?: string[];
   /** true cuando se rellenan los campos a partir de un producto anterior
    * (restock): no se carga la cantidad ni el id, solo los datos fijos. */
   esRestock?: boolean;
 }) {
-  const [categoria, setCategoria] = useState(inicial?.categoria ?? "");
+  const [categoria, setCategoria] = useState(inicial?.categoria ?? categoriaPorDefecto ?? "");
+  const [fabrica, setFabrica] = useState(inicial?.fabrica ?? fabricaPorDefecto ?? "");
+  const [proveedor, setProveedor] = useState(inicial?.proveedor ?? proveedorPorDefecto ?? "");
   const [nombre, setNombre] = useState(inicial?.nombre ?? "");
-  const [sku, setSku] = useState(inicial?.sku ?? "");
+  const [sku, setSku] = useState(inicial?.sku ?? skuSugerido(categoriaPorDefecto ?? "", ""));
   const [skuEditadoManualmente, setSkuEditadoManualmente] = useState(Boolean(inicial?.sku));
 
   function alCambiarCategoria(valor: string) {
@@ -48,30 +61,32 @@ export function CamposProducto({
       <div className="grid grid-cols-3 gap-3">
         <div>
           <label className="block text-xs font-medium text-zinc-500">Categoría</label>
-          <input
-            type="text"
+          <CampoSugerencias
             name="categoria"
             required
             value={categoria}
-            onChange={(e) => alCambiarCategoria(e.target.value)}
+            onChange={alCambiarCategoria}
+            sugerencias={categorias}
             className={claseCampo}
           />
         </div>
         <div>
           <label className="block text-xs font-medium text-zinc-500">Fábrica</label>
-          <input
-            type="text"
+          <CampoSugerencias
             name="fabrica"
-            defaultValue={inicial?.fabrica ?? fabricaPorDefecto ?? ""}
+            value={fabrica}
+            onChange={setFabrica}
+            sugerencias={fabricas}
             className={claseCampo}
           />
         </div>
         <div>
           <label className="block text-xs font-medium text-zinc-500">Proveedor / contacto</label>
-          <input
-            type="text"
+          <CampoSugerencias
             name="proveedor"
-            defaultValue={inicial?.proveedor ?? proveedorPorDefecto ?? ""}
+            value={proveedor}
+            onChange={setProveedor}
+            sugerencias={proveedores}
             className={claseCampo}
           />
         </div>

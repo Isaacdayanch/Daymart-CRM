@@ -1,13 +1,23 @@
 "use client";
 
 import { CampoNumero } from "@/components/campo-numero";
+import { Selector } from "@/components/selector";
+import { CamposProveedorPrincipal } from "@/components/campos-proveedor-principal";
 import { ESTADOS_CONTENEDOR, type Contenedor } from "@/lib/tipos";
 import { actualizarContenedor, eliminarContenedor } from "./actions";
 
 const claseCampo =
   "mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500";
 
-export function FormularioContenedor({ contenedor }: { contenedor: Contenedor }) {
+export function FormularioContenedor({
+  contenedor,
+  fabricas,
+  proveedores,
+}: {
+  contenedor: Contenedor;
+  fabricas: string[];
+  proveedores: string[];
+}) {
   const guardar = actualizarContenedor.bind(null, contenedor.id);
 
   return (
@@ -27,21 +37,14 @@ export function FormularioContenedor({ contenedor }: { contenedor: Contenedor })
           />
         </div>
         <div>
-          <label htmlFor="estado" className="block text-sm font-medium text-zinc-700">
-            Estado
-          </label>
-          <select
-            id="estado"
-            name="estado"
-            defaultValue={contenedor.estado}
-            className={claseCampo}
-          >
-            {ESTADOS_CONTENEDOR.map((e) => (
-              <option key={e.valor} value={e.valor}>
-                {e.etiqueta}
-              </option>
-            ))}
-          </select>
+          <label className="block text-sm font-medium text-zinc-700">Estado</label>
+          <div className="mt-1">
+            <Selector
+              name="estado"
+              defaultValue={contenedor.estado}
+              opciones={ESTADOS_CONTENEDOR.map((e) => ({ value: e.valor, label: e.etiqueta }))}
+            />
+          </div>
         </div>
       </div>
 
@@ -51,32 +54,12 @@ export function FormularioContenedor({ contenedor }: { contenedor: Contenedor })
           Se usa para rellenar cada producto nuevo automáticamente. Si el contenedor es
           consolidado (varios proveedores), lo puedes cambiar por producto.
         </p>
-        <div className="mt-2 grid grid-cols-2 gap-4">
-          <div>
-            <label htmlFor="fabrica_principal" className="block text-xs font-medium text-zinc-500">
-              Fábrica
-            </label>
-            <input
-              type="text"
-              id="fabrica_principal"
-              name="fabrica_principal"
-              defaultValue={contenedor.fabrica_principal ?? ""}
-              className={claseCampo}
-            />
-          </div>
-          <div>
-            <label htmlFor="proveedor_principal" className="block text-xs font-medium text-zinc-500">
-              Proveedor / contacto
-            </label>
-            <input
-              type="text"
-              id="proveedor_principal"
-              name="proveedor_principal"
-              defaultValue={contenedor.proveedor_principal ?? ""}
-              className={claseCampo}
-            />
-          </div>
-        </div>
+        <CamposProveedorPrincipal
+          fabricas={fabricas}
+          proveedores={proveedores}
+          fabricaInicial={contenedor.fabrica_principal}
+          proveedorInicial={contenedor.proveedor_principal}
+        />
       </div>
 
       <div className="border-t border-zinc-100 pt-4">

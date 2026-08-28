@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { Selector } from "@/components/selector";
+import { CampoFecha } from "@/components/campo-fecha";
 import type { Bodega, Producto } from "@/lib/tipos";
 import { confirmarRecepcion, editarRecepcion } from "./actions";
 
@@ -40,29 +42,17 @@ export function FormularioRecepcion({
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <label className="block text-xs font-medium text-zinc-500">Bodega</label>
-            <select
-              name="bodega_id"
-              required
-              defaultValue={bodegaOriginalId ?? bodegas[0]?.id}
-              className="mt-1.5 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500"
-            >
-              {bodegas.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.nombre}
-                </option>
-              ))}
-            </select>
+            <div className="mt-1.5">
+              <Selector
+                name="bodega_id"
+                defaultValue={bodegaOriginalId ?? bodegas[0]?.id}
+                opciones={bodegas.map((b) => ({ value: b.id, label: b.nombre }))}
+              />
+            </div>
           </div>
           <div>
             <label className="block text-xs font-medium text-zinc-500">Fecha de recepción</label>
-            <input
-              type="date"
-              name="fecha_recepcion"
-              defaultValue={fechaActual ?? hoyTexto}
-              max={hoyTexto}
-              required
-              className="mt-1.5 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500"
-            />
+            <CampoFecha name="fecha_recepcion" defaultValue={fechaActual ?? hoyTexto} max={hoyTexto} required />
             <p className="mt-1 text-xs text-zinc-400">
               {modoEdicion
                 ? "Cámbiala si la fecha original quedó mal."

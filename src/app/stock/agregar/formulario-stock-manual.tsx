@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { CampoImagen } from "@/components/campo-imagen";
+import { CampoSugerencias } from "@/components/campo-sugerencias";
+import { Selector } from "@/components/selector";
 import type { Bodega, Producto } from "@/lib/tipos";
 import { agregarStockManual } from "../actions";
 
@@ -36,22 +38,14 @@ export function FormularioStockManual({ bodegas, catalogo }: { bodegas: Bodega[]
         <div className="grid flex-1 gap-3 sm:grid-cols-2">
           <div>
             <label className="block text-xs font-medium text-zinc-500">SKU</label>
-            <input
-              type="text"
+            <CampoSugerencias
               name="sku"
-              list="catalogo-skus"
               required
               value={sku}
-              onChange={(e) => setSku(e.target.value)}
+              onChange={setSku}
+              sugerencias={catalogo.map((p) => p.sku)}
               className="mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm font-mono focus:border-zinc-500 focus:ring-zinc-500"
             />
-            <datalist id="catalogo-skus">
-              {catalogo.map((p) => (
-                <option key={p.sku} value={p.sku}>
-                  {p.nombre}
-                </option>
-              ))}
-            </datalist>
           </div>
           <div>
             <label className="block text-xs font-medium text-zinc-500">Nombre del producto</label>
@@ -69,18 +63,9 @@ export function FormularioStockManual({ bodegas, catalogo }: { bodegas: Bodega[]
       <div className="grid gap-3 sm:grid-cols-2">
         <div>
           <label className="block text-xs font-medium text-zinc-500">Bodega</label>
-          <select
-            name="bodega_id"
-            required
-            defaultValue={bodegas[0]?.id}
-            className="mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500"
-          >
-            {bodegas.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.nombre}
-              </option>
-            ))}
-          </select>
+          <div className="mt-1">
+            <Selector name="bodega_id" defaultValue={bodegas[0]?.id} opciones={bodegas.map((b) => ({ value: b.id, label: b.nombre }))} />
+          </div>
         </div>
         <div>
           <label className="block text-xs font-medium text-zinc-500">Cantidad (piezas)</label>

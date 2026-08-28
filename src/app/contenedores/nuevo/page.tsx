@@ -2,6 +2,10 @@ import Link from "next/link";
 import { crearContenedor } from "./actions";
 import { AbonosMercancia } from "./abonos-mercancia";
 import { CampoNumero } from "@/components/campo-numero";
+import { Selector } from "@/components/selector";
+import { CamposProveedorPrincipal } from "@/components/campos-proveedor-principal";
+import { createClient } from "@/lib/supabase/server";
+import { obtenerSugerenciasCatalogo } from "@/lib/catalogo-proveedores";
 import { ESTADOS_CONTENEDOR } from "@/lib/tipos";
 import { Logo } from "@/components/logo";
 
@@ -14,6 +18,8 @@ export default async function NuevoContenedor({
   searchParams: Promise<{ error?: string }>;
 }) {
   const { error } = await searchParams;
+  const supabase = await createClient();
+  const { fabricas, proveedores } = await obtenerSugerenciasCatalogo(supabase);
 
   return (
     <div className="min-h-screen bg-zinc-50">
@@ -52,21 +58,14 @@ export default async function NuevoContenedor({
               />
             </div>
             <div>
-              <label htmlFor="estado" className="block text-sm font-medium text-zinc-700">
-                Estado
-              </label>
-              <select
-                id="estado"
-                name="estado"
-                defaultValue="CONFIGURANDOSE"
-                className="mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500"
-              >
-                {ESTADOS_CONTENEDOR.map((e) => (
-                  <option key={e.valor} value={e.valor}>
-                    {e.etiqueta}
-                  </option>
-                ))}
-              </select>
+              <label className="block text-sm font-medium text-zinc-700">Estado</label>
+              <div className="mt-1">
+                <Selector
+                  name="estado"
+                  defaultValue="CONFIGURANDOSE"
+                  opciones={ESTADOS_CONTENEDOR.map((e) => ({ value: e.valor, label: e.etiqueta }))}
+                />
+              </div>
             </div>
           </div>
 
@@ -81,6 +80,15 @@ export default async function NuevoContenedor({
               placeholder="Ej. MRKU2892234"
               className="mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500"
             />
+          </div>
+
+          <div className="border-t border-zinc-100 pt-4">
+            <p className="text-sm font-medium text-zinc-700">Proveedor principal</p>
+            <p className="text-xs text-zinc-500">
+              Se usa para rellenar cada producto nuevo automáticamente. Si el contenedor es
+              consolidado (varios proveedores), lo puedes cambiar por producto.
+            </p>
+            <CamposProveedorPrincipal fabricas={fabricas} proveedores={proveedores} />
           </div>
 
           <div className="border-t border-zinc-100 pt-4">

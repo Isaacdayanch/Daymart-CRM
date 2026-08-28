@@ -2,17 +2,8 @@
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { numero, texto } from "@/lib/form-helpers";
 import type { EstadoContenedor } from "@/lib/tipos";
-
-function numero(formData: FormData, campo: string) {
-  const valor = formData.get(campo);
-  return valor ? Number(valor) : 0;
-}
-
-function texto(formData: FormData, campo: string) {
-  const valor = formData.get(campo);
-  return typeof valor === "string" && valor.trim() ? valor.trim() : null;
-}
 
 export async function crearContenedor(formData: FormData) {
   const supabase = await createClient();
@@ -28,6 +19,8 @@ export async function crearContenedor(formData: FormData) {
       aduana_pesos: numero(formData, "aduana_pesos"),
       otros_gastos_dolares: numero(formData, "otros_gastos_dolares"),
       otros_gastos_tipo_cambio: numero(formData, "otros_gastos_tipo_cambio"),
+      fabrica_principal: texto(formData, "fabrica_principal"),
+      proveedor_principal: texto(formData, "proveedor_principal"),
     })
     .select("id")
     .single();

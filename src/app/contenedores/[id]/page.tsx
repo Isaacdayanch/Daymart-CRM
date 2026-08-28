@@ -8,6 +8,7 @@ import {
   tipoCambioPromedioMercancia,
 } from "@/lib/calculos";
 import { reconciliacionContenedor } from "@/lib/calculos-stock";
+import { obtenerSugerenciasCatalogo } from "@/lib/catalogo-proveedores";
 import { formatoPesos } from "@/lib/formato";
 import { Logo } from "@/components/logo";
 import {
@@ -113,6 +114,8 @@ export default async function DetalleContenedor({
     documentosPorTipo[doc.tipo] = { ...doc, url: firmado?.signedUrl ?? null };
   }
 
+  const { fabricas, proveedores, categorias } = await obtenerSugerenciasCatalogo(supabase);
+
   const cbmTotal = cbmTotalContenedor(listaProductos);
   const costoPorCbm = costoPorCbmContenedor(contenedor, listaProductos);
   const tipoCambioMercancia = tipoCambioPromedioMercancia(listaAbonos);
@@ -198,7 +201,7 @@ export default async function DetalleContenedor({
 
         <Historial historial={listaHistorial} />
         <Documentos contenedorId={contenedor.id} documentosPorTipo={documentosPorTipo} />
-        <FormularioContenedor contenedor={contenedor} />
+        <FormularioContenedor contenedor={contenedor} fabricas={fabricas} proveedores={proveedores} />
         <Abonos contenedorId={contenedor.id} abonos={listaAbonos} />
         <Productos
           contenedorId={contenedor.id}
@@ -209,6 +212,9 @@ export default async function DetalleContenedor({
           proveedorPrincipal={contenedor.proveedor_principal}
           catalogo={catalogo}
           pendientesChina={pendientesChina ?? []}
+          categoriasSugeridas={categorias}
+          fabricasSugeridas={fabricas}
+          proveedoresSugeridos={proveedores}
         />
 
         <div className="flex justify-end">
