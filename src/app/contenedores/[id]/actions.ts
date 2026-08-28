@@ -74,11 +74,14 @@ export async function eliminarContenedor(contenedorId: string) {
 export async function agregarAbono(contenedorId: string, formData: FormData) {
   const supabase = await createClient();
 
+  const fecha = texto(formData, "fecha");
+
   await supabase.from("pagos_mercancia").insert({
     contenedor_id: contenedorId,
     monto_dolares: numero(formData, "monto_dolares"),
     tipo_cambio: numero(formData, "tipo_cambio"),
     pagado: formData.get("pagado") === "true",
+    fecha: fecha ? new Date(`${fecha}T12:00:00`).toISOString() : new Date().toISOString(),
   });
 
   revalidatePath(`/contenedores/${contenedorId}`);
@@ -87,6 +90,19 @@ export async function agregarAbono(contenedorId: string, formData: FormData) {
 export async function eliminarAbono(contenedorId: string, abonoId: string) {
   const supabase = await createClient();
   await supabase.from("pagos_mercancia").delete().eq("id", abonoId);
+  revalidatePath(`/contenedores/${contenedorId}`);
+}
+
+export async function actualizarFechaAbono(contenedorId: string, abonoId: string, formData: FormData) {
+  const supabase = await createClient();
+  const fecha = texto(formData, "fecha");
+  if (!fecha) return;
+
+  await supabase
+    .from("pagos_mercancia")
+    .update({ fecha: new Date(`${fecha}T12:00:00`).toISOString() })
+    .eq("id", abonoId);
+
   revalidatePath(`/contenedores/${contenedorId}`);
 }
 

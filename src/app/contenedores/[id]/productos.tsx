@@ -231,7 +231,12 @@ export function Productos({
                     setEditandoId(null);
                   }}
                 >
-                  <CamposProducto inicial={producto} />
+                  <CamposProducto
+                    inicial={producto}
+                    categorias={categoriasSugeridas}
+                    fabricas={fabricasSugeridas}
+                    proveedores={proveedoresSugeridos}
+                  />
                   <div className="mt-3 flex justify-end gap-2">
                     <button
                       type="button"
@@ -302,33 +307,6 @@ export function Productos({
       >
         <p className="text-xs font-medium text-zinc-500">Agregar producto</p>
 
-        {pendientesChina.length > 0 && (
-          <div>
-            <label className="block text-xs font-medium text-amber-700">
-              ¿Es mercancía pendiente de China?
-            </label>
-            <div className="mt-1">
-              <Selector
-                key={`pendiente-${pendienteId}`}
-                defaultValue={pendienteId}
-                onChange={(v) => {
-                  setPendienteId(v);
-                  setRestockId("");
-                }}
-                placeholder="— No, es otra cosa —"
-                claseTrigger="flex w-full items-center justify-between gap-2 rounded-lg border border-amber-300 bg-white px-3 py-2 text-left text-sm transition focus:border-amber-500 focus:ring-2 focus:ring-amber-200 focus:outline-none"
-                opciones={[
-                  { value: "", label: "— No, es otra cosa —" },
-                  ...pendientesChina.map((p) => ({
-                    value: p.id,
-                    label: `${p.sku} — ${p.nombre} (${p.cantidad_pendiente} pzas pendientes)`,
-                  })),
-                ]}
-              />
-            </div>
-          </div>
-        )}
-
         {catalogo.length > 0 && (
           <div>
             <label className="block text-xs font-medium text-zinc-500">
@@ -345,7 +323,24 @@ export function Productos({
                 placeholder="— Producto nuevo, llenar desde cero —"
                 opciones={[
                   { value: "", label: "— Producto nuevo, llenar desde cero —" },
-                  ...catalogo.map((p) => ({ value: p.id, label: `${p.sku} — ${p.nombre}` })),
+                  ...catalogo.map((p) => ({
+                    value: p.id,
+                    label: (
+                      <span className="flex items-center gap-2.5">
+                        {p.imagen_url ? (
+                          // eslint-disable-next-line @next/next/no-img-element -- miniatura chica en un desplegable
+                          <img src={p.imagen_url} alt={p.nombre} className="h-8 w-8 shrink-0 rounded-md object-cover" />
+                        ) : (
+                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-zinc-100 text-[8px] text-zinc-400">
+                            Sin foto
+                          </span>
+                        )}
+                        <span className="truncate">
+                          {p.sku} — {p.nombre}
+                        </span>
+                      </span>
+                    ),
+                  })),
                 ]}
               />
             </div>
@@ -382,6 +377,33 @@ export function Productos({
           fabricas={fabricasSugeridas}
           proveedores={proveedoresSugeridos}
         />
+
+        {pendientesChina.length > 0 && (
+          <details className="rounded-lg border border-amber-200 bg-amber-50/50 px-3 py-2" open={Boolean(pendienteId)}>
+            <summary className="cursor-pointer text-xs font-medium text-amber-700">
+              ¿Es mercancía pendiente de China?
+            </summary>
+            <div className="mt-2">
+              <Selector
+                key={`pendiente-${pendienteId}`}
+                defaultValue={pendienteId}
+                onChange={(v) => {
+                  setPendienteId(v);
+                  setRestockId("");
+                }}
+                placeholder="— No, es otra cosa —"
+                opciones={[
+                  { value: "", label: "— No, es otra cosa —" },
+                  ...pendientesChina.map((p) => ({
+                    value: p.id,
+                    label: `${p.sku} — ${p.nombre} (${p.cantidad_pendiente} pzas pendientes)`,
+                  })),
+                ]}
+              />
+            </div>
+          </details>
+        )}
+
         <div className="flex justify-end">
           <button
             type="submit"

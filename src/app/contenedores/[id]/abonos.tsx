@@ -1,11 +1,12 @@
 "use client";
 
 import { CampoNumero } from "@/components/campo-numero";
+import { CampoFecha } from "@/components/campo-fecha";
 import { Selector } from "@/components/selector";
-import { formatoPesos } from "@/lib/formato";
 import { tipoCambioPromedioMercancia } from "@/lib/calculos";
 import type { PagoMercancia } from "@/lib/tipos";
-import { agregarAbono, eliminarAbono } from "./actions";
+import { agregarAbono } from "./actions";
+import { FilaAbono } from "./fila-abono";
 
 const claseCampo =
   "mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500";
@@ -13,6 +14,7 @@ const claseCampo =
 export function Abonos({ contenedorId, abonos }: { contenedorId: string; abonos: PagoMercancia[] }) {
   const agregar = agregarAbono.bind(null, contenedorId);
   const tipoCambioPromedio = tipoCambioPromedioMercancia(abonos);
+  const hoyTexto = new Date().toISOString().slice(0, 10);
 
   return (
     <div className="rounded-xl border border-zinc-200 bg-white p-6">
@@ -28,36 +30,14 @@ export function Abonos({ contenedorId, abonos }: { contenedorId: string; abonos:
       {abonos.length > 0 && (
         <ul className="mt-3 divide-y divide-zinc-100">
           {abonos.map((abono) => (
-            <li key={abono.id} className="flex items-center justify-between py-2 text-sm">
-              <span>
-                ${abono.monto_dolares.toLocaleString("es-MX")} USD × {abono.tipo_cambio} ={" "}
-                {formatoPesos(abono.monto_dolares * abono.tipo_cambio)}
-              </span>
-              <div className="flex items-center gap-3">
-                <span
-                  className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                    abono.pagado ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
-                  }`}
-                >
-                  {abono.pagado ? "Pagado" : "Pendiente"}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => eliminarAbono(contenedorId, abono.id)}
-                  className="text-zinc-400 hover:text-red-600"
-                  aria-label="Quitar abono"
-                >
-                  ✕
-                </button>
-              </div>
-            </li>
+            <FilaAbono key={abono.id} contenedorId={contenedorId} abono={abono} />
           ))}
         </ul>
       )}
 
       <form
         action={agregar}
-        className="mt-4 grid grid-cols-[1fr_1fr_auto_auto] items-end gap-2 border-t border-zinc-100 pt-4"
+        className="mt-4 grid grid-cols-[1fr_1fr_auto_auto_auto] items-end gap-2 border-t border-zinc-100 pt-4"
       >
         <div>
           <label className="block text-xs font-medium text-zinc-500">Monto USD</label>
@@ -66,6 +46,10 @@ export function Abonos({ contenedorId, abonos }: { contenedorId: string; abonos:
         <div>
           <label className="block text-xs font-medium text-zinc-500">Tipo de cambio</label>
           <CampoNumero name="tipo_cambio" className={claseCampo} />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-zinc-500">Fecha</label>
+          <CampoFecha name="fecha" defaultValue={hoyTexto} max={hoyTexto} required />
         </div>
         <div>
           <label className="block text-xs font-medium text-zinc-500">Estado</label>

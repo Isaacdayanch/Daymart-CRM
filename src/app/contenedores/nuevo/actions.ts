@@ -37,6 +37,7 @@ export async function crearContenedor(formData: FormData) {
   const montos = formData.getAll("abono_monto").map(Number);
   const tiposCambio = formData.getAll("abono_tipo_cambio").map(Number);
   const pagados = formData.getAll("abono_pagado").map((v) => v === "true");
+  const fechas = formData.getAll("abono_fecha").map((v) => String(v));
 
   const abonos = montos
     .map((monto, i) => ({
@@ -44,6 +45,7 @@ export async function crearContenedor(formData: FormData) {
       monto_dolares: monto,
       tipo_cambio: tiposCambio[i] ?? 0,
       pagado: pagados[i] ?? false,
+      fecha: fechas[i] ? new Date(`${fechas[i]}T12:00:00`).toISOString() : new Date().toISOString(),
     }))
     .filter((abono) => abono.monto_dolares > 0);
 

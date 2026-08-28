@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { CampoNumero } from "@/components/campo-numero";
+import { CampoFecha } from "@/components/campo-fecha";
 import { Selector } from "@/components/selector";
 
 const claseCampo =
@@ -13,6 +14,7 @@ interface Fila {
 
 export function AbonosMercancia() {
   const [filas, setFilas] = useState<Fila[]>([{ id: 1 }]);
+  const hoyTexto = new Date().toISOString().slice(0, 10);
 
   return (
     <div>
@@ -24,7 +26,7 @@ export function AbonosMercancia() {
 
       <div className="mt-2 space-y-2">
         {filas.map((fila) => (
-          <div key={fila.id} className="grid grid-cols-[1fr_1fr_auto_auto] items-end gap-2">
+          <div key={fila.id} className="grid grid-cols-[1fr_1fr_1fr_auto_auto] items-end gap-2">
             <div>
               <label className="block text-xs font-medium text-zinc-500">Monto USD</label>
               <CampoNumero name="abono_monto" className={claseCampo} />
@@ -32,6 +34,10 @@ export function AbonosMercancia() {
             <div>
               <label className="block text-xs font-medium text-zinc-500">Tipo de cambio</label>
               <CampoNumero name="abono_tipo_cambio" className={claseCampo} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-zinc-500">Fecha</label>
+              <CampoFecha name="abono_fecha" defaultValue={hoyTexto} max={hoyTexto} required />
             </div>
             <div>
               <label className="block text-xs font-medium text-zinc-500">Estado</label>
