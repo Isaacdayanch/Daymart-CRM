@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { nombreArchivoSeguro, texto } from "@/lib/form-helpers";
+import { completarColumnasOmitidas, insertarMovimientosStock } from "@/lib/movimientos-stock";
 import { costoPromedioPonderado } from "@/lib/calculos-stock";
 import type { MovimientoStock } from "@/lib/tipos";
 
@@ -95,8 +96,11 @@ export async function registrarSalidasLote(formData: FormData) {
     };
   });
 
-  const { error } = await supabase.from("movimientos_stock").insert(movimientos);
-  if (error) return { error: error.message };
+  const { data: insertados, error, columnasOmitidas } = await insertarMovimientosStock(supabase, movimientos);
+  if (error) return { error };
+  if (insertados && columnasOmitidas.length) {
+    await completarColumnasOmitidas(supabase, insertados.map((i) => i.id), movimientos, columnasOmitidas);
+  }
 
   revalidatePath("/stock");
   revalidatePath("/stock/movimientos");
@@ -136,7 +140,7 @@ export async function agregarStockManual(formData: FormData) {
   const { url: imagenSubida, error: errorImagen } = await subirImagenStock(supabase, formData);
   const imagenUrl = imagenSubida ?? texto(formData, "imagen_url_previa");
 
-  const { error: errorInsert } = await supabase.from("movimientos_stock").insert({
+  const fila = {
     tipo: "ENTRADA",
     sku,
     nombre,
@@ -146,8 +150,14 @@ export async function agregarStockManual(formData: FormData) {
     imagen_url: imagenUrl,
     costo_unitario_pesos: Number(formData.get("costo_unitario_pesos")) || 0,
     referencia: texto(formData, "referencia") ?? "Carga manual de stock existente",
-  });
-  if (errorInsert) return { error: `No se pudo guardar: ${errorInsert.message}` };
+  };
+  const { data: insertados, error: errorInsert, columnasOmitidas } = await insertarMovimientosStock(supabase, [
+    fila,
+  ]);
+  if (errorInsert) return { error: `No se pudo guardar: ${errorInsert}` };
+  if (insertados && columnasOmitidas.length) {
+    await completarColumnasOmitidas(supabase, insertados.map((i) => i.id), [fila], columnasOmitidas);
+  }
 
   revalidatePath("/stock");
   revalidatePath("/stock/movimientos");

@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { costoFinalPorPieza, costoPorCbmContenedor, tipoCambioPromedioMercancia } from "@/lib/calculos";
+import { completarColumnasOmitidas, insertarMovimientosStock } from "@/lib/movimientos-stock";
 import { registrarHistorialSiCambia } from "../actions";
 import type { Contenedor, PagoMercancia, Producto } from "@/lib/tipos";
 
@@ -95,16 +96,22 @@ export async function confirmarRecepcion(contenedorId: string, formData: FormDat
     }));
 
   if (movimientos.length) {
-    const { error: errorMovimientos } = await supabase.from("movimientos_stock").insert(movimientos);
+    const { data: insertados, error: errorMovimientos, columnasOmitidas } = await insertarMovimientosStock(
+      supabase,
+      movimientos,
+    );
     if (errorMovimientos) {
       // No se marca el contenedor como recibido si el stock no se pudo
       // guardar de verdad — antes esto fallaba en silencio y el contenedor
       // quedaba "Recibido en bodega" sin que existiera ninguna entrada.
       redirect(
         `/contenedores/${contenedorId}/recibir?error=${encodeURIComponent(
-          `No se pudo guardar el stock: ${errorMovimientos.message}`,
+          `No se pudo guardar el stock: ${errorMovimientos}`,
         )}`,
       );
+    }
+    if (insertados && columnasOmitidas.length) {
+      await completarColumnasOmitidas(supabase, insertados.map((i) => i.id), movimientos, columnasOmitidas);
     }
   }
 
@@ -178,13 +185,19 @@ export async function editarRecepcion(contenedorId: string, formData: FormData) 
   }
 
   if (ajustes.length) {
-    const { error: errorAjustes } = await supabase.from("movimientos_stock").insert(ajustes);
+    const { data: insertados, error: errorAjustes, columnasOmitidas } = await insertarMovimientosStock(
+      supabase,
+      ajustes,
+    );
     if (errorAjustes) {
       redirect(
         `/contenedores/${contenedorId}/recibir?error=${encodeURIComponent(
-          `No se pudo guardar la corrección: ${errorAjustes.message}`,
+          `No se pudo guardar la corrección: ${errorAjustes}`,
         )}`,
       );
+    }
+    if (insertados && columnasOmitidas.length) {
+      await completarColumnasOmitidas(supabase, insertados.map((i) => i.id), ajustes, columnasOmitidas);
     }
   }
 

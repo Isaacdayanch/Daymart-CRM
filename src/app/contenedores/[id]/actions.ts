@@ -10,6 +10,7 @@ import {
   tipoCambioPromedioMercancia,
 } from "@/lib/calculos";
 import { nombreArchivoSeguro, numero, texto } from "@/lib/form-helpers";
+import { completarColumnasOmitidas, insertarMovimientosStock } from "@/lib/movimientos-stock";
 import type { Contenedor, EstadoContenedor, PagoMercancia, Producto, TipoDocumento } from "@/lib/tipos";
 
 /** Si el estado cambió, guarda el momento en el historial del contenedor.
@@ -113,13 +114,17 @@ export async function recalcularCostoEntradasContenedor(
           creado_en: contenedor.stock_generado_en,
         }));
 
-      const { data: insertados, error: errorInsert } = await supabase
-        .from("movimientos_stock")
-        .insert(nuevos)
-        .select("id");
+      const { data: insertados, error: errorInsert, columnasOmitidas } = await insertarMovimientosStock(
+        supabase,
+        nuevos,
+      );
 
       if (errorInsert) {
-        return { actualizados: 0, total: productos.length, error: `No se pudo generar el stock: ${errorInsert.message}` };
+        return { actualizados: 0, total: productos.length, error: `No se pudo generar el stock: ${errorInsert}` };
+      }
+
+      if (insertados && columnasOmitidas.length) {
+        await completarColumnasOmitidas(supabase, insertados.map((i) => i.id), nuevos, columnasOmitidas);
       }
 
       revalidatePath(`/contenedores/${contenedorId}`);
