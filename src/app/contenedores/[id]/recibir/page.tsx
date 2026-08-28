@@ -7,10 +7,13 @@ import { Logo } from "@/components/logo";
 
 export default async function RecibirContenedor({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ error?: string }>;
 }) {
   const { id } = await params;
+  const { error } = await searchParams;
   const supabase = await createClient();
 
   const { data: contenedor } = await supabase
@@ -68,6 +71,11 @@ export default async function RecibirContenedor({
       </header>
 
       <main className="mx-auto max-w-3xl px-4 py-10 sm:px-6">
+        {error && (
+          <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+            {error}
+          </div>
+        )}
         {listaProductos.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-zinc-300 bg-white p-10 text-center text-sm text-zinc-500">
             Este contenedor no tiene productos capturados todavía.

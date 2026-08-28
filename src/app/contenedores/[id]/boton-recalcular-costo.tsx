@@ -21,6 +21,10 @@ export function BotonRecalcularCosto({ contenedorId }: { contenedorId: string })
             const resultado = await recalcularCostoEntradasContenedor(contenedorId);
             if (resultado.error) {
               setMensaje(`Error: ${resultado.error}`);
+            } else if (resultado.regenerado) {
+              setMensaje(
+                `No tenía ninguna entrada guardada — se generaron ${resultado.actualizados} de ${resultado.total} de cero.`,
+              );
             } else if (resultado.actualizados === 0 && resultado.total > 0) {
               setMensaje("No se encontró ningún movimiento de stock que actualizar.");
             } else {

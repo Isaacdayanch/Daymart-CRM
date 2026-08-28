@@ -95,7 +95,17 @@ export async function confirmarRecepcion(contenedorId: string, formData: FormDat
     }));
 
   if (movimientos.length) {
-    await supabase.from("movimientos_stock").insert(movimientos);
+    const { error: errorMovimientos } = await supabase.from("movimientos_stock").insert(movimientos);
+    if (errorMovimientos) {
+      // No se marca el contenedor como recibido si el stock no se pudo
+      // guardar de verdad — antes esto fallaba en silencio y el contenedor
+      // quedaba "Recibido en bodega" sin que existiera ninguna entrada.
+      redirect(
+        `/contenedores/${contenedorId}/recibir?error=${encodeURIComponent(
+          `No se pudo guardar el stock: ${errorMovimientos.message}`,
+        )}`,
+      );
+    }
   }
 
   await registrarHistorialSiCambia(supabase, contenedorId, "RECIBIDO_BODEGA", fechaRecepcion);
@@ -168,7 +178,14 @@ export async function editarRecepcion(contenedorId: string, formData: FormData) 
   }
 
   if (ajustes.length) {
-    await supabase.from("movimientos_stock").insert(ajustes);
+    const { error: errorAjustes } = await supabase.from("movimientos_stock").insert(ajustes);
+    if (errorAjustes) {
+      redirect(
+        `/contenedores/${contenedorId}/recibir?error=${encodeURIComponent(
+          `No se pudo guardar la corrección: ${errorAjustes.message}`,
+        )}`,
+      );
+    }
   }
 
   // Si Isaac corrigió la fecha de recepción, se actualiza en los tres

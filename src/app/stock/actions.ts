@@ -136,7 +136,7 @@ export async function agregarStockManual(formData: FormData) {
   const { url: imagenSubida, error: errorImagen } = await subirImagenStock(supabase, formData);
   const imagenUrl = imagenSubida ?? texto(formData, "imagen_url_previa");
 
-  await supabase.from("movimientos_stock").insert({
+  const { error: errorInsert } = await supabase.from("movimientos_stock").insert({
     tipo: "ENTRADA",
     sku,
     nombre,
@@ -147,6 +147,7 @@ export async function agregarStockManual(formData: FormData) {
     costo_unitario_pesos: Number(formData.get("costo_unitario_pesos")) || 0,
     referencia: texto(formData, "referencia") ?? "Carga manual de stock existente",
   });
+  if (errorInsert) return { error: `No se pudo guardar: ${errorInsert.message}` };
 
   revalidatePath("/stock");
   revalidatePath("/stock/movimientos");

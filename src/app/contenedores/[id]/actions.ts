@@ -42,7 +42,7 @@ export async function registrarHistorialSiCambia(
  * con los datos actuales, sin duplicar ni mover cantidades. */
 export async function recalcularCostoEntradasContenedor(
   contenedorId: string,
-): Promise<{ actualizados: number; total: number; error: string | null }> {
+): Promise<{ actualizados: number; total: number; error: string | null; regenerado?: boolean }> {
   // Nunca debe tronar hacia el cliente (eso es lo que muestra la pantalla
   // genérica de error de la aplicación con "Intentar nuevamente") — cualquier
   // problema se regresa como texto para mostrarlo en la propia página.
@@ -65,6 +65,73 @@ export async function recalcularCostoEntradasContenedor(
 
     const costoPorCbm = costoPorCbmContenedor(contenedor, productos);
     const tipoCambioMercancia = tipoCambioPromedioMercancia(abonos ?? []);
+
+    // Si el contenedor está "Recibido" pero no tiene NINGUNA entrada de
+    // stock guardada, es que la recepción falló al guardar en su momento
+    // (bug ya corregido, pero esto repara lo que quedó a medias). Se
+    // generan las entradas de cero con lo que hay capturado ahora mismo.
+    const { data: entradasExistentes, error: errorConteo } = await supabase
+      .from("movimientos_stock")
+      .select("id")
+      .eq("contenedor_id", contenedorId)
+      .eq("tipo", "ENTRADA");
+
+    if (errorConteo) {
+      return { actualizados: 0, total: productos.length, error: `Error de base de datos: ${errorConteo.message}` };
+    }
+
+    if (!entradasExistentes || entradasExistentes.length === 0) {
+      const { data: bodegas } = await supabase
+        .from("bodegas")
+        .select("*")
+        .is("eliminado_en", null)
+        .order("creado_en", { ascending: true })
+        .limit(1);
+      const bodega = bodegas?.[0];
+      if (!bodega) {
+        return {
+          actualizados: 0,
+          total: productos.length,
+          error: "No hay ninguna bodega creada todavía — ve a Stock → Bodegas, agrega una y vuelve a intentar.",
+        };
+      }
+
+      const nuevos = productos
+        .filter((p) => p.cantidad > 0)
+        .map((p) => ({
+          tipo: "ENTRADA",
+          sku: p.sku,
+          nombre: p.nombre,
+          bodega_id: bodega.id,
+          cantidad: p.cantidad,
+          piezas_por_caja: p.piezas_por_caja,
+          imagen_url: p.imagen_url,
+          costo_unitario_pesos: costoFinalPorPieza(p, costoPorCbm, tipoCambioMercancia),
+          contenedor_id: contenedorId,
+          producto_id: p.id,
+          referencia: `Recepción contenedor ${contenedor.numero} (regenerado)`,
+          creado_en: contenedor.stock_generado_en,
+        }));
+
+      const { data: insertados, error: errorInsert } = await supabase
+        .from("movimientos_stock")
+        .insert(nuevos)
+        .select("id");
+
+      if (errorInsert) {
+        return { actualizados: 0, total: productos.length, error: `No se pudo generar el stock: ${errorInsert.message}` };
+      }
+
+      revalidatePath(`/contenedores/${contenedorId}`);
+      revalidatePath("/stock");
+      revalidatePath("/stock/movimientos");
+      return {
+        actualizados: insertados?.length ?? 0,
+        total: productos.length,
+        error: null,
+        regenerado: true,
+      };
+    }
 
     let actualizados = 0;
     for (const p of productos) {
