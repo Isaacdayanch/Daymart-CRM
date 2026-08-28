@@ -89,6 +89,7 @@ export async function confirmarRecepcion(contenedorId: string, formData: FormDat
       imagen_url: p.imagen_url,
       costo_unitario_pesos: costoFinalPorPieza(p, costoPorCbm, tipoCambioMercancia),
       contenedor_id: contenedorId,
+      producto_id: p.id,
       referencia: `Recepción contenedor ${contenedor.numero}`,
       creado_en: fechaRecepcion,
     }));
@@ -131,11 +132,16 @@ export async function editarRecepcion(contenedorId: string, formData: FormData) 
       .select("*")
       .eq("contenedor_id", contenedorId)
       .eq("tipo", "ENTRADA")
-      .returns<{ sku: string; costo_unitario_pesos: number }[]>(),
+      .returns<{ sku: string; producto_id: string | null; costo_unitario_pesos: number }[]>(),
   ]);
 
   if (!contenedor || !productos || !contenedor.stock_generado_en) return;
 
+  // Se busca primero por producto_id (confiable aunque el SKU se haya
+  // editado después) y, para movimientos viejos sin producto_id, por SKU.
+  const costoPorProductoId = new Map(
+    (entradasPrevias ?? []).filter((m) => m.producto_id).map((m) => [m.producto_id as string, m.costo_unitario_pesos]),
+  );
   const costoPorSku = new Map((entradasPrevias ?? []).map((m) => [m.sku, m.costo_unitario_pesos]));
   const ajustes: Record<string, unknown>[] = [];
 
@@ -152,8 +158,9 @@ export async function editarRecepcion(contenedorId: string, formData: FormData) 
       cantidad: diferencia,
       piezas_por_caja: producto.piezas_por_caja,
       imagen_url: producto.imagen_url,
-      costo_unitario_pesos: costoPorSku.get(producto.sku) ?? 0,
+      costo_unitario_pesos: costoPorProductoId.get(producto.id) ?? costoPorSku.get(producto.sku) ?? 0,
       contenedor_id: contenedorId,
+      producto_id: producto.id,
       referencia: `Corrección de conteo — contenedor ${contenedor.numero}`,
     });
 

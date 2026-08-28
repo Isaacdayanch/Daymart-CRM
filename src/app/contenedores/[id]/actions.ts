@@ -40,7 +40,9 @@ export async function registrarHistorialSiCambia(
  * terminen de pagar/capturar), el costo que ya quedó guardado en las
  * entradas de stock se queda desactualizado — esto lo vuelve a calcular
  * con los datos actuales, sin duplicar ni mover cantidades. */
-export async function recalcularCostoEntradasContenedor(contenedorId: string) {
+export async function recalcularCostoEntradasContenedor(
+  contenedorId: string,
+): Promise<{ actualizados: number; total: number; error: string | null }> {
   const supabase = await createClient();
 
   const [{ data: contenedor }, { data: productos }, { data: abonos }] = await Promise.all([
@@ -49,25 +51,53 @@ export async function recalcularCostoEntradasContenedor(contenedorId: string) {
     supabase.from("pagos_mercancia").select("*").eq("contenedor_id", contenedorId).returns<PagoMercancia[]>(),
   ]);
 
-  if (!contenedor || !productos || !contenedor.stock_generado_en) return;
+  if (!contenedor) return { actualizados: 0, total: 0, error: "No se encontró el contenedor." };
+  if (!contenedor.stock_generado_en) {
+    return { actualizados: 0, total: 0, error: "Este contenedor todavía no se ha recibido a stock." };
+  }
+  if (!productos || productos.length === 0) {
+    return { actualizados: 0, total: 0, error: null };
+  }
 
   const costoPorCbm = costoPorCbmContenedor(contenedor, productos);
   const tipoCambioMercancia = tipoCambioPromedioMercancia(abonos ?? []);
 
-  await Promise.all(
-    productos.map((p) =>
-      supabase
-        .from("movimientos_stock")
-        .update({ costo_unitario_pesos: costoFinalPorPieza(p, costoPorCbm, tipoCambioMercancia) })
-        .eq("contenedor_id", contenedorId)
-        .eq("sku", p.sku)
-        .eq("tipo", "ENTRADA"),
-    ),
-  );
+  let actualizados = 0;
+  for (const p of productos) {
+    const costo = costoFinalPorPieza(p, costoPorCbm, tipoCambioMercancia);
+
+    // Primero por producto_id (confiable). Si el movimiento es viejo y no
+    // tiene producto_id guardado, se busca por SKU como respaldo — así no
+    // se queda en $0 en silencio si el producto le cambiaste el SKU después.
+    const porId = await supabase
+      .from("movimientos_stock")
+      .update({ costo_unitario_pesos: costo })
+      .eq("contenedor_id", contenedorId)
+      .eq("tipo", "ENTRADA")
+      .eq("producto_id", p.id)
+      .select("id");
+
+    if (porId.data && porId.data.length > 0) {
+      actualizados += porId.data.length;
+      continue;
+    }
+
+    const porSku = await supabase
+      .from("movimientos_stock")
+      .update({ costo_unitario_pesos: costo, producto_id: p.id })
+      .eq("contenedor_id", contenedorId)
+      .eq("tipo", "ENTRADA")
+      .is("producto_id", null)
+      .eq("sku", p.sku)
+      .select("id");
+
+    actualizados += porSku.data?.length ?? 0;
+  }
 
   revalidatePath(`/contenedores/${contenedorId}`);
   revalidatePath("/stock");
   revalidatePath("/stock/movimientos");
+  return { actualizados, total: productos.length, error: null };
 }
 
 export async function actualizarContenedor(contenedorId: string, formData: FormData) {

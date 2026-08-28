@@ -116,6 +116,7 @@ export interface MovimientoStock {
   imagen_url: string | null;
   costo_unitario_pesos: number;
   contenedor_id: string | null;
+  producto_id: string | null;
   destino: string | null;
   referencia: string | null;
   creado_en: string;
