@@ -466,3 +466,22 @@ export async function eliminarDocumento(contenedorId: string, documentoId: strin
   await supabase.from("documentos_contenedor").delete().eq("id", documentoId);
   revalidatePath(`/contenedores/${contenedorId}`);
 }
+
+/** Guarda (o quita, si se deja en 0) el ajuste con el que Isaac explica una
+ * diferencia entre lo que costó el contenedor y lo que entró a stock —
+ * normalmente porque lo pagado de mercancía no cuadra exacto con la suma de
+ * precios capturados por producto (ajustes de precio, cargos del banco,
+ * fletes internos en China, etc.). No reparte nada por CBM ni cambia el
+ * costo por pieza: solo documenta y "explica" la diferencia. */
+export async function actualizarAjusteDiferencia(contenedorId: string, formData: FormData) {
+  const supabase = await createClient();
+  const monto = numero(formData, "ajuste_diferencia_pesos");
+  const nota = texto(formData, "ajuste_diferencia_nota");
+
+  await supabase
+    .from("contenedores")
+    .update({ ajuste_diferencia_pesos: monto, ajuste_diferencia_nota: nota })
+    .eq("id", contenedorId);
+
+  revalidatePath(`/contenedores/${contenedorId}`);
+}

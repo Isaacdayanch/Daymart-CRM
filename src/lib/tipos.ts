@@ -25,6 +25,8 @@ export interface Contenedor {
   otros_gastos_tipo_cambio: number;
   fabrica_principal: string | null;
   proveedor_principal: string | null;
+  ajuste_diferencia_pesos: number;
+  ajuste_diferencia_nota: string | null;
   eliminado_en: string | null;
   stock_generado_en: string | null;
   creado_en: string;

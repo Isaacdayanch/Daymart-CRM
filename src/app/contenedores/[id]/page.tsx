@@ -27,6 +27,7 @@ import { Productos } from "./productos";
 import { Documentos } from "./documentos";
 import { TarjetaEstado } from "./tarjeta-estado";
 import { BotonRecalcularCosto } from "./boton-recalcular-costo";
+import { AjusteDiferencia } from "./ajuste-diferencia";
 import { Historial } from "./historial";
 
 export default async function DetalleContenedor({
@@ -122,6 +123,8 @@ export default async function DetalleContenedor({
   const tipoCambioMercancia = tipoCambioPromedioMercancia(listaAbonos);
   const costoTotal = costoTotalContenedor(contenedor, listaAbonos);
   const valorEntradoStock = reconciliacionContenedor(id, movimientosEntrada ?? []);
+  const diferenciaBruta = costoTotal - valorEntradoStock;
+  const diferenciaFinal = diferenciaBruta - contenedor.ajuste_diferencia_pesos;
 
   return (
     <div className="min-h-screen bg-zinc-50">
@@ -178,10 +181,10 @@ export default async function DetalleContenedor({
                 <p className="text-xs text-zinc-500">Diferencia</p>
                 <p
                   className={`mt-1 text-sm font-semibold ${
-                    Math.abs(costoTotal - valorEntradoStock) < 1 ? "text-emerald-600" : "text-amber-600"
+                    Math.abs(diferenciaFinal) < 1 ? "text-emerald-600" : "text-amber-600"
                   }`}
                 >
-                  {formatoPesos(costoTotal - valorEntradoStock)}
+                  {formatoPesos(diferenciaFinal)}
                 </p>
               </div>
               <div className="flex flex-col items-end gap-1">
@@ -194,13 +197,19 @@ export default async function DetalleContenedor({
                 <BotonRecalcularCosto contenedorId={contenedor.id} />
               </div>
             </div>
-            {Math.abs(costoTotal - valorEntradoStock) >= 1 && (
+            {Math.abs(diferenciaFinal) >= 1 && (
               <p className="mt-2 text-xs text-zinc-500">
                 No cuadra del todo — si acabas de llenar el flete/aduana o un abono después de recibir el
                 contenedor, dale a &ldquo;Recalcular costo&rdquo;. Si sigue sin cuadrar, revisa si falta
                 algún abono o si hay mercancía pendiente en China de este contenedor.
               </p>
             )}
+            <AjusteDiferencia
+              contenedorId={contenedor.id}
+              diferenciaBruta={diferenciaBruta}
+              ajusteActual={contenedor.ajuste_diferencia_pesos}
+              notaActual={contenedor.ajuste_diferencia_nota}
+            />
           </div>
         )}
 
