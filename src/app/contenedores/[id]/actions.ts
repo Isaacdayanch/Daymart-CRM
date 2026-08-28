@@ -43,61 +43,76 @@ export async function registrarHistorialSiCambia(
 export async function recalcularCostoEntradasContenedor(
   contenedorId: string,
 ): Promise<{ actualizados: number; total: number; error: string | null }> {
-  const supabase = await createClient();
+  // Nunca debe tronar hacia el cliente (eso es lo que muestra la pantalla
+  // genérica de error de la aplicación con "Intentar nuevamente") — cualquier
+  // problema se regresa como texto para mostrarlo en la propia página.
+  try {
+    const supabase = await createClient();
 
-  const [{ data: contenedor }, { data: productos }, { data: abonos }] = await Promise.all([
-    supabase.from("contenedores").select("*").eq("id", contenedorId).single<Contenedor>(),
-    supabase.from("productos").select("*").eq("contenedor_id", contenedorId).returns<Producto[]>(),
-    supabase.from("pagos_mercancia").select("*").eq("contenedor_id", contenedorId).returns<PagoMercancia[]>(),
-  ]);
+    const [{ data: contenedor }, { data: productos }, { data: abonos }] = await Promise.all([
+      supabase.from("contenedores").select("*").eq("id", contenedorId).single<Contenedor>(),
+      supabase.from("productos").select("*").eq("contenedor_id", contenedorId).returns<Producto[]>(),
+      supabase.from("pagos_mercancia").select("*").eq("contenedor_id", contenedorId).returns<PagoMercancia[]>(),
+    ]);
 
-  if (!contenedor) return { actualizados: 0, total: 0, error: "No se encontró el contenedor." };
-  if (!contenedor.stock_generado_en) {
-    return { actualizados: 0, total: 0, error: "Este contenedor todavía no se ha recibido a stock." };
-  }
-  if (!productos || productos.length === 0) {
-    return { actualizados: 0, total: 0, error: null };
-  }
-
-  const costoPorCbm = costoPorCbmContenedor(contenedor, productos);
-  const tipoCambioMercancia = tipoCambioPromedioMercancia(abonos ?? []);
-
-  let actualizados = 0;
-  for (const p of productos) {
-    const costo = costoFinalPorPieza(p, costoPorCbm, tipoCambioMercancia);
-
-    // Primero por producto_id (confiable). Si el movimiento es viejo y no
-    // tiene producto_id guardado, se busca por SKU como respaldo — así no
-    // se queda en $0 en silencio si el producto le cambiaste el SKU después.
-    const porId = await supabase
-      .from("movimientos_stock")
-      .update({ costo_unitario_pesos: costo })
-      .eq("contenedor_id", contenedorId)
-      .eq("tipo", "ENTRADA")
-      .eq("producto_id", p.id)
-      .select("id");
-
-    if (porId.data && porId.data.length > 0) {
-      actualizados += porId.data.length;
-      continue;
+    if (!contenedor) return { actualizados: 0, total: 0, error: "No se encontró el contenedor." };
+    if (!contenedor.stock_generado_en) {
+      return { actualizados: 0, total: 0, error: "Este contenedor todavía no se ha recibido a stock." };
+    }
+    if (!productos || productos.length === 0) {
+      return { actualizados: 0, total: 0, error: null };
     }
 
-    const porSku = await supabase
-      .from("movimientos_stock")
-      .update({ costo_unitario_pesos: costo, producto_id: p.id })
-      .eq("contenedor_id", contenedorId)
-      .eq("tipo", "ENTRADA")
-      .is("producto_id", null)
-      .eq("sku", p.sku)
-      .select("id");
+    const costoPorCbm = costoPorCbmContenedor(contenedor, productos);
+    const tipoCambioMercancia = tipoCambioPromedioMercancia(abonos ?? []);
 
-    actualizados += porSku.data?.length ?? 0;
+    let actualizados = 0;
+    for (const p of productos) {
+      const costo = costoFinalPorPieza(p, costoPorCbm, tipoCambioMercancia);
+
+      // Primero por producto_id (confiable). Si el movimiento es viejo y no
+      // tiene producto_id guardado, se busca por SKU como respaldo — así no
+      // se queda en $0 en silencio si el producto le cambiaste el SKU después.
+      const porId = await supabase
+        .from("movimientos_stock")
+        .update({ costo_unitario_pesos: costo })
+        .eq("contenedor_id", contenedorId)
+        .eq("tipo", "ENTRADA")
+        .eq("producto_id", p.id)
+        .select("id");
+
+      if (porId.error) {
+        return { actualizados, total: productos.length, error: `Error de base de datos: ${porId.error.message}` };
+      }
+
+      if (porId.data.length > 0) {
+        actualizados += porId.data.length;
+        continue;
+      }
+
+      const porSku = await supabase
+        .from("movimientos_stock")
+        .update({ costo_unitario_pesos: costo, producto_id: p.id })
+        .eq("contenedor_id", contenedorId)
+        .eq("tipo", "ENTRADA")
+        .is("producto_id", null)
+        .eq("sku", p.sku)
+        .select("id");
+
+      if (porSku.error) {
+        return { actualizados, total: productos.length, error: `Error de base de datos: ${porSku.error.message}` };
+      }
+
+      actualizados += porSku.data.length;
+    }
+
+    revalidatePath(`/contenedores/${contenedorId}`);
+    revalidatePath("/stock");
+    revalidatePath("/stock/movimientos");
+    return { actualizados, total: productos.length, error: null };
+  } catch (e) {
+    return { actualizados: 0, total: 0, error: e instanceof Error ? e.message : "Error desconocido." };
   }
-
-  revalidatePath(`/contenedores/${contenedorId}`);
-  revalidatePath("/stock");
-  revalidatePath("/stock/movimientos");
-  return { actualizados, total: productos.length, error: null };
 }
 
 export async function actualizarContenedor(contenedorId: string, formData: FormData) {

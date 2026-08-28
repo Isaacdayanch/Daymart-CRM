@@ -17,16 +17,21 @@ export function BotonRecalcularCosto({ contenedorId }: { contenedorId: string })
         onClick={async () => {
           setCalculando(true);
           setMensaje(null);
-          const resultado = await recalcularCostoEntradasContenedor(contenedorId);
-          setCalculando(false);
-          if (resultado.error) {
-            setMensaje(`Error: ${resultado.error}`);
-          } else if (resultado.actualizados === 0 && resultado.total > 0) {
-            setMensaje("No se encontró ningún movimiento de stock que actualizar.");
-          } else {
-            setMensaje(`Se actualizaron ${resultado.actualizados} de ${resultado.total} productos.`);
+          try {
+            const resultado = await recalcularCostoEntradasContenedor(contenedorId);
+            if (resultado.error) {
+              setMensaje(`Error: ${resultado.error}`);
+            } else if (resultado.actualizados === 0 && resultado.total > 0) {
+              setMensaje("No se encontró ningún movimiento de stock que actualizar.");
+            } else {
+              setMensaje(`Se actualizaron ${resultado.actualizados} de ${resultado.total} productos.`);
+            }
+            router.refresh();
+          } catch (e) {
+            setMensaje(`Error: ${e instanceof Error ? e.message : "no se pudo conectar."}`);
+          } finally {
+            setCalculando(false);
           }
-          router.refresh();
         }}
         className="text-xs font-medium text-zinc-500 transition hover:text-zinc-900 disabled:opacity-50"
       >
