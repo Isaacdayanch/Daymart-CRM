@@ -43,7 +43,13 @@ export async function registrarHistorialSiCambia(
  * con los datos actuales, sin duplicar ni mover cantidades. */
 export async function recalcularCostoEntradasContenedor(
   contenedorId: string,
-): Promise<{ actualizados: number; total: number; error: string | null; regenerado?: boolean }> {
+): Promise<{
+  actualizados: number;
+  total: number;
+  error: string | null;
+  regenerado?: boolean;
+  creados?: number;
+}> {
   // Nunca debe tronar hacia el cliente (eso es lo que muestra la pantalla
   // genérica de error de la aplicación con "Intentar nuevamente") — cualquier
   // problema se regresa como texto para mostrarlo en la propia página.
@@ -73,7 +79,7 @@ export async function recalcularCostoEntradasContenedor(
     // generan las entradas de cero con lo que hay capturado ahora mismo.
     const { data: entradasExistentes, error: errorConteo } = await supabase
       .from("movimientos_stock")
-      .select("id")
+      .select("id, bodega_id")
       .eq("contenedor_id", contenedorId)
       .eq("tipo", "ENTRADA");
 
@@ -139,6 +145,7 @@ export async function recalcularCostoEntradasContenedor(
     }
 
     let actualizados = 0;
+    const sinMovimiento: Producto[] = [];
     for (const p of productos) {
       const costo = costoFinalPorPieza(p, costoPorCbm, tipoCambioMercancia);
 
@@ -175,13 +182,71 @@ export async function recalcularCostoEntradasContenedor(
         return { actualizados, total: productos.length, error: `Error de base de datos: ${porSku.error.message}` };
       }
 
-      actualizados += porSku.data.length;
+      if (porSku.data.length > 0) {
+        actualizados += porSku.data.length;
+        continue;
+      }
+
+      // Ni por producto_id ni por SKU hay un movimiento que actualizar — es
+      // un producto que se agregó al contenedor DESPUÉS de recibirlo (o
+      // después de la última vez que se recalculó), y por eso nunca entró a
+      // stock. Se crea de cero, no se deja pasar en silencio.
+      if (p.cantidad > 0) sinMovimiento.push(p);
+    }
+
+    let creados = 0;
+    if (sinMovimiento.length > 0) {
+      const bodegaId =
+        entradasExistentes?.[0]?.bodega_id ??
+        (
+          await supabase
+            .from("bodegas")
+            .select("id")
+            .is("eliminado_en", null)
+            .order("creado_en", { ascending: true })
+            .limit(1)
+        ).data?.[0]?.id;
+
+      if (!bodegaId) {
+        return {
+          actualizados,
+          total: productos.length,
+          error: "No hay ninguna bodega creada todavía — ve a Stock → Bodegas, agrega una y vuelve a intentar.",
+        };
+      }
+
+      const nuevos = sinMovimiento.map((p) => ({
+        tipo: "ENTRADA",
+        sku: p.sku,
+        nombre: p.nombre,
+        bodega_id: bodegaId,
+        cantidad: p.cantidad,
+        piezas_por_caja: p.piezas_por_caja,
+        imagen_url: p.imagen_url,
+        costo_unitario_pesos: costoFinalPorPieza(p, costoPorCbm, tipoCambioMercancia),
+        contenedor_id: contenedorId,
+        producto_id: p.id,
+        referencia: `Recepción contenedor ${contenedor.numero} (agregado después)`,
+        creado_en: contenedor.stock_generado_en,
+      }));
+
+      const { data: insertados, error: errorInsert, columnasOmitidas } = await insertarMovimientosStock(
+        supabase,
+        nuevos,
+      );
+      if (errorInsert) {
+        return { actualizados, total: productos.length, error: `No se pudo generar el stock faltante: ${errorInsert}` };
+      }
+      if (insertados && columnasOmitidas.length) {
+        await completarColumnasOmitidas(supabase, insertados.map((i) => i.id), nuevos, columnasOmitidas);
+      }
+      creados = insertados?.length ?? 0;
     }
 
     revalidatePath(`/contenedores/${contenedorId}`);
     revalidatePath("/stock");
     revalidatePath("/stock/movimientos");
-    return { actualizados, total: productos.length, error: null };
+    return { actualizados: actualizados + creados, total: productos.length, error: null, creados };
   } catch (e) {
     return { actualizados: 0, total: 0, error: e instanceof Error ? e.message : "Error desconocido." };
   }

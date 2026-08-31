@@ -25,6 +25,10 @@ export function BotonRecalcularCosto({ contenedorId }: { contenedorId: string })
               setMensaje(
                 `No tenía ninguna entrada guardada — se generaron ${resultado.actualizados} de ${resultado.total} de cero.`,
               );
+            } else if (resultado.creados) {
+              setMensaje(
+                `${resultado.creados} producto(s) no tenían stock guardado (se agregaron después de recibir) — ya se crearon. En total: ${resultado.actualizados} de ${resultado.total} al día.`,
+              );
             } else if (resultado.actualizados === 0 && resultado.total > 0) {
               setMensaje("No se encontró ningún movimiento de stock que actualizar.");
             } else {
