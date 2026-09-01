@@ -25,6 +25,19 @@ const ITEMS = [
     ),
   },
   {
+    href: "/stock/salidas",
+    etiqueta: "Dar salida",
+    icono: (
+      <path
+        d="M3 9h9M8.5 5.5 12 9l-3.5 3.5M12 4v-.5A1.5 1.5 0 0 0 10.5 2h-6A1.5 1.5 0 0 0 3 3.5v11A1.5 1.5 0 0 0 4.5 16h6a1.5 1.5 0 0 0 1.5-1.5V14"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    ),
+  },
+  {
     href: "/papelera",
     etiqueta: "Papelera",
     icono: (

@@ -46,6 +46,15 @@ export async function registrarSalidasLote(formData: FormData) {
     return { error: "Falta la bodega o las líneas a registrar." };
   }
 
+  // Por defecto es "ahora", pero se puede registrar una salida con fecha
+  // pasada (ej. cargar el lunes las ventas del fin de semana) sin que eso
+  // descuadre la rotación real de cada producto.
+  const fechaCampo = formData.get("fecha");
+  const fecha =
+    typeof fechaCampo === "string" && fechaCampo
+      ? new Date(`${fechaCampo}T12:00:00`).toISOString()
+      : new Date().toISOString();
+
   let lineas: LineaSalida[];
   try {
     lineas = JSON.parse(lineasCrudo);
@@ -93,6 +102,7 @@ export async function registrarSalidasLote(formData: FormData) {
       costo_unitario_pesos: esDevolucion ? (costoPorSku.get(linea.sku) ?? 0) : 0,
       destino: linea.categoria,
       referencia,
+      creado_en: fecha,
     };
   });
 

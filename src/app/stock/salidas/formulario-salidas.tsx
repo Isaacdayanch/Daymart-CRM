@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Selector } from "@/components/selector";
 import { CampoSugerencias } from "@/components/campo-sugerencias";
+import { CampoFecha } from "@/components/campo-fecha";
 import { CATEGORIAS_SALIDA, type Bodega } from "@/lib/tipos";
 import { registrarSalidasLote } from "../actions";
 import { SelectorProducto } from "./selector-producto";
@@ -33,6 +34,8 @@ export function FormularioSalidas({ opciones, bodegas }: { opciones: Opcion[]; b
   const [colorFull, setColorFull] = useState("");
   const [notas, setNotas] = useState("");
   const [bodegaId, setBodegaId] = useState(bodegas[0]?.id ?? "");
+  const hoyTexto = new Date().toISOString().slice(0, 10);
+  const [fecha, setFecha] = useState(hoyTexto);
   const [error, setError] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
   const [exito, setExito] = useState<string | null>(null);
@@ -139,14 +142,22 @@ export function FormularioSalidas({ opciones, bodegas }: { opciones: Opcion[]; b
 
       {lineas.length > 0 && (
         <div className="rounded-2xl border border-zinc-200 bg-white shadow-sm">
-          <div className="border-b border-zinc-100 p-6">
-            <label className="block text-xs font-medium text-zinc-500">Bodega de esta tanda</label>
-            <div className="mt-1 max-w-xs">
-              <Selector
-                defaultValue={bodegaId}
-                onChange={setBodegaId}
-                opciones={bodegas.map((b) => ({ value: b.id, label: b.nombre }))}
-              />
+          <div className="grid gap-3 border-b border-zinc-100 p-6 sm:grid-cols-2 sm:max-w-md">
+            <div>
+              <label className="block text-xs font-medium text-zinc-500">Bodega de esta tanda</label>
+              <div className="mt-1">
+                <Selector
+                  defaultValue={bodegaId}
+                  onChange={setBodegaId}
+                  opciones={bodegas.map((b) => ({ value: b.id, label: b.nombre }))}
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-zinc-500">Fecha en que salió</label>
+              <div className="mt-1">
+                <CampoFecha defaultValue={fecha} onChange={setFecha} max={hoyTexto} />
+              </div>
             </div>
           </div>
           <div className="divide-y divide-zinc-100">
@@ -198,6 +209,7 @@ export function FormularioSalidas({ opciones, bodegas }: { opciones: Opcion[]; b
                   setExito(null);
                   const formData = new FormData();
                   formData.set("bodega_id", bodegaId ?? "");
+                  formData.set("fecha", fecha);
                   formData.set(
                     "lineas",
                     JSON.stringify(
