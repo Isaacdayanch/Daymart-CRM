@@ -164,6 +164,60 @@ export async function agregarStockManual(formData: FormData) {
   return { error: errorImagen ? `La foto no se pudo subir: ${errorImagen}` : null };
 }
 
+interface LineaCargaMasiva {
+  sku: string;
+  nombre: string;
+  cantidad: number;
+  costoUnitarioPesos: number;
+  piezasPorCaja: number;
+}
+
+/** Carga de golpe el stock que Isaac ya tiene (de su Excel), sin pasar por
+ * contenedores ni reconstruir su historial — cada línea entra como una
+ * ENTRADA de hoy con el SKU definitivo que él quiera usar de ahora en
+ * adelante (no necesita coincidir con nada anterior). */
+export async function agregarStockManualLote(formData: FormData) {
+  const supabase = await createClient();
+
+  const bodegaId = formData.get("bodega_id") as string;
+  const lineasCrudo = formData.get("lineas");
+  if (!bodegaId || typeof lineasCrudo !== "string") {
+    return { error: "Falta la bodega o las líneas a cargar." };
+  }
+
+  let lineas: LineaCargaMasiva[];
+  try {
+    lineas = JSON.parse(lineasCrudo);
+  } catch {
+    return { error: "No se pudieron leer las líneas." };
+  }
+  if (!Array.isArray(lineas) || lineas.length === 0) {
+    return { error: "Agrega al menos una línea antes de guardar." };
+  }
+
+  const movimientos = lineas.map((linea) => ({
+    tipo: "ENTRADA",
+    sku: linea.sku,
+    nombre: linea.nombre,
+    bodega_id: bodegaId,
+    cantidad: linea.cantidad,
+    piezas_por_caja: linea.piezasPorCaja || 1,
+    imagen_url: null,
+    costo_unitario_pesos: linea.costoUnitarioPesos || 0,
+    referencia: "Carga inicial de inventario",
+  }));
+
+  const { data: insertados, error, columnasOmitidas } = await insertarMovimientosStock(supabase, movimientos);
+  if (error) return { error };
+  if (insertados && columnasOmitidas.length) {
+    await completarColumnasOmitidas(supabase, insertados.map((i) => i.id), movimientos, columnasOmitidas);
+  }
+
+  revalidatePath("/stock");
+  revalidatePath("/stock/movimientos");
+  return { error: null };
+}
+
 export async function actualizarDiasEspera(formData: FormData) {
   const supabase = await createClient();
   const diasEspera = Number(formData.get("dias_espera")) || 60;
