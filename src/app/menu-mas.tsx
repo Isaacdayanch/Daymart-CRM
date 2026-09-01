@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 
 const ITEMS = [
   {
@@ -52,57 +52,58 @@ const ITEMS = [
   },
 ];
 
+/** <details>/<summary> nativo en vez de estado de React + listeners a mano:
+ * abrir/cerrar lo maneja el navegador mismo, así que funciona igual en
+ * Chrome, Safari, Firefox, computadora o celular sin sorpresas. */
 export function MenuMas() {
-  const [abierto, setAbierto] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const ref = useRef<HTMLDetailsElement>(null);
 
   useEffect(() => {
     function alClicFuera(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setAbierto(false);
+      if (ref.current?.open && !ref.current.contains(e.target as Node)) {
+        ref.current.open = false;
+      }
     }
     function alEscape(e: KeyboardEvent) {
-      if (e.key === "Escape") setAbierto(false);
+      if (e.key === "Escape" && ref.current) ref.current.open = false;
     }
-    document.addEventListener("mousedown", alClicFuera);
+    document.addEventListener("click", alClicFuera);
     document.addEventListener("keydown", alEscape);
     return () => {
-      document.removeEventListener("mousedown", alClicFuera);
+      document.removeEventListener("click", alClicFuera);
       document.removeEventListener("keydown", alEscape);
     };
   }, []);
 
+  function cerrar() {
+    if (ref.current) ref.current.open = false;
+  }
+
   return (
-    <div ref={ref} className="relative">
-      <button
-        type="button"
-        onClick={() => setAbierto((v) => !v)}
+    <details ref={ref} className="relative">
+      <summary
         aria-label="Más opciones"
-        aria-expanded={abierto}
-        className={`flex h-9 w-9 items-center justify-center rounded-full transition ${
-          abierto ? "bg-zinc-100 text-zinc-900" : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
-        }`}
+        className="flex h-9 w-9 cursor-pointer list-none items-center justify-center rounded-full text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 [&::-webkit-details-marker]:hidden [&::marker]:content-none"
       >
         <svg width="17" height="17" viewBox="0 0 18 18" fill="none">
           <path d="M2 4.5h14M2 9h14M2 13.5h14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
         </svg>
-      </button>
-      {abierto && (
-        <div className="absolute right-0 z-20 mt-2 w-52 origin-top-right overflow-hidden rounded-2xl border border-black/5 bg-white/95 py-1.5 shadow-xl ring-1 ring-black/5 backdrop-blur-sm">
-          {ITEMS.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={() => setAbierto(false)}
-              className="flex items-center gap-2.5 px-4 py-2 text-sm text-zinc-700 transition hover:bg-zinc-100"
-            >
-              <svg width="18" height="18" viewBox="0 0 18 18" fill="none" className="text-zinc-400">
-                {item.icono}
-              </svg>
-              {item.etiqueta}
-            </Link>
-          ))}
-        </div>
-      )}
-    </div>
+      </summary>
+      <div className="absolute right-0 z-20 mt-2 w-52 origin-top-right overflow-hidden rounded-2xl border border-black/5 bg-white/95 py-1.5 shadow-xl ring-1 ring-black/5 backdrop-blur-sm">
+        {ITEMS.map((item) => (
+          <Link
+            key={item.href}
+            href={item.href}
+            onClick={cerrar}
+            className="flex items-center gap-2.5 px-4 py-2 text-sm text-zinc-700 transition hover:bg-zinc-100"
+          >
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" className="text-zinc-400">
+              {item.icono}
+            </svg>
+            {item.etiqueta}
+          </Link>
+        ))}
+      </div>
+    </details>
   );
 }
