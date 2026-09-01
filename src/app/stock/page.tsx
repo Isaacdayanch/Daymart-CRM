@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { resumenPorSku, valorTotalInventario } from "@/lib/calculos-stock";
 import { formatoPesos } from "@/lib/formato";
 import type { Bodega, ConfiguracionStock, MovimientoStock } from "@/lib/tipos";
+import { TablaStock } from "./tabla-stock";
 
 export default async function ResumenStock() {
   const supabase = await createClient();
@@ -20,7 +21,7 @@ export default async function ResumenStock() {
   const resumenes = resumenPorSku(listaMovimientos, diasEspera);
   const valorTotal = valorTotalInventario(resumenes);
   const paraReordenar = resumenes.filter((r) => r.necesitaReorden && r.stockActual > 0);
-  const bodegasPorId = new Map((bodegas ?? []).map((b) => [b.id, b.nombre]));
+  const bodegasPorId = Object.fromEntries((bodegas ?? []).map((b) => [b.id, b.nombre]));
 
   return (
     <div className="space-y-8">
@@ -90,60 +91,7 @@ export default async function ResumenStock() {
             Todavía no hay movimientos de stock. Se generan solos al recibir un contenedor.
           </p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="border-b border-zinc-100 text-xs text-zinc-400">
-                  <th className="px-6 py-2.5 font-medium">Producto</th>
-                  <th className="px-6 py-2.5 font-medium text-right">Piezas</th>
-                  <th className="px-6 py-2.5 font-medium text-right">Cajas</th>
-                  <th className="px-6 py-2.5 font-medium text-right">Costo prom.</th>
-                  <th className="px-6 py-2.5 font-medium text-right">Valor</th>
-                  <th className="px-6 py-2.5 font-medium text-right">Rotación/día</th>
-                  <th className="px-6 py-2.5 font-medium">Bodegas</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-50">
-                {resumenes.map((r) => (
-                  <tr key={r.sku} className={r.necesitaReorden && r.stockActual > 0 ? "bg-amber-50/40" : ""}>
-                    <td className="px-6 py-3">
-                      <div className="flex items-center gap-3">
-                        {r.imagenUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element -- miniatura en tabla, tamaño fijo
-                          <img
-                            src={r.imagenUrl}
-                            alt={r.nombre}
-                            className="h-10 w-10 shrink-0 rounded-lg object-cover"
-                          />
-                        ) : (
-                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-100 text-[9px] text-zinc-400">
-                            Sin foto
-                          </div>
-                        )}
-                        <div>
-                          <p className="font-medium text-zinc-900">{r.nombre}</p>
-                          <p className="font-mono text-xs text-zinc-400">{r.sku}</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-3 text-right font-semibold text-zinc-900">{r.stockActual}</td>
-                    <td className="px-6 py-3 text-right text-xs text-zinc-400">
-                      {r.cajas > 0 ? r.cajas.toFixed(1) : "—"}
-                    </td>
-                    <td className="px-6 py-3 text-right text-zinc-600">{formatoPesos(r.costoPromedio)}</td>
-                    <td className="px-6 py-3 text-right text-zinc-600">{formatoPesos(r.valorInventario)}</td>
-                    <td className="px-6 py-3 text-right text-zinc-600">{r.rotacionDiaria.toFixed(2)}</td>
-                    <td className="px-6 py-3 text-xs text-zinc-500">
-                      {Array.from(r.stockPorBodega.entries())
-                        .filter(([, cantidad]) => cantidad !== 0)
-                        .map(([bodegaId, cantidad]) => `${bodegasPorId.get(bodegaId) ?? "?"}: ${cantidad}`)
-                        .join(" · ")}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <TablaStock resumenes={resumenes} bodegasPorId={bodegasPorId} />
         )}
       </div>
     </div>
