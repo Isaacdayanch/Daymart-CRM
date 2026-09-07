@@ -263,6 +263,7 @@ export default async function DetalleContenedor({
           fabricasSugeridas={fabricas}
           proveedoresSugeridos={proveedores}
           soloLectura={!verDinero}
+          contenedorRecibido={Boolean(contenedor.stock_generado_en)}
         />
 
         <div className="flex justify-end">

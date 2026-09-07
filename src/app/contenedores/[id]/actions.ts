@@ -434,6 +434,17 @@ export async function agregarProducto(contenedorId: string, formData: FormData) 
 export async function actualizarProducto(contenedorId: string, productoId: string, formData: FormData) {
   const supabase = await createClient();
 
+  // Si el contenedor ya se recibió, la cantidad ya NO se toca desde aquí —
+  // eso movería el dato del pedido sin generar ningún ajuste de stock, y
+  // se queda desalineado de lo que Stock de verdad refleja (esto pasó de
+  // verdad: se "corrigió" así una cantidad y el stock nunca se enteró).
+  // Para corregir cantidad de algo ya recibido existe "Editar recepción".
+  const [{ data: contenedor }, { data: productoActual }] = await Promise.all([
+    supabase.from("contenedores").select("stock_generado_en").eq("id", contenedorId).single(),
+    supabase.from("productos").select("cantidad").eq("id", productoId).single(),
+  ]);
+  const yaRecibido = Boolean(contenedor?.stock_generado_en);
+
   const categoria = texto(formData, "categoria") ?? "";
   const nombre = texto(formData, "nombre") ?? "";
   const sku = texto(formData, "sku") ?? skuSugerido(categoria, nombre);
@@ -453,7 +464,7 @@ export async function actualizarProducto(contenedorId: string, productoId: strin
       sku,
       nombre,
       memo: texto(formData, "memo"),
-      cantidad: numero(formData, "cantidad"),
+      cantidad: yaRecibido ? (productoActual?.cantidad ?? 0) : numero(formData, "cantidad"),
       precio_dolares: numero(formData, "precio_dolares"),
       piezas_por_caja: numero(formData, "piezas_por_caja") || 1,
       largo_cm: numero(formData, "largo_cm"),

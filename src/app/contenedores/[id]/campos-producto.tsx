@@ -20,6 +20,7 @@ export function CamposProducto({
   fabricas = [],
   proveedores = [],
   esRestock = false,
+  contenedorRecibido = false,
 }: {
   inicial?: Partial<Producto>;
   fabricaPorDefecto?: string | null;
@@ -33,6 +34,11 @@ export function CamposProducto({
   /** true cuando se rellenan los campos a partir de un producto anterior
    * (restock): no se carga la cantidad ni el id, solo los datos fijos. */
   esRestock?: boolean;
+  /** true cuando se está EDITANDO un producto que ya pertenece a un
+   * contenedor ya recibido — ahí la cantidad ya no se toca aquí (esto solo
+   * corrige el dato del pedido, sin mover el stock), se usa "Editar
+   * recepción" para eso, que sí ajusta el stock de verdad. */
+  contenedorRecibido?: boolean;
 }) {
   const [categoria, setCategoria] = useState(inicial?.categoria ?? categoriaPorDefecto ?? "");
   const [fabrica, setFabrica] = useState(inicial?.fabrica ?? fabricaPorDefecto ?? "");
@@ -133,11 +139,26 @@ export function CamposProducto({
       <div className="grid grid-cols-3 gap-3">
         <div>
           <label className="block text-xs font-medium text-zinc-500">Cantidad</label>
-          <CampoNumero
-            name="cantidad"
-            defaultValue={esRestock ? undefined : inicial?.cantidad}
-            className={claseCampo}
-          />
+          {contenedorRecibido ? (
+            <>
+              <input
+                type="text"
+                value={inicial?.cantidad ?? 0}
+                disabled
+                className={`${claseCampo} cursor-not-allowed bg-zinc-100 text-zinc-400`}
+              />
+              <input type="hidden" name="cantidad" value={inicial?.cantidad ?? 0} />
+              <p className="mt-1 text-[11px] text-zinc-400">
+                Ya se recibió — usa &ldquo;Editar recepción&rdquo; para corregirla (esa sí ajusta el stock).
+              </p>
+            </>
+          ) : (
+            <CampoNumero
+              name="cantidad"
+              defaultValue={esRestock ? undefined : inicial?.cantidad}
+              className={claseCampo}
+            />
+          )}
         </div>
         <div>
           <label className="block text-xs font-medium text-zinc-500">Precio USD</label>

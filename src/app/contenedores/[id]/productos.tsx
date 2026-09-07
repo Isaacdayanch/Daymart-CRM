@@ -22,6 +22,7 @@ export function Productos({
   fabricasSugeridas,
   proveedoresSugeridos,
   soloLectura = false,
+  contenedorRecibido = false,
 }: {
   contenedorId: string;
   productos: Producto[];
@@ -35,6 +36,10 @@ export function Productos({
   fabricasSugeridas: string[];
   proveedoresSugeridos: string[];
   soloLectura?: boolean;
+  /** Si el contenedor ya se recibió, editar un producto existente ya NO
+   * deja tocar la cantidad aquí (eso no movería el stock) — se manda a
+   * "Editar recepción", que sí genera el ajuste real. */
+  contenedorRecibido?: boolean;
 }) {
   const [vista, setVista] = useState<"tabla" | "galeria">("tabla");
   const [editandoId, setEditandoId] = useState<string | null>(null);
@@ -126,6 +131,7 @@ export function Productos({
                           categorias={categoriasSugeridas}
                           fabricas={fabricasSugeridas}
                           proveedores={proveedoresSugeridos}
+                          contenedorRecibido={contenedorRecibido}
                         />
                         <div className="mt-3 flex justify-end gap-2">
                           <button
@@ -242,6 +248,7 @@ export function Productos({
                     categorias={categoriasSugeridas}
                     fabricas={fabricasSugeridas}
                     proveedores={proveedoresSugeridos}
+                    contenedorRecibido={contenedorRecibido}
                   />
                   <div className="mt-3 flex justify-end gap-2">
                     <button
