@@ -8,6 +8,14 @@ export function formatoPesos(valor: number) {
   });
 }
 
+export function formatoDolares(valor: number) {
+  return valor.toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  });
+}
+
 export function formatoFecha(fechaIso: string) {
   return new Date(fechaIso).toLocaleDateString("es-MX", {
     day: "numeric",
