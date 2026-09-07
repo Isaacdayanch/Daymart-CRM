@@ -161,6 +161,7 @@ export async function editarRecepcion(contenedorId: string, formData: FormData) 
   );
   const costoPorSku = new Map((entradasPrevias ?? []).map((m) => [m.sku, m.costo_unitario_pesos]));
   const ajustes: Record<string, unknown>[] = [];
+  const pendientesACrear: Record<string, unknown>[] = [];
 
   for (const producto of productos) {
     const cantidadNueva = Number(formData.get(`cantidad_${producto.id}`)) || 0;
@@ -181,7 +182,37 @@ export async function editarRecepcion(contenedorId: string, formData: FormData) 
       referencia: `Corrección de conteo — contenedor ${contenedor.numero}`,
     });
 
+    // Si se corrige a la baja (algo que ya se había marcado como recibido
+    // en realidad se quedó en China), queda registrado como pendiente —
+    // antes esto solo restaba el stock, sin dejar rastro de qué pasó con
+    // esas piezas ni de que China las tiene.
+    if (diferencia < 0) {
+      const nota = formData.get(`nota_${producto.id}`);
+      pendientesACrear.push({
+        contenedor_origen_id: contenedorId,
+        sku: producto.sku,
+        nombre: producto.nombre,
+        categoria: producto.categoria,
+        fabrica: producto.fabrica,
+        proveedor: producto.proveedor,
+        imagen_url: producto.imagen_url,
+        memo: producto.memo,
+        precio_dolares: producto.precio_dolares,
+        piezas_por_caja: producto.piezas_por_caja,
+        largo_cm: producto.largo_cm,
+        ancho_cm: producto.ancho_cm,
+        alto_cm: producto.alto_cm,
+        cantidad_pendiente: -diferencia,
+        pagado: formData.get(`pagado_${producto.id}`) === "true",
+        notas: typeof nota === "string" && nota.trim() ? nota.trim() : null,
+      });
+    }
+
     await supabase.from("productos").update({ cantidad: cantidadNueva }).eq("id", producto.id);
+  }
+
+  if (pendientesACrear.length) {
+    await supabase.from("pendientes_china").insert(pendientesACrear);
   }
 
   if (ajustes.length) {
@@ -223,5 +254,6 @@ export async function editarRecepcion(contenedorId: string, formData: FormData) 
   revalidatePath(`/contenedores/${contenedorId}`);
   revalidatePath("/stock");
   revalidatePath("/stock/movimientos");
+  revalidatePath("/stock/pendientes");
   redirect(`/contenedores/${contenedorId}`);
 }

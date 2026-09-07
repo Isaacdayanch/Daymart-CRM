@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import type { ResumenSku } from "@/lib/calculos-stock";
 import { formatoPesos } from "@/lib/formato";
 
@@ -72,7 +73,10 @@ export function TablaStock({
               {filtrados.map((r) => (
                 <tr key={r.sku} className={r.necesitaReorden && r.stockActual > 0 ? "bg-amber-50/40" : ""}>
                   <td className="px-6 py-3">
-                    <div className="flex items-center gap-3">
+                    <Link
+                      href={`/stock/producto/${encodeURIComponent(r.sku)}`}
+                      className="flex items-center gap-3 hover:underline"
+                    >
                       {r.imagenUrl ? (
                         // eslint-disable-next-line @next/next/no-img-element -- miniatura en tabla, tamaño fijo
                         <img
@@ -87,9 +91,9 @@ export function TablaStock({
                       )}
                       <div>
                         <p className="font-medium text-zinc-900">{r.nombre}</p>
-                        <p className="font-mono text-xs text-zinc-400">{r.sku}</p>
+                        <p className="font-mono text-xs text-zinc-400 no-underline">{r.sku}</p>
                       </div>
-                    </div>
+                    </Link>
                   </td>
                   <td className="px-6 py-3 text-right font-semibold text-zinc-900">{r.stockActual}</td>
                   <td className="px-6 py-3 text-right text-xs text-zinc-400">

@@ -67,8 +67,8 @@ export function FormularioRecepcion({
           const cantidadTexto = cantidades[producto.id] ?? "";
           const cantidadNueva = Number(cantidadTexto) || 0;
           const diferencia = cantidadNueva - producto.cantidad;
-          const hayFaltante = !modoEdicion && diferencia < 0;
-          const hayDiferencia = modoEdicion && diferencia !== 0;
+          const hayFaltante = diferencia < 0;
+          const hayDiferencia = modoEdicion && diferencia > 0;
 
           return (
             <div
@@ -125,7 +125,9 @@ export function FormularioRecepcion({
               {hayFaltante && (
                 <div className="mt-4 space-y-2 rounded-xl bg-amber-50 p-4">
                   <p className="text-xs font-medium text-amber-800">
-                    Faltan {-diferencia} piezas. ¿Qué pasó con ellas?
+                    {modoEdicion
+                      ? `Se restan ${-diferencia} piezas — quedan marcadas como pendientes en China. ¿Qué pasó con ellas?`
+                      : `Faltan ${-diferencia} piezas. ¿Qué pasó con ellas?`}
                   </p>
                   <input
                     type="text"
