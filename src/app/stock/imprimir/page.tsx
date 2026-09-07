@@ -36,6 +36,7 @@ export default async function ImprimirInventario() {
         <table className="w-full border-collapse text-left text-xs">
           <thead>
             <tr className="border-b-2 border-zinc-900 text-zinc-500">
+              <th className="py-2 pr-2 font-medium">✓</th>
               <th className="py-2 pr-2 font-medium">Foto</th>
               <th className="py-2 pr-2 font-medium">SKU</th>
               <th className="py-2 pr-2 font-medium">Producto</th>
@@ -48,6 +49,9 @@ export default async function ImprimirInventario() {
           <tbody className="divide-y divide-zinc-200">
             {resumenes.map((r) => (
               <tr key={r.sku}>
+                <td className="py-2 pr-2">
+                  <div className="h-4 w-4 border border-zinc-900" />
+                </td>
                 <td className="py-2 pr-2">
                   {r.imagenUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element -- se imprime/exporta a PDF, next/image no aplica

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { costoPromedioPonderado, stockActual } from "@/lib/calculos-stock";
 import { formatoPesos, formatoFecha } from "@/lib/formato";
+import { obtenerPerfilActual } from "@/lib/perfil";
 import { Logo } from "@/components/logo";
 import type { Contenedor, MovimientoStock } from "@/lib/tipos";
 
@@ -10,6 +11,8 @@ export default async function DetalleProducto({ params }: { params: Promise<{ sk
   const { sku: skuCrudo } = await params;
   const sku = decodeURIComponent(skuCrudo);
   const supabase = await createClient();
+  const perfil = await obtenerPerfilActual();
+  const verDinero = perfil?.rol !== "operadora";
 
   const [{ data: movimientos }, { data: contenedores }] = await Promise.all([
     supabase
@@ -105,14 +108,18 @@ export default async function DetalleProducto({ params }: { params: Promise<{ sk
               {piezasPorCaja > 0 ? (actual / piezasPorCaja).toFixed(1) : "—"}
             </p>
           </div>
-          <div className="rounded-xl border border-zinc-200 bg-white p-4">
-            <p className="text-xs text-zinc-500">Costo prom.</p>
-            <p className="mt-1 text-lg font-semibold text-zinc-900">{formatoPesos(costoProm)}</p>
-          </div>
-          <div className="rounded-xl border border-zinc-200 bg-white p-4">
-            <p className="text-xs text-zinc-500">Valor</p>
-            <p className="mt-1 text-lg font-semibold text-zinc-900">{formatoPesos(actual * costoProm)}</p>
-          </div>
+          {verDinero && (
+            <div className="rounded-xl border border-zinc-200 bg-white p-4">
+              <p className="text-xs text-zinc-500">Costo prom.</p>
+              <p className="mt-1 text-lg font-semibold text-zinc-900">{formatoPesos(costoProm)}</p>
+            </div>
+          )}
+          {verDinero && (
+            <div className="rounded-xl border border-zinc-200 bg-white p-4">
+              <p className="text-xs text-zinc-500">Valor</p>
+              <p className="mt-1 text-lg font-semibold text-zinc-900">{formatoPesos(actual * costoProm)}</p>
+            </div>
+          )}
         </div>
 
         <div className="rounded-2xl border border-zinc-200 bg-white shadow-sm">
@@ -132,7 +139,8 @@ export default async function DetalleProducto({ params }: { params: Promise<{ sk
                   <div className="text-right">
                     <p className="font-semibold text-zinc-900">+{info.cantidad} pzas</p>
                     <p className="text-xs text-zinc-400">
-                      {formatoFecha(info.fecha)} · {formatoPesos(info.costo)}/pza
+                      {formatoFecha(info.fecha)}
+                      {verDinero && ` · ${formatoPesos(info.costo)}/pza`}
                     </p>
                   </div>
                 </div>

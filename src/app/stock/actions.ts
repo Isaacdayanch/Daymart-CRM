@@ -228,6 +228,75 @@ export async function agregarStockManualLote(formData: FormData) {
   return { error: null };
 }
 
+interface LineaConteo {
+  sku: string;
+  nombre: string;
+  piezasPorCaja: number;
+  imagenUrl: string | null;
+  cantidadSistema: number;
+  cantidadReal: number;
+}
+
+/** "Revisar inventario" con conteo físico: solo se guardan las líneas que
+ * de verdad se revisaron y no cuadraban — el resto (revisado pero igual, o
+ * ni siquiera revisado) no genera ningún movimiento. Queda como AJUSTE,
+ * igual que una corrección de conteo al recibir un contenedor. */
+export async function registrarConteoFisico(formData: FormData) {
+  const supabase = await createClient();
+
+  const bodegaId = formData.get("bodega_id") as string;
+  const lineasCrudo = formData.get("lineas");
+  if (!bodegaId || typeof lineasCrudo !== "string") {
+    return { error: "Falta la bodega o las líneas revisadas." };
+  }
+
+  let lineas: LineaConteo[];
+  try {
+    lineas = JSON.parse(lineasCrudo);
+  } catch {
+    return { error: "No se pudieron leer las líneas." };
+  }
+
+  const conDiferencia = lineas.filter((l) => l.cantidadReal !== l.cantidadSistema);
+  if (conDiferencia.length === 0) {
+    return { error: "No marcaste ninguna diferencia que ajustar." };
+  }
+
+  const skus = Array.from(new Set(conDiferencia.map((l) => l.sku)));
+  const { data: movimientosSkus } = await supabase
+    .from("movimientos_stock")
+    .select("*")
+    .in("sku", skus)
+    .returns<MovimientoStock[]>();
+  const costoPorSku = new Map<string, number>();
+  for (const sku of skus) {
+    const movs = (movimientosSkus ?? []).filter((m) => m.sku === sku);
+    costoPorSku.set(sku, costoPromedioPonderado(movs));
+  }
+
+  const movimientos = conDiferencia.map((l) => ({
+    tipo: "AJUSTE",
+    sku: l.sku,
+    nombre: l.nombre,
+    bodega_id: bodegaId,
+    cantidad: l.cantidadReal - l.cantidadSistema,
+    piezas_por_caja: l.piezasPorCaja || 1,
+    imagen_url: l.imagenUrl,
+    costo_unitario_pesos: costoPorSku.get(l.sku) ?? 0,
+    referencia: "Ajuste por conteo físico (Revisar inventario)",
+  }));
+
+  const { data: insertados, error, columnasOmitidas } = await insertarMovimientosStock(supabase, movimientos);
+  if (error) return { error };
+  if (insertados && columnasOmitidas.length) {
+    await completarColumnasOmitidas(supabase, insertados.map((i) => i.id), movimientos, columnasOmitidas);
+  }
+
+  revalidatePath("/stock");
+  revalidatePath("/stock/movimientos");
+  return { error: null, ajustados: conDiferencia.length };
+}
+
 export async function actualizarDiasEspera(formData: FormData) {
   const supabase = await createClient();
   const diasEspera = Number(formData.get("dias_espera")) || 60;

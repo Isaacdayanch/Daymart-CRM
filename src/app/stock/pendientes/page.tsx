@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import type { Contenedor, PendienteChina } from "@/lib/tipos";
 import { formatoDolares } from "@/lib/formato";
+import { obtenerPerfilActual } from "@/lib/perfil";
 import { FilaPendiente } from "./fila-pendiente";
 
 function valorUsd(p: PendienteChina) {
@@ -10,6 +11,8 @@ function valorUsd(p: PendienteChina) {
 
 export default async function PendientesChina() {
   const supabase = await createClient();
+  const perfil = await obtenerPerfilActual();
+  const verDinero = perfil?.rol !== "operadora";
   const [{ data: pendientes }, { data: contenedores }] = await Promise.all([
     supabase
       .from("pendientes_china")
@@ -51,7 +54,7 @@ export default async function PendientesChina() {
         consolidarla.
       </p>
 
-      {listaPendientes.length > 0 && (
+      {verDinero && listaPendientes.length > 0 && (
         <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <div>

@@ -10,6 +10,7 @@ import {
 import { reconciliacionContenedor } from "@/lib/calculos-stock";
 import { obtenerSugerenciasCatalogo } from "@/lib/catalogo-proveedores";
 import { formatoPesos } from "@/lib/formato";
+import { obtenerPerfilActual } from "@/lib/perfil";
 import { Logo } from "@/components/logo";
 import {
   type Contenedor,
@@ -37,6 +38,8 @@ export default async function DetalleContenedor({
 }) {
   const { id } = await params;
   const supabase = await createClient();
+  const perfil = await obtenerPerfilActual();
+  const verDinero = perfil?.rol !== "operadora";
 
   const { data: contenedor } = await supabase
     .from("contenedores")
@@ -151,22 +154,27 @@ export default async function DetalleContenedor({
             contenedorId={contenedor.id}
             estado={contenedor.estado}
             stockGeneradoEn={contenedor.stock_generado_en}
+            soloLectura={!verDinero}
           />
           <div className="rounded-xl border border-zinc-200 bg-white p-4">
             <p className="text-xs text-zinc-500">CBM total</p>
             <p className="mt-1 text-sm font-semibold text-zinc-900">{cbmTotal.toFixed(2)} m³</p>
           </div>
-          <div className="rounded-xl border border-zinc-200 bg-white p-4">
-            <p className="text-xs text-zinc-500">Costo por CBM</p>
-            <p className="mt-1 text-sm font-semibold text-zinc-900">{formatoPesos(costoPorCbm)}</p>
-          </div>
-          <div className="rounded-xl border border-zinc-200 bg-white p-4">
-            <p className="text-xs text-zinc-500">Costo total contenedor</p>
-            <p className="mt-1 text-sm font-semibold text-zinc-900">{formatoPesos(costoTotal)}</p>
-          </div>
+          {verDinero && (
+            <div className="rounded-xl border border-zinc-200 bg-white p-4">
+              <p className="text-xs text-zinc-500">Costo por CBM</p>
+              <p className="mt-1 text-sm font-semibold text-zinc-900">{formatoPesos(costoPorCbm)}</p>
+            </div>
+          )}
+          {verDinero && (
+            <div className="rounded-xl border border-zinc-200 bg-white p-4">
+              <p className="text-xs text-zinc-500">Costo total contenedor</p>
+              <p className="mt-1 text-sm font-semibold text-zinc-900">{formatoPesos(costoTotal)}</p>
+            </div>
+          )}
         </div>
 
-        {contenedor.stock_generado_en && (
+        {verDinero && contenedor.stock_generado_en && (
           <div className="rounded-xl border border-zinc-200 bg-white p-4">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
@@ -223,8 +231,25 @@ export default async function DetalleContenedor({
 
         <Historial historial={listaHistorial} />
         <Documentos contenedorId={contenedor.id} documentosPorTipo={documentosPorTipo} />
-        <FormularioContenedor contenedor={contenedor} fabricas={fabricas} proveedores={proveedores} />
-        <Abonos contenedorId={contenedor.id} abonos={listaAbonos} />
+        {verDinero ? (
+          <>
+            <FormularioContenedor contenedor={contenedor} fabricas={fabricas} proveedores={proveedores} />
+            <Abonos contenedorId={contenedor.id} abonos={listaAbonos} />
+          </>
+        ) : (
+          <div className="rounded-xl border border-zinc-200 bg-white p-4 text-sm">
+            <p className="text-xs text-zinc-500">Booking</p>
+            <p className="font-medium text-zinc-900">{contenedor.booking || "—"}</p>
+            {(contenedor.fabrica_principal || contenedor.proveedor_principal) && (
+              <>
+                <p className="mt-3 text-xs text-zinc-500">Fábrica / Proveedor</p>
+                <p className="font-medium text-zinc-900">
+                  {[contenedor.fabrica_principal, contenedor.proveedor_principal].filter(Boolean).join(" · ")}
+                </p>
+              </>
+            )}
+          </div>
+        )}
         <Productos
           contenedorId={contenedor.id}
           productos={listaProductos}
@@ -237,6 +262,7 @@ export default async function DetalleContenedor({
           categoriasSugeridas={categorias}
           fabricasSugeridas={fabricas}
           proveedoresSugeridos={proveedores}
+          soloLectura={!verDinero}
         />
 
         <div className="flex justify-end">

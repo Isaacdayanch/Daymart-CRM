@@ -2,11 +2,14 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { resumenPorSku, valorTotalInventario } from "@/lib/calculos-stock";
 import { formatoPesos } from "@/lib/formato";
+import { obtenerPerfilActual } from "@/lib/perfil";
 import type { Bodega, ConfiguracionStock, MovimientoStock } from "@/lib/tipos";
 import { TablaStock } from "./tabla-stock";
 
 export default async function ResumenStock() {
   const supabase = await createClient();
+  const perfil = await obtenerPerfilActual();
+  const verDinero = perfil?.rol !== "operadora";
 
   const [{ data: movimientos }, { data: bodegas }, { data: configuracion }, { count: pendientesCount }] =
     await Promise.all([
@@ -25,12 +28,23 @@ export default async function ResumenStock() {
 
   return (
     <div className="space-y-8">
+      <div className="flex justify-end">
+        <Link
+          href="/stock/conteo"
+          className="rounded-xl bg-zinc-900 px-5 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-zinc-700"
+        >
+          Revisar inventario →
+        </Link>
+      </div>
+
       <div className="grid gap-4 sm:grid-cols-3">
-        <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
-          <p className="text-xs font-medium text-zinc-400 uppercase tracking-wide">Valor de inventario</p>
-          <p className="mt-2 text-3xl font-semibold tracking-tight text-zinc-900">{formatoPesos(valorTotal)}</p>
-          <p className="mt-1 text-xs text-zinc-400">Lo que tienes hoy, en bodega, a costo real</p>
-        </div>
+        {verDinero && (
+          <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+            <p className="text-xs font-medium text-zinc-400 uppercase tracking-wide">Valor de inventario</p>
+            <p className="mt-2 text-3xl font-semibold tracking-tight text-zinc-900">{formatoPesos(valorTotal)}</p>
+            <p className="mt-1 text-xs text-zinc-400">Lo que tienes hoy, en bodega, a costo real</p>
+          </div>
+        )}
         <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
           <p className="text-xs font-medium text-zinc-400 uppercase tracking-wide">SKUs activos</p>
           <p className="mt-2 text-3xl font-semibold tracking-tight text-zinc-900">
@@ -91,7 +105,7 @@ export default async function ResumenStock() {
             Todavía no hay movimientos de stock. Se generan solos al recibir un contenedor.
           </p>
         ) : (
-          <TablaStock resumenes={resumenes} bodegasPorId={bodegasPorId} />
+          <TablaStock resumenes={resumenes} bodegasPorId={bodegasPorId} verDinero={verDinero} />
         )}
       </div>
     </div>

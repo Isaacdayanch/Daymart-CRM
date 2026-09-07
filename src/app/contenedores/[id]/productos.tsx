@@ -21,6 +21,7 @@ export function Productos({
   categoriasSugeridas,
   fabricasSugeridas,
   proveedoresSugeridos,
+  soloLectura = false,
 }: {
   contenedorId: string;
   productos: Producto[];
@@ -33,6 +34,7 @@ export function Productos({
   categoriasSugeridas: string[];
   fabricasSugeridas: string[];
   proveedoresSugeridos: string[];
+  soloLectura?: boolean;
 }) {
   const [vista, setVista] = useState<"tabla" | "galeria">("tabla");
   const [editandoId, setEditandoId] = useState<string | null>(null);
@@ -102,8 +104,8 @@ export function Productos({
                 <th className="py-2 pr-3 font-medium">Producto</th>
                 <th className="py-2 pr-3 font-medium">Cant.</th>
                 <th className="py-2 pr-3 font-medium">CBM</th>
-                <th className="py-2 pr-3 font-medium">Costo final/pieza</th>
-                <th className="py-2 pr-3 font-medium"></th>
+                {!soloLectura && <th className="py-2 pr-3 font-medium">Costo final/pieza</th>}
+                {!soloLectura && <th className="py-2 pr-3 font-medium"></th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
@@ -191,26 +193,30 @@ export function Productos({
                       <span className="text-xs text-zinc-400">({cartones(producto).toFixed(1)} ctn)</span>
                     </td>
                     <td className="py-2 pr-3">{cbmProducto(producto).toFixed(3)}</td>
-                    <td className="py-2 pr-3 font-medium text-zinc-900">
-                      {formatoPesos(costoFinalPorPieza(producto, costoPorCbm, tipoCambioMercancia))}
-                    </td>
-                    <td className="py-2 pr-3 text-right whitespace-nowrap">
-                      <button
-                        type="button"
-                        onClick={() => setEditandoId(producto.id)}
-                        className="mr-2 text-zinc-400 hover:text-zinc-900"
-                      >
-                        Editar
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => eliminarProducto(contenedorId, producto.id)}
-                        className="text-zinc-400 hover:text-red-600"
-                        aria-label="Quitar producto"
-                      >
-                        ✕
-                      </button>
-                    </td>
+                    {!soloLectura && (
+                      <td className="py-2 pr-3 font-medium text-zinc-900">
+                        {formatoPesos(costoFinalPorPieza(producto, costoPorCbm, tipoCambioMercancia))}
+                      </td>
+                    )}
+                    {!soloLectura && (
+                      <td className="py-2 pr-3 text-right whitespace-nowrap">
+                        <button
+                          type="button"
+                          onClick={() => setEditandoId(producto.id)}
+                          className="mr-2 text-zinc-400 hover:text-zinc-900"
+                        >
+                          Editar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => eliminarProducto(contenedorId, producto.id)}
+                          className="text-zinc-400 hover:text-red-600"
+                          aria-label="Quitar producto"
+                        >
+                          ✕
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ),
               )}
@@ -269,30 +275,34 @@ export function Productos({
                       Sin foto
                     </div>
                   )}
-                  <div className="absolute top-1 right-1 flex gap-1">
-                    <button
-                      type="button"
-                      onClick={() => setEditandoId(producto.id)}
-                      className="rounded-full bg-white/90 px-1.5 py-0.5 text-xs text-zinc-500 hover:text-zinc-900"
-                    >
-                      ✎
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => eliminarProducto(contenedorId, producto.id)}
-                      className="rounded-full bg-white/90 px-1.5 py-0.5 text-xs text-zinc-500 hover:text-red-600"
-                      aria-label="Quitar producto"
-                    >
-                      ✕
-                    </button>
-                  </div>
+                  {!soloLectura && (
+                    <div className="absolute top-1 right-1 flex gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setEditandoId(producto.id)}
+                        className="rounded-full bg-white/90 px-1.5 py-0.5 text-xs text-zinc-500 hover:text-zinc-900"
+                      >
+                        ✎
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => eliminarProducto(contenedorId, producto.id)}
+                        className="rounded-full bg-white/90 px-1.5 py-0.5 text-xs text-zinc-500 hover:text-red-600"
+                        aria-label="Quitar producto"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  )}
                 </div>
                 <div className="p-2">
                   <p className="truncate text-xs font-medium text-zinc-900">{producto.nombre}</p>
                   <p className="truncate font-mono text-[11px] text-zinc-400">{producto.sku}</p>
-                  <p className="mt-1 text-xs font-semibold text-zinc-900">
-                    {formatoPesos(costoFinalPorPieza(producto, costoPorCbm, tipoCambioMercancia))}
-                  </p>
+                  {!soloLectura && (
+                    <p className="mt-1 text-xs font-semibold text-zinc-900">
+                      {formatoPesos(costoFinalPorPieza(producto, costoPorCbm, tipoCambioMercancia))}
+                    </p>
+                  )}
                 </div>
               </div>
             ),
@@ -300,6 +310,7 @@ export function Productos({
         </div>
       )}
 
+      {!soloLectura && (
       <form
         key={`${productos.length}-${restockId}-${pendienteId}`}
         action={alAgregar}
@@ -413,6 +424,7 @@ export function Productos({
           </button>
         </div>
       </form>
+      )}
     </div>
   );
 }

@@ -1,10 +1,13 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { formatoPesos } from "@/lib/formato";
+import { obtenerPerfilActual } from "@/lib/perfil";
 import type { Bodega, Contenedor, MovimientoStock } from "@/lib/tipos";
 
 export default async function MovimientosStock() {
   const supabase = await createClient();
+  const perfil = await obtenerPerfilActual();
+  const verDinero = perfil?.rol !== "operadora";
   const [{ data: movimientos }, { data: bodegas }, { data: contenedores }] = await Promise.all([
     supabase
       .from("movimientos_stock")
@@ -105,7 +108,7 @@ export default async function MovimientosStock() {
                       ) : (
                         [m.destino, m.referencia].filter(Boolean).join(" · ") || "—"
                       )}
-                      {m.tipo === "ENTRADA" && m.costo_unitario_pesos > 0 && (
+                      {verDinero && m.tipo === "ENTRADA" && m.costo_unitario_pesos > 0 && (
                         <span className="ml-1 text-zinc-400">· {formatoPesos(m.costo_unitario_pesos)}/pza</span>
                       )}
                     </td>

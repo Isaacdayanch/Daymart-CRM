@@ -15,9 +15,11 @@ function normaliza(texto: string) {
 export function TablaStock({
   resumenes,
   bodegasPorId,
+  verDinero = true,
 }: {
   resumenes: ResumenSku[];
   bodegasPorId: Record<string, string>;
+  verDinero?: boolean;
 }) {
   const [busqueda, setBusqueda] = useState("");
 
@@ -63,8 +65,8 @@ export function TablaStock({
                 <th className="px-6 py-2.5 font-medium">Producto</th>
                 <th className="px-6 py-2.5 font-medium text-right">Piezas</th>
                 <th className="px-6 py-2.5 font-medium text-right">Cajas</th>
-                <th className="px-6 py-2.5 font-medium text-right">Costo prom.</th>
-                <th className="px-6 py-2.5 font-medium text-right">Valor</th>
+                {verDinero && <th className="px-6 py-2.5 font-medium text-right">Costo prom.</th>}
+                {verDinero && <th className="px-6 py-2.5 font-medium text-right">Valor</th>}
                 <th className="px-6 py-2.5 font-medium text-right">Rotación/día</th>
                 <th className="px-6 py-2.5 font-medium">Bodegas</th>
               </tr>
@@ -99,8 +101,12 @@ export function TablaStock({
                   <td className="px-6 py-3 text-right text-xs text-zinc-400">
                     {r.cajas > 0 ? r.cajas.toFixed(1) : "—"}
                   </td>
-                  <td className="px-6 py-3 text-right text-zinc-600">{formatoPesos(r.costoPromedio)}</td>
-                  <td className="px-6 py-3 text-right text-zinc-600">{formatoPesos(r.valorInventario)}</td>
+                  {verDinero && (
+                    <td className="px-6 py-3 text-right text-zinc-600">{formatoPesos(r.costoPromedio)}</td>
+                  )}
+                  {verDinero && (
+                    <td className="px-6 py-3 text-right text-zinc-600">{formatoPesos(r.valorInventario)}</td>
+                  )}
                   <td className="px-6 py-3 text-right text-zinc-600">{r.rotacionDiaria.toFixed(2)}</td>
                   <td className="px-6 py-3 text-xs text-zinc-500">
                     {Array.from(r.stockPorBodega.entries())

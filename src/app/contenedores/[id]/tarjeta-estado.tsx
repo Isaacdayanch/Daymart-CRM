@@ -10,10 +10,12 @@ export function TarjetaEstado({
   contenedorId,
   estado,
   stockGeneradoEn,
+  soloLectura = false,
 }: {
   contenedorId: string;
   estado: EstadoContenedor;
   stockGeneradoEn: string | null;
+  soloLectura?: boolean;
 }) {
   const router = useRouter();
   const [abierto, setAbierto] = useState(false);
@@ -50,6 +52,13 @@ export function TarjetaEstado({
     <div className="rounded-xl border border-zinc-200 bg-white p-4">
       <p className="text-xs text-zinc-500">Estado</p>
       <div ref={ref} className="relative mt-1">
+        {soloLectura ? (
+          <span
+            className={`flex w-full items-center rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset ${ESTILO_ESTADO[estado]}`}
+          >
+            {etiqueta}
+          </span>
+        ) : (
         <button
           type="button"
           onClick={() => setAbierto((v) => !v)}
@@ -60,7 +69,8 @@ export function TarjetaEstado({
             <path d="M3.5 5.5 7 9l3.5-3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </button>
-        {abierto && (
+        )}
+        {!soloLectura && abierto && (
           <div className="absolute z-20 mt-1.5 w-48 overflow-hidden rounded-2xl border border-black/5 bg-white/95 py-1 shadow-xl ring-1 ring-black/5 backdrop-blur-sm">
             {ESTADOS_CONTENEDOR.map((e) => (
               <button

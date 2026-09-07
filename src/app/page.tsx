@@ -4,6 +4,7 @@ import { costoTotalContenedor } from "@/lib/calculos";
 import { reconciliacionContenedor } from "@/lib/calculos-stock";
 import { formatoPesos, ESTILO_ESTADO } from "@/lib/formato";
 import { ESTADOS_CONTENEDOR, type Contenedor, type MovimientoStock, type PagoMercancia } from "@/lib/tipos";
+import { obtenerPerfilActual } from "@/lib/perfil";
 import { MenuMas } from "./menu-mas";
 import { Logo } from "@/components/logo";
 
@@ -13,6 +14,8 @@ function etiquetaEstado(estado: Contenedor["estado"]) {
 
 export default async function Home() {
   const supabase = await createClient();
+  const perfil = await obtenerPerfilActual();
+  const verDinero = perfil?.rol !== "operadora";
   const { data: contenedores, error } = await supabase
     .from("contenedores")
     .select("*")
@@ -53,7 +56,7 @@ export default async function Home() {
             <Logo />
             <span className="hidden text-sm text-zinc-400 sm:inline">Pedidos / Contenedores</span>
           </div>
-          <MenuMas />
+          <MenuMas rol={perfil?.rol} />
         </div>
       </header>
 
@@ -70,12 +73,14 @@ export default async function Home() {
             <p className="mt-1 text-sm text-zinc-500">
               Agrega tu primer contenedor para empezar a llevar el control de tus pedidos.
             </p>
-            <Link
-              href="/contenedores/nuevo"
-              className="mt-4 inline-block rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700"
-            >
-              + Nuevo contenedor
-            </Link>
+            {verDinero && (
+              <Link
+                href="/contenedores/nuevo"
+                className="mt-4 inline-block rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700"
+              >
+                + Nuevo contenedor
+              </Link>
+            )}
           </div>
         )}
 
@@ -102,13 +107,15 @@ export default async function Home() {
                       {etiquetaEstado(contenedor.estado)}
                     </span>
                   </div>
-                  <div className="mt-4 flex items-baseline justify-between border-t border-zinc-100 pt-3">
-                    <span className="text-xs text-zinc-500">Costo total del contenedor</span>
-                    <span className="text-sm font-semibold text-zinc-900">
-                      {formatoPesos(costoTotalContenedor(contenedor, pagosDe(contenedor.id)))}
-                    </span>
-                  </div>
-                  {contenedor.stock_generado_en && diferenciaEnContra(contenedor) > 0 && (
+                  {verDinero && (
+                    <div className="mt-4 flex items-baseline justify-between border-t border-zinc-100 pt-3">
+                      <span className="text-xs text-zinc-500">Costo total del contenedor</span>
+                      <span className="text-sm font-semibold text-zinc-900">
+                        {formatoPesos(costoTotalContenedor(contenedor, pagosDe(contenedor.id)))}
+                      </span>
+                    </div>
+                  )}
+                  {verDinero && contenedor.stock_generado_en && diferenciaEnContra(contenedor) > 0 && (
                     <p className="mt-2 text-xs font-medium text-red-600">
                       ⚠ {formatoPesos(diferenciaEnContra(contenedor))} en tu contra sin explicar
                     </p>

@@ -3,10 +3,12 @@ import { createServerClient } from "@supabase/ssr";
 
 const RUTAS_PUBLICAS = ["/login", "/sin-acceso"];
 
-// A dónde puede entrar una operadora — cualquier otra ruta la regresa
-// aquí. El resto del sistema (contenedores, costos, usuarios) es solo
-// del dueño.
-const RUTAS_OPERADORA = ["/stock/salidas", "/stock/carga-masiva"];
+// Una operadora ve todo lo de Stock y los contenedores (para poder hacer
+// match del inventario real) — las páginas mismas esconden los números de
+// dinero cuando el rol es operadora. Lo que NO puede tocar: crear
+// contenedores nuevos, usuarios, ni la papelera.
+const RUTAS_OPERADORA = ["/", "/stock", "/contenedores"];
+const RUTAS_BLOQUEADAS_OPERADORA = ["/contenedores/nuevo", "/usuarios", "/papelera"];
 
 function coincide(pathname: string, rutas: string[]) {
   return rutas.some((r) => pathname === r || pathname.startsWith(`${r}/`));
@@ -63,9 +65,12 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  if (perfil.rol === "operadora" && !coincide(pathname, RUTAS_OPERADORA)) {
+  if (
+    perfil.rol === "operadora" &&
+    (coincide(pathname, RUTAS_BLOQUEADAS_OPERADORA) || !coincide(pathname, RUTAS_OPERADORA))
+  ) {
     const url = request.nextUrl.clone();
-    url.pathname = "/stock/salidas";
+    url.pathname = "/stock";
     return NextResponse.redirect(url);
   }
 

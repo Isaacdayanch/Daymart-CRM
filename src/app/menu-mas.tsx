@@ -2,12 +2,14 @@
 
 import Link from "next/link";
 import { useEffect, useRef } from "react";
+import type { Rol } from "@/lib/tipos";
 import { cerrarSesion } from "./login/actions";
 
 const ITEMS = [
   {
     href: "/contenedores/nuevo",
     etiqueta: "Nuevo contenedor",
+    soloDueno: true,
     icono: (
       <path d="M9 3v12M3 9h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
     ),
@@ -41,6 +43,7 @@ const ITEMS = [
   {
     href: "/papelera",
     etiqueta: "Papelera",
+    soloDueno: true,
     icono: (
       <path
         d="M4 5.5h10M7.5 5.5V4a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v1.5M6 5.5v8a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1v-8"
@@ -54,6 +57,7 @@ const ITEMS = [
   {
     href: "/usuarios",
     etiqueta: "Usuarios",
+    soloDueno: true,
     icono: (
       <path
         d="M6.5 8.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5ZM2.5 15c0-2.5 1.8-4 4-4s4 1.5 4 4M11.5 8a2 2 0 1 0 0-4M13 15c0-2-1.2-3.3-2.7-3.8"
@@ -69,8 +73,9 @@ const ITEMS = [
 /** <details>/<summary> nativo en vez de estado de React + listeners a mano:
  * abrir/cerrar lo maneja el navegador mismo, así que funciona igual en
  * Chrome, Safari, Firefox, computadora o celular sin sorpresas. */
-export function MenuMas() {
+export function MenuMas({ rol }: { rol?: Rol }) {
   const ref = useRef<HTMLDetailsElement>(null);
+  const items = rol === "operadora" ? ITEMS.filter((item) => !item.soloDueno) : ITEMS;
 
   useEffect(() => {
     function alClicFuera(e: MouseEvent) {
@@ -104,7 +109,7 @@ export function MenuMas() {
         </svg>
       </summary>
       <div className="absolute right-0 z-20 mt-2 w-52 origin-top-right overflow-hidden rounded-2xl border border-black/5 bg-white/95 py-1.5 shadow-xl ring-1 ring-black/5 backdrop-blur-sm">
-        {ITEMS.map((item) => (
+        {items.map((item) => (
           <Link
             key={item.href}
             href={item.href}
