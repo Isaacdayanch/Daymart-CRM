@@ -64,8 +64,16 @@ export function puntoReorden(rotacion: number, diasEspera: number) {
   return rotacion * diasEspera;
 }
 
-/** Arma el resumen por SKU a partir de todos los movimientos del negocio. */
-export function resumenPorSku(movimientos: MovimientoStock[], diasEspera: number): ResumenSku[] {
+/** Arma el resumen por SKU a partir de todos los movimientos del negocio.
+ * "piezasPorCajaPorSku" es opcional: si se pasa (viene de la tabla
+ * productos, la fuente real), manda sobre lo que diga cualquier movimiento
+ * suelto — así una sola entrada vieja con el dato mal guardado no rompe el
+ * cálculo de cajas de todo el SKU. */
+export function resumenPorSku(
+  movimientos: MovimientoStock[],
+  diasEspera: number,
+  piezasPorCajaPorSku: Map<string, number> = new Map(),
+): ResumenSku[] {
   const porSku = new Map<string, MovimientoStock[]>();
   for (const m of movimientos) {
     const lista = porSku.get(m.sku) ?? [];
@@ -85,12 +93,13 @@ export function resumenPorSku(movimientos: MovimientoStock[], diasEspera: number
     const actual = stockActual(movs);
     const punto = puntoReorden(rotacion, diasEspera);
 
-    // Piezas por caja y foto: las de la entrada/ajuste más reciente (las
-    // salidas no siempre las conocen con precisión, así que no se toman en
-    // cuenta aquí).
+    // Piezas por caja y foto: primero la del producto (la fuente real,
+    // consistente en todos sus movimientos); si no hay (ej. el producto ya
+    // se borró pero el movimiento sigue en el libro), se usa la de la
+    // entrada/ajuste más reciente como respaldo.
     const movsConEmpaque = movs.filter((m) => m.tipo === "ENTRADA" || m.tipo === "AJUSTE");
     const masRecienteConEmpaque = movsConEmpaque.length ? masReciente(movsConEmpaque) : null;
-    const piezasPorCaja = masRecienteConEmpaque?.piezas_por_caja || 1;
+    const piezasPorCaja = piezasPorCajaPorSku.get(sku) || masRecienteConEmpaque?.piezas_por_caja || 1;
 
     resumenes.push({
       sku,

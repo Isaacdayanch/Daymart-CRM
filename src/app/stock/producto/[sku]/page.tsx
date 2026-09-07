@@ -39,8 +39,12 @@ export default async function DetalleProducto({ params }: { params: Promise<{ sk
   const masReciente = listaMovimientos[0];
   const actual = stockActual(listaMovimientos);
   const costoProm = costoPromedioPonderado(listaMovimientos);
+  // Del producto (la fuente real) primero; si ya no existe el producto
+  // (se borró) se recurre al movimiento más reciente como respaldo.
   const piezasPorCaja =
-    listaMovimientos.find((m) => m.tipo === "ENTRADA" || m.tipo === "AJUSTE")?.piezas_por_caja || 1;
+    productoReferencia?.piezas_por_caja ||
+    listaMovimientos.find((m) => m.tipo === "ENTRADA" || m.tipo === "AJUSTE")?.piezas_por_caja ||
+    1;
 
   // Entradas agrupadas por contenedor — para responder "¿cuándo y en qué
   // contenedores he pedido esto?" de un vistazo, sin bucear en el libro

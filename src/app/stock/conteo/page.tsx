@@ -1,17 +1,19 @@
 import { createClient } from "@/lib/supabase/server";
 import { resumenPorSku } from "@/lib/calculos-stock";
+import { obtenerPiezasPorCajaPorSku } from "@/lib/productos-stock";
 import type { Bodega, ConfiguracionStock, MovimientoStock } from "@/lib/tipos";
 import { FormularioConteo } from "./formulario-conteo";
 
 export default async function ConteoFisico() {
   const supabase = await createClient();
-  const [{ data: movimientos }, { data: bodegas }, { data: configuracion }] = await Promise.all([
+  const [{ data: movimientos }, { data: bodegas }, { data: configuracion }, piezasPorCajaPorSku] = await Promise.all([
     supabase.from("movimientos_stock").select("*").returns<MovimientoStock[]>(),
     supabase.from("bodegas").select("*").is("eliminado_en", null).order("nombre").returns<Bodega[]>(),
     supabase.from("configuracion_stock").select("*").single<ConfiguracionStock>(),
+    obtenerPiezasPorCajaPorSku(supabase),
   ]);
 
-  const resumenes = resumenPorSku(movimientos ?? [], configuracion?.dias_espera ?? 60);
+  const resumenes = resumenPorSku(movimientos ?? [], configuracion?.dias_espera ?? 60, piezasPorCajaPorSku);
 
   return (
     <div className="max-w-4xl space-y-4">

@@ -1,18 +1,20 @@
 import { createClient } from "@/lib/supabase/server";
 import { resumenPorSku } from "@/lib/calculos-stock";
 import { formatoFecha } from "@/lib/formato";
+import { obtenerPiezasPorCajaPorSku } from "@/lib/productos-stock";
 import type { ConfiguracionStock, MovimientoStock } from "@/lib/tipos";
 import { BotonImprimir } from "../../contenedores/[id]/imprimir/boton-imprimir";
 import { Logo } from "@/components/logo";
 
 export default async function ImprimirInventario() {
   const supabase = await createClient();
-  const [{ data: movimientos }, { data: configuracion }] = await Promise.all([
+  const [{ data: movimientos }, { data: configuracion }, piezasPorCajaPorSku] = await Promise.all([
     supabase.from("movimientos_stock").select("*").returns<MovimientoStock[]>(),
     supabase.from("configuracion_stock").select("*").single<ConfiguracionStock>(),
+    obtenerPiezasPorCajaPorSku(supabase),
   ]);
 
-  const resumenes = resumenPorSku(movimientos ?? [], configuracion?.dias_espera ?? 60).filter(
+  const resumenes = resumenPorSku(movimientos ?? [], configuracion?.dias_espera ?? 60, piezasPorCajaPorSku).filter(
     (r) => r.stockActual !== 0,
   );
 

@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { resumenPorSku, valorTotalInventario } from "@/lib/calculos-stock";
 import { formatoPesos } from "@/lib/formato";
 import { obtenerPerfilActual } from "@/lib/perfil";
+import { obtenerPiezasPorCajaPorSku } from "@/lib/productos-stock";
 import type { Bodega, ConfiguracionStock, MovimientoStock } from "@/lib/tipos";
 import { TablaStock } from "./tabla-stock";
 
@@ -11,17 +12,18 @@ export default async function ResumenStock() {
   const perfil = await obtenerPerfilActual();
   const verDinero = perfil?.rol !== "operadora";
 
-  const [{ data: movimientos }, { data: bodegas }, { data: configuracion }, { count: pendientesCount }] =
+  const [{ data: movimientos }, { data: bodegas }, { data: configuracion }, { count: pendientesCount }, piezasPorCajaPorSku] =
     await Promise.all([
       supabase.from("movimientos_stock").select("*").returns<MovimientoStock[]>(),
       supabase.from("bodegas").select("*").is("eliminado_en", null).returns<Bodega[]>(),
       supabase.from("configuracion_stock").select("*").single<ConfiguracionStock>(),
       supabase.from("pendientes_china").select("*", { count: "exact", head: true }).eq("estado", "PENDIENTE"),
+      obtenerPiezasPorCajaPorSku(supabase),
     ]);
 
   const listaMovimientos = movimientos ?? [];
   const diasEspera = configuracion?.dias_espera ?? 60;
-  const resumenes = resumenPorSku(listaMovimientos, diasEspera);
+  const resumenes = resumenPorSku(listaMovimientos, diasEspera, piezasPorCajaPorSku);
   const valorTotal = valorTotalInventario(resumenes);
   const paraReordenar = resumenes.filter((r) => r.necesitaReorden && r.stockActual > 0);
   const bodegasPorId = Object.fromEntries((bodegas ?? []).map((b) => [b.id, b.nombre]));
