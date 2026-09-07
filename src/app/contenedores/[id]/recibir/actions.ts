@@ -164,7 +164,21 @@ export async function editarRecepcion(contenedorId: string, formData: FormData) 
   const pendientesACrear: Record<string, unknown>[] = [];
 
   for (const producto of productos) {
-    const cantidadNueva = Number(formData.get(`cantidad_${producto.id}`)) || 0;
+    const campoCantidad = formData.get(`cantidad_${producto.id}`);
+    const cantidadNueva = Number(campoCantidad);
+
+    // Antes, un valor vacío o inválido se convertía en 0 en silencio
+    // (Number("") || 0) y podía terminar generando un ajuste "de cero" que
+    // la base de datos rechaza con un error genérico. Ahora se dice
+    // exactamente qué producto tiene el dato malo.
+    if (campoCantidad === null || campoCantidad === "" || !Number.isFinite(cantidadNueva) || cantidadNueva < 0) {
+      redirect(
+        `/contenedores/${contenedorId}/recibir?error=${encodeURIComponent(
+          `La cantidad de "${producto.nombre}" (${producto.sku}) no es válida — revísala e inténtalo de nuevo.`,
+        )}`,
+      );
+    }
+
     const diferencia = cantidadNueva - producto.cantidad;
     if (diferencia === 0) continue;
 
