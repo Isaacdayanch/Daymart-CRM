@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import type { ResumenSku } from "@/lib/calculos-stock";
-import { formatoPesos } from "@/lib/formato";
+import { formatoCajas, formatoPesos } from "@/lib/formato";
 
 function normaliza(texto: string) {
   return texto
@@ -99,7 +99,7 @@ export function TablaStock({
                   </td>
                   <td className="px-6 py-3 text-right font-semibold text-zinc-900">{r.stockActual}</td>
                   <td className="px-6 py-3 text-right text-xs text-zinc-400">
-                    {r.cajas > 0 ? r.cajas.toFixed(1) : "—"}
+                    {r.cajas > 0 ? formatoCajas(r.cajas) : "—"}
                   </td>
                   {verDinero && (
                     <td className="px-6 py-3 text-right text-zinc-600">{formatoPesos(r.costoPromedio)}</td>

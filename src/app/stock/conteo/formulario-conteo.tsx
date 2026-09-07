@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Selector } from "@/components/selector";
 import type { ResumenSku } from "@/lib/calculos-stock";
+import { formatoCajas } from "@/lib/formato";
 import type { Bodega } from "@/lib/tipos";
 import { registrarConteoFisico } from "../actions";
 
@@ -149,7 +150,7 @@ export function FormularioConteo({ resumenes, bodegas }: { resumenes: ResumenSku
                       </div>
                     </td>
                     <td className="px-6 py-3 text-right text-xs text-zinc-400">
-                      {r.cajas > 0 ? r.cajas.toFixed(1) : "—"}
+                      {r.cajas > 0 ? formatoCajas(r.cajas) : "—"}
                     </td>
                     <td className="px-6 py-3 text-right text-zinc-500">{r.stockActual}</td>
                     <td className="px-6 py-3 text-right">

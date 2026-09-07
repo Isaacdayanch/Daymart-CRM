@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { resumenPorSku } from "@/lib/calculos-stock";
-import { formatoFecha } from "@/lib/formato";
+import { formatoCajas, formatoFecha } from "@/lib/formato";
 import { obtenerPiezasPorCajaPorSku } from "@/lib/productos-stock";
 import type { ConfiguracionStock, MovimientoStock } from "@/lib/tipos";
 import { BotonImprimir } from "../../contenedores/[id]/imprimir/boton-imprimir";
@@ -65,7 +65,7 @@ export default async function ImprimirInventario() {
                 <td className="py-2.5 pr-2 font-mono">{r.sku}</td>
                 <td className="py-2.5 pr-2">{r.nombre}</td>
                 <td className="py-2.5 pr-2 text-right font-medium">{r.stockActual}</td>
-                <td className="py-2.5 pr-2 text-right text-zinc-500">{r.cajas > 0 ? r.cajas.toFixed(1) : "—"}</td>
+                <td className="py-2.5 pr-2 text-right text-zinc-500">{r.cajas > 0 ? formatoCajas(r.cajas) : "—"}</td>
                 <td className="border-b border-zinc-200 py-2.5 pr-2"></td>
                 <td className="border-b border-zinc-200 py-2.5 pr-2"></td>
               </tr>

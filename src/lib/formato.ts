@@ -16,6 +16,12 @@ export function formatoDolares(valor: number) {
   });
 }
 
+/** Cajas: si es un número cerrado no muestra decimales ("26"); si hay caja
+ * a medias, un solo decimal ("26.5") — nunca "26.0". */
+export function formatoCajas(cajas: number) {
+  return Number.isInteger(cajas) ? String(cajas) : cajas.toFixed(1);
+}
+
 export function formatoFecha(fechaIso: string) {
   return new Date(fechaIso).toLocaleDateString("es-MX", {
     day: "numeric",

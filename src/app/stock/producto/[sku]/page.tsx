@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { costoPromedioPonderado, stockActual } from "@/lib/calculos-stock";
-import { formatoPesos, formatoFecha } from "@/lib/formato";
+import { formatoPesos, formatoFecha, formatoCajas } from "@/lib/formato";
 import { obtenerPerfilActual } from "@/lib/perfil";
 import { Logo } from "@/components/logo";
 import type { Contenedor, MovimientoStock, Producto } from "@/lib/tipos";
@@ -118,7 +118,7 @@ export default async function DetalleProducto({ params }: { params: Promise<{ sk
           <div className="rounded-xl border border-zinc-200 bg-white p-4">
             <p className="text-xs text-zinc-500">Cajas</p>
             <p className="mt-1 text-lg font-semibold text-zinc-900">
-              {piezasPorCaja > 0 ? (actual / piezasPorCaja).toFixed(1) : "—"}
+              {piezasPorCaja > 0 ? formatoCajas(actual / piezasPorCaja) : "—"}
             </p>
           </div>
           {verDinero && (
