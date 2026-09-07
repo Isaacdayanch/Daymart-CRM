@@ -160,17 +160,23 @@ export async function editarRecepcion(contenedorId: string, formData: FormData) 
     (entradasPrevias ?? []).filter((m) => m.producto_id).map((m) => [m.producto_id as string, m.costo_unitario_pesos]),
   );
   const costoPorSku = new Map((entradasPrevias ?? []).map((m) => [m.sku, m.costo_unitario_pesos]));
+
+  // Primero se valida TODO y se arma todo en memoria, sin escribir nada
+  // todavía — antes se guardaba la cantidad nueva de cada producto dentro
+  // del mismo ciclo que validaba, así que si un producto MÁS ADELANTE en
+  // la lista tenía un dato inválido, la función se detenía a medias: los
+  // productos ya procesados quedaban con su cantidad actualizada pero SIN
+  // el ajuste de stock correspondiente (nunca se llegaba a insertar,
+  // porque eso pasaba hasta el final). Resultado: la cantidad del
+  // contenedor se veía corregida, pero el stock real nunca se movía.
   const ajustes: Record<string, unknown>[] = [];
   const pendientesACrear: Record<string, unknown>[] = [];
+  const actualizacionesProducto: { id: string; cantidad: number }[] = [];
 
   for (const producto of productos) {
     const campoCantidad = formData.get(`cantidad_${producto.id}`);
     const cantidadNueva = Number(campoCantidad);
 
-    // Antes, un valor vacío o inválido se convertía en 0 en silencio
-    // (Number("") || 0) y podía terminar generando un ajuste "de cero" que
-    // la base de datos rechaza con un error genérico. Ahora se dice
-    // exactamente qué producto tiene el dato malo.
     if (campoCantidad === null || campoCantidad === "" || !Number.isFinite(cantidadNueva) || cantidadNueva < 0) {
       redirect(
         `/contenedores/${contenedorId}/recibir?error=${encodeURIComponent(
@@ -181,6 +187,8 @@ export async function editarRecepcion(contenedorId: string, formData: FormData) 
 
     const diferencia = cantidadNueva - producto.cantidad;
     if (diferencia === 0) continue;
+
+    actualizacionesProducto.push({ id: producto.id, cantidad: cantidadNueva });
 
     ajustes.push({
       tipo: "AJUSTE",
@@ -221,14 +229,12 @@ export async function editarRecepcion(contenedorId: string, formData: FormData) 
         notas: typeof nota === "string" && nota.trim() ? nota.trim() : null,
       });
     }
-
-    await supabase.from("productos").update({ cantidad: cantidadNueva }).eq("id", producto.id);
   }
 
-  if (pendientesACrear.length) {
-    await supabase.from("pendientes_china").insert(pendientesACrear);
-  }
-
+  // Ahora sí se escribe — y en el orden correcto: primero el ajuste de
+  // stock (si esto falla, no se toca nada más y se puede reintentar sin
+  // que nada haya quedado a medias), y solo si eso funciona, se actualiza
+  // la cantidad capturada en cada producto.
   if (ajustes.length) {
     const { data: insertados, error: errorAjustes, columnasOmitidas } = await insertarMovimientosStock(
       supabase,
@@ -245,6 +251,16 @@ export async function editarRecepcion(contenedorId: string, formData: FormData) 
       await completarColumnasOmitidas(supabase, insertados.map((i) => i.id), ajustes, columnasOmitidas);
     }
   }
+
+  if (pendientesACrear.length) {
+    await supabase.from("pendientes_china").insert(pendientesACrear);
+  }
+
+  await Promise.all(
+    actualizacionesProducto.map(({ id, cantidad }) =>
+      supabase.from("productos").update({ cantidad }).eq("id", id),
+    ),
+  );
 
   // Si Isaac corrigió la fecha de recepción, se actualiza en los tres
   // lugares donde queda registrada — sin esto, la línea de tiempo y el
