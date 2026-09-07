@@ -1,3 +1,12 @@
+export type Rol = "dueno" | "operadora";
+
+export interface Perfil {
+  id: string;
+  rol: Rol;
+  nombre: string | null;
+  creado_en: string;
+}
+
 export type EstadoContenedor =
   | "CONFIGURANDOSE"
   | "EN_TRANSITO"

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import type { Rol } from "@/lib/tipos";
 
 const PESTANAS = [
   { href: "/stock", etiqueta: "Resumen" },
@@ -14,12 +15,17 @@ const PESTANAS = [
   { href: "/stock/configuracion", etiqueta: "Configuración" },
 ];
 
-export function NavStock() {
+// Una operadora solo puede entrar a Salidas y Carga masiva (así lo decide
+// también el middleware) — el resto ni se le muestra.
+const PESTANAS_OPERADORA = new Set(["/stock/salidas", "/stock/carga-masiva"]);
+
+export function NavStock({ rol }: { rol?: Rol }) {
   const pathname = usePathname();
+  const pestanas = rol === "operadora" ? PESTANAS.filter((p) => PESTANAS_OPERADORA.has(p.href)) : PESTANAS;
 
   return (
     <nav className="flex gap-1 overflow-x-auto">
-      {PESTANAS.map((pestana) => {
+      {pestanas.map((pestana) => {
         const activa = pestana.href === "/stock" ? pathname === "/stock" : pathname.startsWith(pestana.href);
         return (
           <Link

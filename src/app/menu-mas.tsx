@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef } from "react";
+import { cerrarSesion } from "./login/actions";
 
 const ITEMS = [
   {
@@ -43,6 +44,19 @@ const ITEMS = [
     icono: (
       <path
         d="M4 5.5h10M7.5 5.5V4a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v1.5M6 5.5v8a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1v-8"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    ),
+  },
+  {
+    href: "/usuarios",
+    etiqueta: "Usuarios",
+    icono: (
+      <path
+        d="M6.5 8.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5ZM2.5 15c0-2.5 1.8-4 4-4s4 1.5 4 4M11.5 8a2 2 0 1 0 0-4M13 15c0-2-1.2-3.3-2.7-3.8"
         stroke="currentColor"
         strokeWidth="1.5"
         strokeLinecap="round"
@@ -103,6 +117,23 @@ export function MenuMas() {
             {item.etiqueta}
           </Link>
         ))}
+        <form action={cerrarSesion} className="border-t border-zinc-100">
+          <button
+            type="submit"
+            className="flex w-full items-center gap-2.5 px-4 py-2 text-left text-sm text-zinc-700 transition hover:bg-zinc-100"
+          >
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" className="text-zinc-400">
+              <path
+                d="M7 15H4.5A1.5 1.5 0 0 1 3 13.5v-9A1.5 1.5 0 0 1 4.5 3H7M12 12.5 15.5 9 12 5.5M15.5 9h-9"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            Cerrar sesión
+          </button>
+        </form>
       </div>
     </details>
   );

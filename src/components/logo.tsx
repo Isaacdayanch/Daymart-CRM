@@ -5,11 +5,11 @@ import Link from "next/link";
 
 const AZUL = "#1467d6";
 
-export function Logo({ tamano = "md" }: { tamano?: "sm" | "md" }) {
+export function Logo({ tamano = "md", href = "/" }: { tamano?: "sm" | "md"; href?: string }) {
   const texto = tamano === "sm" ? "text-base" : "text-lg";
 
   return (
-    <Link href="/" className="flex items-center gap-1.5">
+    <Link href={href} className="flex items-center gap-1.5">
       <span className={`font-[family-name:var(--font-baloo)] ${texto} font-bold tracking-tight`} style={{ color: AZUL }}>
         Daymart
       </span>
