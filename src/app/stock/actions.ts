@@ -297,6 +297,60 @@ export async function registrarConteoFisico(formData: FormData) {
   return { error: null, ajustados: conDiferencia.length };
 }
 
+/** Edita los datos de un producto desde Stock (no hace falta entrar a cada
+ * contenedor) y lo aplica a TODOS los productos y movimientos que tengan
+ * ese SKU — así, si lo trajiste en el contenedor 10, 12 y 13, se corrige
+ * en los tres de un jalón y queda consistente en Stock. */
+export async function actualizarProductoGlobal(skuActual: string, formData: FormData) {
+  const supabase = await createClient();
+
+  const nombre = texto(formData, "nombre") ?? "";
+  const skuNuevo = texto(formData, "sku") ?? skuActual;
+  const categoria = texto(formData, "categoria");
+  const fabrica = texto(formData, "fabrica");
+  const proveedor = texto(formData, "proveedor");
+  const piezasPorCaja = Number(formData.get("piezas_por_caja")) || 1;
+
+  if (!nombre || !skuNuevo) return { error: "Falta el SKU o el nombre." };
+
+  const { url: imagenSubida, error: errorImagen } = await subirImagenStock(supabase, formData);
+
+  const { data: afectados } = await supabase.from("productos").select("contenedor_id").eq("sku", skuActual);
+
+  const camposProducto: Record<string, unknown> = {
+    sku: skuNuevo,
+    nombre,
+    categoria,
+    fabrica,
+    proveedor,
+    piezas_por_caja: piezasPorCaja,
+  };
+  const camposMovimiento: Record<string, unknown> = { sku: skuNuevo, nombre, piezas_por_caja: piezasPorCaja };
+  if (imagenSubida) {
+    camposProducto.imagen_url = imagenSubida;
+    camposMovimiento.imagen_url = imagenSubida;
+  }
+
+  const { error: errorProductos } = await supabase.from("productos").update(camposProducto).eq("sku", skuActual);
+  if (errorProductos) return { error: errorProductos.message };
+
+  const { error: errorMovimientos } = await supabase
+    .from("movimientos_stock")
+    .update(camposMovimiento)
+    .eq("sku", skuActual);
+  if (errorMovimientos) return { error: errorMovimientos.message };
+
+  for (const p of afectados ?? []) {
+    if (p.contenedor_id) revalidatePath(`/contenedores/${p.contenedor_id}`);
+  }
+  revalidatePath("/stock");
+  revalidatePath("/stock/movimientos");
+  revalidatePath(`/stock/producto/${encodeURIComponent(skuActual)}`);
+  revalidatePath(`/stock/producto/${encodeURIComponent(skuNuevo)}`);
+
+  return { error: errorImagen ? `La foto no se pudo subir: ${errorImagen}` : null, skuNuevo };
+}
+
 export async function actualizarDiasEspera(formData: FormData) {
   const supabase = await createClient();
   const diasEspera = Number(formData.get("dias_espera")) || 60;

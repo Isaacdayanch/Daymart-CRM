@@ -462,7 +462,16 @@ export async function actualizarProducto(contenedorId: string, productoId: strin
     })
     .eq("id", productoId);
 
+  // El SKU/nombre también viven copiados en cada movimiento de stock (para
+  // no depender de un join). Si se corrige el SKU aquí (ej. dos variantes
+  // que quedaron con el mismo SKU por error), sin esto Stock seguiría
+  // mostrándolos mezclados bajo el SKU viejo, aunque el producto ya diga
+  // el nuevo.
+  await supabase.from("movimientos_stock").update({ sku, nombre }).eq("producto_id", productoId);
+
   revalidatePath(`/contenedores/${contenedorId}`);
+  revalidatePath("/stock");
+  revalidatePath("/stock/movimientos");
   return { error: errorImagen ? `La foto no se pudo subir: ${errorImagen}` : null };
 }
 

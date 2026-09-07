@@ -5,7 +5,8 @@ import { costoPromedioPonderado, stockActual } from "@/lib/calculos-stock";
 import { formatoPesos, formatoFecha } from "@/lib/formato";
 import { obtenerPerfilActual } from "@/lib/perfil";
 import { Logo } from "@/components/logo";
-import type { Contenedor, MovimientoStock } from "@/lib/tipos";
+import type { Contenedor, MovimientoStock, Producto } from "@/lib/tipos";
+import { EditarProductoGlobal } from "./editar-producto-global";
 
 export default async function DetalleProducto({ params }: { params: Promise<{ sku: string }> }) {
   const { sku: skuCrudo } = await params;
@@ -14,7 +15,7 @@ export default async function DetalleProducto({ params }: { params: Promise<{ sk
   const perfil = await obtenerPerfilActual();
   const verDinero = perfil?.rol !== "operadora";
 
-  const [{ data: movimientos }, { data: contenedores }] = await Promise.all([
+  const [{ data: movimientos }, { data: contenedores }, { data: productoReferencia }] = await Promise.all([
     supabase
       .from("movimientos_stock")
       .select("*")
@@ -22,6 +23,13 @@ export default async function DetalleProducto({ params }: { params: Promise<{ sk
       .order("creado_en", { ascending: false })
       .returns<MovimientoStock[]>(),
     supabase.from("contenedores").select("*").returns<Contenedor[]>(),
+    supabase
+      .from("productos")
+      .select("*")
+      .eq("sku", sku)
+      .order("creado_en", { ascending: false })
+      .limit(1)
+      .maybeSingle<Producto>(),
   ]);
 
   const listaMovimientos = movimientos ?? [];
@@ -91,10 +99,11 @@ export default async function DetalleProducto({ params }: { params: Promise<{ sk
               Sin foto
             </div>
           )}
-          <div>
+          <div className="flex-1">
             <h1 className="text-lg font-semibold text-zinc-900">{masReciente.nombre}</h1>
             <p className="font-mono text-sm text-zinc-400">{sku}</p>
           </div>
+          {verDinero && productoReferencia && <EditarProductoGlobal sku={sku} producto={productoReferencia} />}
         </div>
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
