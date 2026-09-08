@@ -165,3 +165,41 @@ export interface ConfiguracionStock {
   id: number;
   dias_espera: number;
 }
+
+export type TipoCuentaFinanciera = "EFECTIVO" | "BANCO" | "OTRO";
+
+export interface CuentaFinanciera {
+  id: string;
+  nombre: string;
+  tipo: TipoCuentaFinanciera;
+  eliminado_en: string | null;
+  creado_en: string;
+}
+
+export interface CategoriaFinanciera {
+  id: string;
+  nombre: string;
+  fija: boolean;
+  orden: number;
+  eliminado_en: string | null;
+  creado_en: string;
+}
+
+export type TipoMovimientoFinanciero = "ENTRADA" | "SALIDA" | "TRANSFERENCIA";
+export type Moneda = "MXN" | "USD";
+
+export interface MovimientoFinanciero {
+  id: string;
+  tipo: TipoMovimientoFinanciero;
+  cuenta_id: string;
+  cuenta_destino_id: string | null;
+  categoria_id: string | null;
+  monto: number;
+  moneda: Moneda;
+  fecha: string;
+  contraparte: string | null;
+  notas: string | null;
+  referencia_tipo: string | null;
+  referencia_id: string | null;
+  creado_en: string;
+}

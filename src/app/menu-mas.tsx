@@ -7,6 +7,20 @@ import { cerrarSesion } from "./login/actions";
 
 const ITEMS = [
   {
+    href: "/finanzas",
+    etiqueta: "Finanzas",
+    soloDueno: true,
+    icono: (
+      <path
+        d="M3 6a1.5 1.5 0 0 1 1.5-1.5h9A1.5 1.5 0 0 1 15 6v6a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 3 12V6ZM3 7.5h12M11 10.5h2"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    ),
+  },
+  {
     href: "/contenedores/nuevo",
     etiqueta: "Nuevo contenedor",
     soloDueno: true,
