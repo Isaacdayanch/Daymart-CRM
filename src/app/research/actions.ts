@@ -140,8 +140,33 @@ export async function convertirEnProducto(borradorId: string, formData: FormData
     .maybeSingle();
   if (!borrador) return { error: "No se encontró la investigación." };
 
-  const contenedorId = formData.get("contenedor_id") as string;
-  if (!contenedorId) return { error: "Elige a qué contenedor va." };
+  const fabrica = texto(formData, "fabrica");
+  const proveedor = texto(formData, "proveedor");
+
+  let contenedorId = formData.get("contenedor_id") as string;
+  if (formData.get("modo") === "nuevo") {
+    const numeroContenedor = numero(formData, "contenedor_nuevo_numero");
+    if (!numeroContenedor) return { error: "Ponle un número al contenedor nuevo." };
+
+    const { data: contenedorNuevo, error: errorContenedor } = await supabase
+      .from("contenedores")
+      .insert({
+        numero: numeroContenedor,
+        estado: "CONFIGURANDOSE",
+        fabrica_principal: fabrica,
+        proveedor_principal: proveedor,
+      })
+      .select("id")
+      .single();
+    if (errorContenedor || !contenedorNuevo) {
+      return { error: errorContenedor?.message ?? "No se pudo crear el contenedor." };
+    }
+    await supabase
+      .from("historial_estados_contenedor")
+      .insert({ contenedor_id: contenedorNuevo.id, estado: "CONFIGURANDOSE" });
+    contenedorId = contenedorNuevo.id;
+  }
+  if (!contenedorId) return { error: "Elige a qué contenedor va, o crea uno nuevo." };
 
   const categoria = texto(formData, "categoria") ?? borrador.categoria_ml_nombre ?? "General";
   const cantidad = numero(formData, "cantidad");
@@ -158,8 +183,8 @@ export async function convertirEnProducto(borradorId: string, formData: FormData
   const { error: errorProducto } = await supabase.from("productos").insert({
     contenedor_id: contenedorId,
     categoria,
-    fabrica: texto(formData, "fabrica"),
-    proveedor: texto(formData, "proveedor"),
+    fabrica,
+    proveedor,
     imagen_url: borrador.imagen_url,
     sku,
     nombre: borrador.nombre,

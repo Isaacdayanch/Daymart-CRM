@@ -21,6 +21,7 @@ export function ConvertirProducto({
 }) {
   const router = useRouter();
   const [abierto, setAbierto] = useState(false);
+  const [modo, setModo] = useState<"existente" | "nuevo">(contenedores.length > 0 ? "existente" : "nuevo");
   const [error, setError] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
 
@@ -29,8 +30,7 @@ export function ConvertirProducto({
       <button
         type="button"
         onClick={() => setAbierto(true)}
-        disabled={contenedores.length === 0}
-        className="text-sm font-medium text-emerald-600 hover:text-emerald-800 disabled:cursor-not-allowed disabled:text-zinc-300"
+        className="text-sm font-medium text-emerald-600 hover:text-emerald-800"
       >
         Convertir en producto →
       </button>
@@ -53,15 +53,49 @@ export function ConvertirProducto({
       }}
       className="mt-3 space-y-2 rounded-lg border border-zinc-200 bg-zinc-50 p-3"
     >
+      <input type="hidden" name="modo" value={modo} />
       <div className="grid grid-cols-2 gap-2">
         <div>
-          <label className="block text-xs font-medium text-zinc-500">Contenedor</label>
+          <div className="flex items-center justify-between">
+            <label className="block text-xs font-medium text-zinc-500">Contenedor</label>
+            <div className="flex gap-1 rounded-lg bg-zinc-200/60 p-0.5 text-[11px]">
+              <button
+                type="button"
+                onClick={() => setModo("existente")}
+                disabled={contenedores.length === 0}
+                className={`rounded-md px-2 py-0.5 font-medium transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                  modo === "existente" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500"
+                }`}
+              >
+                Existente
+              </button>
+              <button
+                type="button"
+                onClick={() => setModo("nuevo")}
+                className={`rounded-md px-2 py-0.5 font-medium transition ${
+                  modo === "nuevo" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500"
+                }`}
+              >
+                + Nuevo
+              </button>
+            </div>
+          </div>
           <div className="mt-1">
-            <Selector
-              name="contenedor_id"
-              defaultValue={contenedores[0]?.id}
-              opciones={contenedores.map((c) => ({ value: c.id, label: `Contenedor ${c.numero}` }))}
-            />
+            {modo === "existente" ? (
+              <Selector
+                name="contenedor_id"
+                defaultValue={contenedores[0]?.id}
+                opciones={contenedores.map((c) => ({ value: c.id, label: `Contenedor ${c.numero}` }))}
+              />
+            ) : (
+              <input
+                type="number"
+                name="contenedor_nuevo_numero"
+                placeholder="Número de contenedor"
+                required
+                className="block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500"
+              />
+            )}
           </div>
         </div>
         <div>
@@ -75,6 +109,12 @@ export function ConvertirProducto({
           />
         </div>
       </div>
+      {modo === "nuevo" && (
+        <p className="text-xs text-zinc-400">
+          Se crea el contenedor como &ldquo;Configurándose&rdquo;, con la fábrica/proveedor de abajo — después le agregas
+          booking, flete, etc. desde el contenedor mismo.
+        </p>
+      )}
       <div>
         <label className="block text-xs font-medium text-zinc-500">Categoría</label>
         <input
