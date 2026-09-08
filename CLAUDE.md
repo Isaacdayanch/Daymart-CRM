@@ -143,6 +143,36 @@ Fuente de referencia: Excel "Stock y Envíos Daymart", hojas Stock/Entradas/Sali
 12. **Editar recepción**: si Isaac hace un conteo físico y algo no cuadra con lo que ya se recibió, puede volver a `/contenedores/[id]/recibir` (botón "Editar recepción" en la tarjeta de reconciliación) y corregir cantidades. Esto NO crea entradas nuevas — genera un movimiento de tipo `AJUSTE` con la diferencia (puede ser positiva o negativa), para no duplicar stock. Los ajustes no cuentan como salida real, así que no ensucian el cálculo de rotación/reorden. Por ahora esta capacidad es solo para Isaac — cuando haya más usuarios, se restringe con permisos.
 13. **Agregar stock manual** (`/stock/agregar`): para cargar de una vez el inventario de contenedores anteriores al 10 (u otro stock existente) sin tener que recrear el contenedor completo en el sistema. Crea una ENTRADA directa (sin contenedor asociado) con SKU, cantidad, costo por pieza y una nota libre.
 
+## Módulo 3 (en planeación, NO iniciado): Finanzas
+
+Solo lo ve Isaac como dueño — bloqueado por completo para el rol "operadora" (ni lectura), igual que `/contenedores/nuevo`, `/usuarios` y `/papelera`.
+
+### Cómo fluye el dinero en Daymart (contexto de Isaac)
+
+1. **Entra**: capital externo, sobre todo préstamos (ej. alguien le presta $1,000,000 MXN). El negocio queda debiendo eso. El dinero entra a una cuenta de Isaac.
+2. **Sale a China**: para pagar proveedores chinos, Isaac le da el dinero a un intermediario/proveedor financiero en México que transfiere a China y cobra una comisión (fee, normalmente %).
+3. **Trabaja en China**: esos pagos corresponden a contenedores específicos — esto ya existe (`pagos_mercancia`, ver Módulo 1).
+4. **Gastos en México**: recibir mercancía, nómina, bodega, logística, etc.
+5. **Sueldo**: Isaac retira sueldo (semanal o cuando quiera) y quiere ver cuánto lleva retirado acumulado.
+6. **Segunda etapa (NO construir todavía)**: las ventas van a caer en Mercado Pago, de ahí se pasan al banco, y se cotejará ventas vs. costos vs. ganancia con la API de Mercado Libre (Módulo 4). El diseño de Finanzas debe dejar espacio para esto (ej. que se pueda agregar una cuenta tipo Mercado Pago más adelante) sin tener que rehacer nada — pero no se construye ahora.
+
+### Decisiones de diseño (para cuando se apruebe y se construya)
+
+1. **Cero doble captura de pagos a China**: un pago a China (abono de mercancía) se sigue capturando en un solo lugar (la pestaña de Abonos del contenedor, que ya existe) y desde ahí aparece automáticamente como salida de dinero en Finanzas. No hay una pantalla aparte para "registrar el mismo pago otra vez". Mismo principio para el nuevo crédito de aduana (ver abajo).
+2. **Cuentas** (`cuentas_financieras`): catálogo abierto (Isaac agrega las que quiera) — empieza con "Caja de efectivo" y "Banco BBVA". El saldo de cada cuenta NUNCA se guarda a mano: se calcula sumando/restando su libro de movimientos (mismo principio que el stock).
+3. **Un solo libro de movimientos** (`movimientos_financieros`), igual que el stock tiene un solo `movimientos_stock`: cada entrada/salida/transferencia es una fila, con cuenta, monto, fecha, categoría, contraparte y notas. Una transferencia entre cuentas propias (ej. efectivo → banco) es un solo movimiento con cuenta origen y cuenta destino — resta de una y suma a la otra, y NO cuenta como ingreso ni gasto en los reportes (se excluye de esas sumas a propósito).
+4. **Categorías** (`categorias_financieras`): catálogo corto y editable por Isaac. Arranca con: Nómina, Bodega, Logística, Importación, Comisiones, Sueldo. "Sueldo" es una categoría fija para poder ver fácil cuánto ha retirado Isaac en total.
+5. **Préstamos** (`prestamos` + sus abonos): quién prestó, cuánto, a qué cuenta entró, y fecha. Los abonos que Isaac va pagando reducen el saldo (igual patrón que los abonos de mercancía: nunca se edita el saldo a mano, se calcula sumando abonos). Cada abono de préstamo también genera su movimiento en Finanzas automáticamente (mismo principio de "una sola captura").
+6. **Proveedores financieros** (`proveedores_financieros`): catálogo con nombre y fee habitual (%). Al elegir uno en un pago a China, el fee se autorrellena (editable), y el fee se registra solo como un gasto en la categoría "Comisiones" — para poder ver cuánto se ha pagado de comisiones en total sin que Isaac tenga que capturarlo aparte.
+7. **Pagos a China = pagos_mercancia, extendido**: la tabla de abonos de mercancía que ya existe (Módulo 1) se le agregan campos de Finanzas (cuenta de la que salió, proveedor financiero, fee). Al marcar un abono como "Pagado", se genera su movimiento de salida en Finanzas (y el del fee, si aplica) automáticamente — sigue siendo la misma pantalla de Abonos del contenedor que Isaac ya conoce, no una nueva.
+8. **Crédito de contenedor (NUEVO, pendiente de construir)**: Isaac quiere poder registrar, por contenedor, crédito que le dan los proveedores chinos (en dólares) y crédito del agente aduanal/cruce (en pesos) — con una fecha límite de pago. Al cargar un contenedor nuevo puede poner "le debo $1,000 a tal fecha", ir abonando, y ver cuánto ya pagó y cuánto debe. Esto also se refleja en Finanzas como deuda viva, junto con los préstamos, separado por moneda: "debo en pesos" (préstamos + crédito de aduana pendiente) y "debo en dólares" (crédito de proveedores pendiente). El crédito de proveedores reutiliza el mismo mecanismo que "Abonos de mercancía" (que ya soporta marcar un abono como "Pendiente", no solo "Pagado" — solo le falta la fecha límite). El crédito de aduana es nuevo (hoy `aduana_pesos` es un solo total sin abonos ni estado de pago) y se construye con el mismo patrón, en pesos y sin tipo de cambio.
+9. **Dashboard financiero** (`/finanzas`): saldo por cuenta, gasto por categoría, comisiones pagadas acumuladas, sueldo retirado acumulado, deuda viva (separada en pesos y dólares), y cuánto dinero se ha mandado por contenedor.
+
+### Pendiente de confirmar con Isaac antes de construir
+
+- Nivel de detalle de los préstamos (¿solo capital y abonos, o también interés y fecha compromiso?).
+- Si los préstamos siempre son en pesos o a veces también en dólares.
+
 ## Lo que se deja para después (NO hacer todavía)
 
 - Login / usuarios / permisos por colaborador. Isaac ya confirmó que por ahora solo él usa el sistema, así que no hace falta todavía — pero es un REQUISITO antes de construir la "firma" de salidas con encargado: sin cuentas de usuario no hay forma de saber quién hizo qué, y eso es justo lo que Isaac pidió para prevenir robo hormiga. Cuando llegue el momento: dos roles (Administrador / Encargado de bodega), cada salida queda con usuario+fecha, no se puede editar/borrar después (solo cancelar con motivo), y una pantalla de auditoría para que Isaac revise al encargado.
