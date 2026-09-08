@@ -10,6 +10,8 @@ import type { Contenedor, CuentaFinanciera, MovimientoFinanciero, MovimientoStoc
  * tiene sesión de Supabase — la única puerta es la clave secreta
  * (RESPALDO_SECRET), nunca expuesta al navegador. No se debe reutilizar
  * este patrón para nada que el navegador necesite tocar. */
+export const dynamic = "force-dynamic";
+
 export async function GET(request: NextRequest) {
   const clave = request.nextUrl.searchParams.get("clave");
   const secreto = process.env.RESPALDO_SECRET;
@@ -17,15 +19,26 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
 
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return NextResponse.json(
+      {
+        error: "Faltan variables de entorno.",
+        tiene_url: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL),
+        tiene_service_role_key: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
+      },
+      { status: 500 },
+    );
+  }
+
   const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
 
   const [
-    { data: movimientosFinancieros },
-    { data: cuentas },
-    { data: categorias },
-    { data: movimientosStock },
-    { data: configuracion },
-    { data: contenedores },
+    { data: movimientosFinancieros, error: errorFinanzas },
+    { data: cuentas, error: errorCuentas },
+    { data: categorias, error: errorCategorias },
+    { data: movimientosStock, error: errorStock },
+    { data: configuracion, error: errorConfiguracion },
+    { data: contenedores, error: errorContenedores },
     piezasPorCajaPorSku,
   ] = await Promise.all([
     supabase
@@ -45,6 +58,18 @@ export async function GET(request: NextRequest) {
       .returns<Contenedor[]>(),
     obtenerPiezasPorCajaPorSku(supabase),
   ]);
+
+  const errores = {
+    finanzas: errorFinanzas?.message,
+    cuentas: errorCuentas?.message,
+    categorias: errorCategorias?.message,
+    stock: errorStock?.message,
+    configuracion: errorConfiguracion?.message,
+    contenedores: errorContenedores?.message,
+  };
+  if (Object.values(errores).some(Boolean)) {
+    return NextResponse.json({ error: "Error consultando Supabase.", detalle: errores }, { status: 500 });
+  }
 
   const cuentasPorId = new Map((cuentas ?? []).map((c) => [c.id, c.nombre]));
   const categoriasPorId = new Map((categorias ?? []).map((c) => [c.id, c.nombre]));
