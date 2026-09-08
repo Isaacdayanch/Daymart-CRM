@@ -39,8 +39,19 @@ export async function obtenerDatosMercadoLibre(
     category_id?: string;
     sold_quantity?: number;
   };
+  // Mercado Libre bloquea (403) las peticiones que no traen señales de
+  // navegador real — sin esto, las llamadas desde un servidor (como
+  // Vercel) se ven como tráfico de robot y las rechaza.
+  const encabezadosNavegador = {
+    "User-Agent":
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    Accept: "application/json",
+  };
+
   try {
-    const respuesta = await fetch(`https://api.mercadolibre.com/items/${itemId}`);
+    const respuesta = await fetch(`https://api.mercadolibre.com/items/${itemId}`, {
+      headers: encabezadosNavegador,
+    });
     if (!respuesta.ok) {
       return { datos: null, error: `Mercado Libre no encontró ese producto (${respuesta.status}).` };
     }
@@ -52,7 +63,9 @@ export async function obtenerDatosMercadoLibre(
   let categoriaNombre: string | null = null;
   if (item.category_id) {
     try {
-      const respuestaCategoria = await fetch(`https://api.mercadolibre.com/categories/${item.category_id}`);
+      const respuestaCategoria = await fetch(`https://api.mercadolibre.com/categories/${item.category_id}`, {
+        headers: encabezadosNavegador,
+      });
       if (respuestaCategoria.ok) {
         const categoria = await respuestaCategoria.json();
         categoriaNombre = categoria?.name ?? null;
