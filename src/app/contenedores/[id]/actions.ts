@@ -282,6 +282,7 @@ export async function cambiarEstado(contenedorId: string, estado: EstadoContened
   await registrarHistorialSiCambia(supabase, contenedorId, estado);
   await supabase.from("contenedores").update({ estado }).eq("id", contenedorId);
   revalidatePath(`/contenedores/${contenedorId}`);
+  revalidatePath("/contenedores");
   revalidatePath("/");
 }
 
@@ -292,7 +293,7 @@ export async function eliminarContenedor(contenedorId: string) {
     .from("contenedores")
     .update({ eliminado_en: new Date().toISOString() })
     .eq("id", contenedorId);
-  redirect("/");
+  redirect("/contenedores");
 }
 
 export async function agregarAbono(contenedorId: string, formData: FormData) {

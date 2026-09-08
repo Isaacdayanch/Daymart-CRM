@@ -53,5 +53,5 @@ export async function crearContenedor(formData: FormData) {
     await supabase.from("pagos_mercancia").insert(abonos);
   }
 
-  redirect("/");
+  redirect(`/contenedores/${contenedor.id}`);
 }

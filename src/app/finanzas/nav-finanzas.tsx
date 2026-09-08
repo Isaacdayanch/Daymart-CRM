@@ -7,6 +7,7 @@ import { usePathname } from "next/navigation";
 // (Movimientos, Préstamos, Deudas...) — por ahora solo lo que ya existe.
 const PESTANAS = [
   { href: "/finanzas", etiqueta: "Resumen" },
+  { href: "/finanzas/movimientos", etiqueta: "Movimientos" },
   { href: "/finanzas/cuentas", etiqueta: "Cuentas" },
   { href: "/finanzas/categorias", etiqueta: "Categorías" },
 ];

@@ -24,7 +24,7 @@ export default async function Papelera() {
             <Logo />
             <h1 className="mt-1 text-lg font-semibold text-zinc-900">Papelera</h1>
           </div>
-          <Link href="/" className="text-sm font-medium text-zinc-500 hover:text-zinc-900">
+          <Link href="/contenedores" className="text-sm font-medium text-zinc-500 hover:text-zinc-900">
             ← Volver a la lista
           </Link>
         </div>

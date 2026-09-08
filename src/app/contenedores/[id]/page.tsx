@@ -12,6 +12,7 @@ import { obtenerSugerenciasCatalogo } from "@/lib/catalogo-proveedores";
 import { formatoPesos } from "@/lib/formato";
 import { obtenerPerfilActual } from "@/lib/perfil";
 import { Logo } from "@/components/logo";
+import { MenuMas } from "../../menu-mas";
 import {
   type Contenedor,
   type DocumentoContenedor,
@@ -137,14 +138,7 @@ export default async function DetalleContenedor({
             <Logo />
             <h1 className="mt-1 text-lg font-semibold text-zinc-900">Contenedor {contenedor.numero}</h1>
           </div>
-          <div className="flex items-center gap-4">
-            <Link href="/stock" className="text-sm font-medium text-zinc-500 hover:text-zinc-900">
-              Stock
-            </Link>
-            <Link href="/" className="text-sm font-medium text-zinc-500 hover:text-zinc-900">
-              ← Volver a la lista
-            </Link>
-          </div>
+          <MenuMas rol={perfil?.rol} />
         </div>
       </header>
 

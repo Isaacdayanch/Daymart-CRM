@@ -7,6 +7,7 @@ export async function restaurarContenedor(contenedorId: string) {
   const supabase = await createClient();
   await supabase.from("contenedores").update({ eliminado_en: null }).eq("id", contenedorId);
   revalidatePath("/papelera");
+  revalidatePath("/contenedores");
   revalidatePath("/");
 }
 
