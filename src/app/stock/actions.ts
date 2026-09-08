@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { nombreArchivoSeguro, texto } from "@/lib/form-helpers";
 import { completarColumnasOmitidas, insertarMovimientosStock } from "@/lib/movimientos-stock";
-import { costoPromedioPonderado } from "@/lib/calculos-stock";
+import { costoPromedioPonderado, stockActual } from "@/lib/calculos-stock";
 import type { MovimientoStock } from "@/lib/tipos";
 
 export async function agregarBodega(formData: FormData) {
@@ -295,6 +295,70 @@ export async function registrarConteoFisico(formData: FormData) {
   revalidatePath("/stock");
   revalidatePath("/stock/movimientos");
   return { error: null, ajustados: conDiferencia.length };
+}
+
+/** Corrige rápido la cantidad real de un SKU en una bodega, desde la ficha
+ * del producto — sin tener que pasar por "Revisar inventario" completo. Si
+ * la cantidad baja, el que llama ya decidió el motivo (lo pregunta la
+ * pantalla antes de mandar esto): "SALIDA" cuenta como venta/envío real
+ * (afecta la rotación), "AJUSTE" es una corrección que no cuenta como venta
+ * (ej. el contenedor llegó con menos de lo registrado, o un error de
+ * conteo). Si sube, siempre es AJUSTE (se encontró más stock del que había
+ * registrado). */
+export async function corregirCantidadStock(formData: FormData) {
+  const supabase = await createClient();
+
+  const sku = texto(formData, "sku");
+  const nombre = texto(formData, "nombre");
+  const bodegaId = formData.get("bodega_id") as string;
+  const cantidadNueva = Number(formData.get("cantidad_nueva"));
+  const motivo = (formData.get("motivo") as string) || "AJUSTE";
+  const piezasPorCaja = Number(formData.get("piezas_por_caja")) || 1;
+  const imagenUrl = texto(formData, "imagen_url");
+
+  if (!sku || !nombre || !bodegaId || !Number.isFinite(cantidadNueva) || cantidadNueva < 0) {
+    return { error: "Falta el SKU, la bodega, o la cantidad no es válida." };
+  }
+
+  const { data: movimientosSku } = await supabase
+    .from("movimientos_stock")
+    .select("*")
+    .eq("sku", sku)
+    .returns<MovimientoStock[]>();
+  const movs = movimientosSku ?? [];
+  const cantidadActual = stockActual(movs.filter((m) => m.bodega_id === bodegaId));
+  const diferencia = cantidadNueva - cantidadActual;
+
+  if (diferencia === 0) return { error: "Esa ya es la cantidad actual — no hay nada que corregir." };
+
+  const esSalida = diferencia < 0 && motivo === "SALIDA";
+  const fila = {
+    tipo: esSalida ? "SALIDA" : "AJUSTE",
+    sku,
+    nombre,
+    bodega_id: bodegaId,
+    cantidad: esSalida ? Math.abs(diferencia) : diferencia,
+    piezas_por_caja: piezasPorCaja,
+    imagen_url: imagenUrl || null,
+    costo_unitario_pesos: esSalida ? 0 : costoPromedioPonderado(movs),
+    destino: esSalida ? "Salida rápida" : null,
+    referencia: esSalida
+      ? "Corregir cantidad — salida"
+      : diferencia < 0
+        ? "Corregir cantidad — ajuste (ej. el contenedor llegó con menos)"
+        : "Corregir cantidad — se encontró más stock",
+  };
+
+  const { data: insertados, error, columnasOmitidas } = await insertarMovimientosStock(supabase, [fila]);
+  if (error) return { error };
+  if (insertados && columnasOmitidas.length) {
+    await completarColumnasOmitidas(supabase, insertados.map((i) => i.id), [fila], columnasOmitidas);
+  }
+
+  revalidatePath("/stock");
+  revalidatePath("/stock/movimientos");
+  revalidatePath(`/stock/producto/${encodeURIComponent(sku)}`);
+  return { error: null };
 }
 
 /** Edita los datos de un producto desde Stock (no hace falta entrar a cada

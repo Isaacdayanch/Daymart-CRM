@@ -5,8 +5,9 @@ import { costoPromedioPonderado, stockActual } from "@/lib/calculos-stock";
 import { formatoPesos, formatoFecha, formatoCajas } from "@/lib/formato";
 import { obtenerPerfilActual } from "@/lib/perfil";
 import { Logo } from "@/components/logo";
-import type { Contenedor, MovimientoStock, Producto } from "@/lib/tipos";
+import type { Bodega, Contenedor, MovimientoStock, Producto } from "@/lib/tipos";
 import { EditarProductoGlobal } from "./editar-producto-global";
+import { AjustarCantidad } from "./ajustar-cantidad";
 
 export default async function DetalleProducto({ params }: { params: Promise<{ sku: string }> }) {
   const { sku: skuCrudo } = await params;
@@ -15,22 +16,24 @@ export default async function DetalleProducto({ params }: { params: Promise<{ sk
   const perfil = await obtenerPerfilActual();
   const verDinero = perfil?.rol !== "operadora";
 
-  const [{ data: movimientos }, { data: contenedores }, { data: productoReferencia }] = await Promise.all([
-    supabase
-      .from("movimientos_stock")
-      .select("*")
-      .eq("sku", sku)
-      .order("creado_en", { ascending: false })
-      .returns<MovimientoStock[]>(),
-    supabase.from("contenedores").select("*").returns<Contenedor[]>(),
-    supabase
-      .from("productos")
-      .select("*")
-      .eq("sku", sku)
-      .order("creado_en", { ascending: false })
-      .limit(1)
-      .maybeSingle<Producto>(),
-  ]);
+  const [{ data: movimientos }, { data: contenedores }, { data: productoReferencia }, { data: bodegas }] =
+    await Promise.all([
+      supabase
+        .from("movimientos_stock")
+        .select("*")
+        .eq("sku", sku)
+        .order("creado_en", { ascending: false })
+        .returns<MovimientoStock[]>(),
+      supabase.from("contenedores").select("*").returns<Contenedor[]>(),
+      supabase
+        .from("productos")
+        .select("*")
+        .eq("sku", sku)
+        .order("creado_en", { ascending: false })
+        .limit(1)
+        .maybeSingle<Producto>(),
+      supabase.from("bodegas").select("*").is("eliminado_en", null).order("nombre").returns<Bodega[]>(),
+    ]);
 
   const listaMovimientos = movimientos ?? [];
   if (listaMovimientos.length === 0) notFound();
@@ -59,6 +62,12 @@ export default async function DetalleProducto({ params }: { params: Promise<{ sk
     fabrica: null,
     proveedor: null,
   };
+
+  const bodegasConStock = (bodegas ?? []).map((b) => ({
+    id: b.id,
+    nombre: b.nombre,
+    cantidad: stockActual(listaMovimientos.filter((m) => m.bodega_id === b.id)),
+  }));
 
   // Entradas agrupadas por contenedor — para responder "¿cuándo y en qué
   // contenedores he pedido esto?" de un vistazo, sin bucear en el libro
@@ -104,7 +113,7 @@ export default async function DetalleProducto({ params }: { params: Promise<{ sk
       </header>
 
       <main className="mx-auto max-w-3xl space-y-6 px-4 py-8 sm:px-6">
-        <div className="flex items-center gap-4 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+        <div className="flex flex-wrap items-start gap-4 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
           {masReciente.imagen_url ? (
             // eslint-disable-next-line @next/next/no-img-element -- foto grande de encabezado
             <img
@@ -117,11 +126,20 @@ export default async function DetalleProducto({ params }: { params: Promise<{ sk
               Sin foto
             </div>
           )}
-          <div className="flex-1">
+          <div className="min-w-40 flex-1 self-center">
             <h1 className="text-lg font-semibold text-zinc-900">{masReciente.nombre}</h1>
             <p className="font-mono text-sm text-zinc-400">{sku}</p>
           </div>
-          {verDinero && <EditarProductoGlobal sku={sku} producto={productoParaEditar} />}
+          <div className="flex w-full flex-col items-end gap-2 sm:w-auto">
+            {verDinero && <EditarProductoGlobal sku={sku} producto={productoParaEditar} />}
+            <AjustarCantidad
+              sku={sku}
+              nombre={masReciente.nombre}
+              imagenUrl={masReciente.imagen_url}
+              piezasPorCaja={piezasPorCaja}
+              bodegas={bodegasConStock}
+            />
+          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">

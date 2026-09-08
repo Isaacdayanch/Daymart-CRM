@@ -33,7 +33,7 @@ export function EditarProductoGlobal({ sku, producto }: { sku: string; producto:
       <button
         type="button"
         onClick={() => setEditando(true)}
-        className="shrink-0 self-start text-xs font-medium text-zinc-500 hover:text-zinc-900"
+        className="shrink-0 text-xs font-medium text-zinc-500 hover:text-zinc-900"
       >
         Editar producto →
       </button>
