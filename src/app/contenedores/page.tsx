@@ -61,12 +61,17 @@ export default async function ListaContenedores() {
         <div className="mb-6 flex items-center justify-between">
           <h1 className="text-xl font-semibold tracking-tight text-zinc-900">Contenedores</h1>
           {verDinero && (
-            <Link
-              href="/contenedores/nuevo"
-              className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700"
-            >
-              + Nuevo contenedor
-            </Link>
+            <div className="flex items-center gap-4">
+              <Link href="/papelera" className="text-sm font-medium text-zinc-500 hover:text-zinc-900">
+                Papelera
+              </Link>
+              <Link
+                href="/contenedores/nuevo"
+                className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700"
+              >
+                + Nuevo contenedor
+              </Link>
+            </div>
           )}
         </div>
 

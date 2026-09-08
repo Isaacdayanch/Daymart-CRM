@@ -12,7 +12,7 @@ const claseCampo =
 
 const TIPOS: { valor: TipoMovimientoFinanciero; etiqueta: string }[] = [
   { valor: "ENTRADA", etiqueta: "Agregar dinero" },
-  { valor: "SALIDA", etiqueta: "Mandar / gastar dinero" },
+  { valor: "SALIDA", etiqueta: "Mandar dinero" },
   { valor: "TRANSFERENCIA", etiqueta: "Mover entre mis cuentas" },
 ];
 
@@ -24,7 +24,7 @@ export function FormularioMovimiento({
   categorias: CategoriaFinanciera[];
 }) {
   const router = useRouter();
-  const [tipo, setTipo] = useState<TipoMovimientoFinanciero>("SALIDA");
+  const [tipo, setTipo] = useState<TipoMovimientoFinanciero>("ENTRADA");
   const [tieneComision, setTieneComision] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
@@ -109,7 +109,7 @@ export function FormularioMovimiento({
         <div className="grid grid-cols-3 gap-3">
           <div>
             <label className="block text-xs font-medium text-zinc-500">
-              {tipo === "SALIDA" && tieneComision ? "Monto que se debitó" : "Monto"}
+              {tipo !== "ENTRADA" && tieneComision ? "Monto que se debitó" : "Monto"}
             </label>
             <input
               type="number"
@@ -153,7 +153,7 @@ export function FormularioMovimiento({
           <input type="text" name="notas" placeholder="Opcional" className={claseCampo} />
         </div>
 
-        {tipo === "SALIDA" && (
+        {tipo !== "ENTRADA" && (
           <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3">
             <label className="flex items-center gap-2 text-xs font-medium text-zinc-700">
               <input
@@ -167,7 +167,9 @@ export function FormularioMovimiento({
             {tieneComision && (
               <div className="mt-3">
                 <label className="block text-xs font-medium text-zinc-500">
-                  Monto neto que realmente le llegó al destinatario
+                  {tipo === "TRANSFERENCIA"
+                    ? "Monto neto que realmente llegó a la cuenta destino"
+                    : "Monto neto que realmente le llegó al destinatario"}
                 </label>
                 <input
                   type="number"

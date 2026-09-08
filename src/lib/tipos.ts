@@ -203,3 +203,17 @@ export interface MovimientoFinanciero {
   referencia_id: string | null;
   creado_en: string;
 }
+
+export interface FacturaPendiente {
+  id: string;
+  proveedor: string;
+  concepto: string | null;
+  monto: number;
+  moneda: Moneda;
+  fecha_emision: string;
+  fecha_limite: string | null;
+  pagada: boolean;
+  movimiento_financiero_id: string | null;
+  notas: string | null;
+  creado_en: string;
+}

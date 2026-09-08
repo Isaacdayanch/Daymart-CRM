@@ -69,12 +69,13 @@ export async function eliminarCategoria(categoriaId: string) {
 }
 
 /** Registra un movimiento (entrada, salida o transferencia entre cuentas
- * propias) — la columna vertebral de Finanzas. Cuando es una salida con
- * comisión, el monto que se guarda en el movimiento principal es el neto
- * (lo que de verdad le llegó al destinatario) y la diferencia se guarda
- * como un segundo movimiento en la categoría "Comisiones", ligado al
- * primero — juntos suman el total que de verdad salió de la cuenta, sin
- * inflar ni duplicar nada. */
+ * propias) — la columna vertebral de Finanzas. Cuando es una salida o una
+ * transferencia con comisión, el monto que se guarda en el movimiento
+ * principal es el neto (lo que de verdad le llegó al destinatario o a la
+ * cuenta destino) y la diferencia se guarda como un segundo movimiento de
+ * salida en la categoría "Comisiones" desde la misma cuenta de origen,
+ * ligado al primero — juntos suman el total que de verdad salió de la
+ * cuenta, sin inflar ni duplicar nada. */
 export async function registrarMovimiento(formData: FormData) {
   const supabase = await createClient();
 
@@ -86,7 +87,8 @@ export async function registrarMovimiento(formData: FormData) {
   const moneda = (formData.get("moneda") as Moneda) || "MXN";
   const contraparte = texto(formData, "contraparte");
   const notas = texto(formData, "notas");
-  const tieneComision = formData.get("tiene_comision") === "true" && tipo === "SALIDA";
+  const tieneComision =
+    formData.get("tiene_comision") === "true" && (tipo === "SALIDA" || tipo === "TRANSFERENCIA");
   const montoNeto = Number(formData.get("monto_neto"));
 
   const fechaCampo = formData.get("fecha");
@@ -153,4 +155,111 @@ export async function registrarMovimiento(formData: FormData) {
   revalidatePath("/finanzas/movimientos");
   revalidatePath("/");
   return { error: null };
+}
+
+/** Da de alta una factura pendiente de pagar (proveedor de México, etc.)
+ * — todavía no genera ningún movimiento, es solo el recordatorio de que se
+ * debe. El movimiento real se crea hasta que se marca "Pagada". */
+export async function agregarFactura(formData: FormData) {
+  const supabase = await createClient();
+
+  const proveedor = texto(formData, "proveedor");
+  const concepto = texto(formData, "concepto");
+  const monto = Number(formData.get("monto"));
+  const moneda = (formData.get("moneda") as Moneda) || "MXN";
+  const notas = texto(formData, "notas");
+
+  if (!proveedor || !Number.isFinite(monto) || monto <= 0) return;
+
+  const fechaEmisionCampo = formData.get("fecha_emision");
+  const fechaEmision =
+    typeof fechaEmisionCampo === "string" && fechaEmisionCampo
+      ? new Date(`${fechaEmisionCampo}T12:00:00`).toISOString()
+      : new Date().toISOString();
+
+  const fechaLimiteCampo = formData.get("fecha_limite");
+  const fechaLimite =
+    typeof fechaLimiteCampo === "string" && fechaLimiteCampo
+      ? new Date(`${fechaLimiteCampo}T12:00:00`).toISOString()
+      : null;
+
+  await supabase.from("facturas_pendientes").insert({
+    proveedor,
+    concepto,
+    monto,
+    moneda,
+    fecha_emision: fechaEmision,
+    fecha_limite: fechaLimite,
+    notas,
+  });
+
+  revalidatePath("/finanzas/facturas");
+}
+
+/** Marca una factura como pagada y genera su salida en Finanzas en la
+ * misma operación — la factura guarda el id del movimiento que generó, así
+ * que nunca hay dos registros sueltos que "deberían" coincidir. Si falla
+ * guardar el movimiento, la factura se queda como pendiente. */
+export async function marcarFacturaPagada(facturaId: string, formData: FormData) {
+  const supabase = await createClient();
+
+  const { data: factura } = await supabase
+    .from("facturas_pendientes")
+    .select("*")
+    .eq("id", facturaId)
+    .maybeSingle<{ proveedor: string; concepto: string | null; monto: number; moneda: Moneda }>();
+  if (!factura) return { error: "No se encontró la factura." };
+
+  const cuentaId = formData.get("cuenta_id") as string;
+  const categoriaId = texto(formData, "categoria_id");
+  if (!cuentaId) return { error: "Elige de qué cuenta sale el pago." };
+
+  const fechaCampo = formData.get("fecha_pago");
+  const fecha =
+    typeof fechaCampo === "string" && fechaCampo
+      ? new Date(`${fechaCampo}T12:00:00`).toISOString()
+      : new Date().toISOString();
+
+  const { data: movimiento, error: errorMovimiento } = await supabase
+    .from("movimientos_financieros")
+    .insert({
+      tipo: "SALIDA",
+      cuenta_id: cuentaId,
+      categoria_id: categoriaId,
+      monto: factura.monto,
+      moneda: factura.moneda,
+      fecha,
+      contraparte: factura.proveedor,
+      notas: factura.concepto,
+      referencia_tipo: "FACTURA",
+      referencia_id: facturaId,
+    })
+    .select("id")
+    .single();
+
+  if (errorMovimiento || !movimiento) {
+    return { error: errorMovimiento?.message ?? "No se pudo guardar el pago." };
+  }
+
+  const { error: errorFactura } = await supabase
+    .from("facturas_pendientes")
+    .update({ pagada: true, movimiento_financiero_id: movimiento.id })
+    .eq("id", facturaId);
+  if (errorFactura) {
+    return { error: `El pago se guardó en Finanzas, pero no se pudo marcar la factura: ${errorFactura.message}` };
+  }
+
+  revalidatePath("/finanzas/facturas");
+  revalidatePath("/finanzas");
+  revalidatePath("/finanzas/movimientos");
+  return { error: null };
+}
+
+/** Solo se puede borrar una factura que todavía no se ha pagado — una ya
+ * pagada tiene un movimiento real ligado y borrarla dejaría ese gasto sin
+ * explicación. */
+export async function eliminarFactura(facturaId: string) {
+  const supabase = await createClient();
+  await supabase.from("facturas_pendientes").delete().eq("id", facturaId).eq("pagada", false);
+  revalidatePath("/finanzas/facturas");
 }

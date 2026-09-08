@@ -8,6 +8,7 @@ import { usePathname } from "next/navigation";
 const PESTANAS = [
   { href: "/finanzas", etiqueta: "Resumen" },
   { href: "/finanzas/movimientos", etiqueta: "Movimientos" },
+  { href: "/finanzas/facturas", etiqueta: "Facturas" },
   { href: "/finanzas/cuentas", etiqueta: "Cuentas" },
   { href: "/finanzas/categorias", etiqueta: "Categorías" },
 ];

@@ -7,19 +7,6 @@ import { cerrarSesion } from "./login/actions";
 
 const ITEMS = [
   {
-    href: "/contenedores",
-    etiqueta: "Contenedores",
-    icono: (
-      <path
-        d="M2.5 6.5 9 3l6.5 3.5v7L9 17l-6.5-3.5v-7ZM2.5 6.5 9 10l6.5-3.5M9 10v7"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    ),
-  },
-  {
     href: "/finanzas",
     etiqueta: "Finanzas",
     soloDueno: true,
@@ -34,11 +21,16 @@ const ITEMS = [
     ),
   },
   {
-    href: "/contenedores/nuevo",
-    etiqueta: "Nuevo contenedor",
-    soloDueno: true,
+    href: "/contenedores",
+    etiqueta: "Contenedores",
     icono: (
-      <path d="M9 3v12M3 9h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path
+        d="M2.5 6.5 9 3l6.5 3.5v7L9 17l-6.5-3.5v-7ZM2.5 6.5 9 10l6.5-3.5M9 10v7"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     ),
   },
   {
@@ -47,33 +39,6 @@ const ITEMS = [
     icono: (
       <path
         d="M3 6.5 9 3l6 3.5v6L9 16l-6-3.5v-6ZM3 6.5 9 10l6-3.5M9 10v6"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    ),
-  },
-  {
-    href: "/stock/salidas",
-    etiqueta: "Dar salida",
-    icono: (
-      <path
-        d="M3 9h9M8.5 5.5 12 9l-3.5 3.5M12 4v-.5A1.5 1.5 0 0 0 10.5 2h-6A1.5 1.5 0 0 0 3 3.5v11A1.5 1.5 0 0 0 4.5 16h6a1.5 1.5 0 0 0 1.5-1.5V14"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    ),
-  },
-  {
-    href: "/papelera",
-    etiqueta: "Papelera",
-    soloDueno: true,
-    icono: (
-      <path
-        d="M4 5.5h10M7.5 5.5V4a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v1.5M6 5.5v8a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1v-8"
         stroke="currentColor"
         strokeWidth="1.5"
         strokeLinecap="round"

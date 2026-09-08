@@ -25,6 +25,13 @@ Un CRM/sistema de gestión propio para Daymart:
 - Diseño limpio, bonito, amigable y eficiente.
 - Crece por módulos con el tiempo. Meta final: manejo de stock, conexión API con Mercado Libre (luego Amazon MX), ventas, y análisis.
 
+### Navegación general
+
+- **`/` es un dashboard de bienvenida**, no la lista de contenedores. Muestra "Bienvenido a Daymart CRM", valor de inventario (Stock) y saldo en Finanzas (dueño) o productos sugeridos para reordenar (operadora), y accesos rápidos a Contenedores/Stock/Finanzas. Sin número de contenedores — a Isaac no le sirve ese dato ahí.
+- **La lista de contenedores vive en `/contenedores`** (antes era la home). El botón "+ Nuevo contenedor" está ahí mismo, no en el menú.
+- **Header minimalista en todas las pantallas**: logo a la izquierda, menú ☰ a la derecha, nada de links de texto sueltos ("Stock", "Volver a la lista", etc.) — toda la navegación entre secciones pasa por el menú.
+- **Menú ☰ solo con las secciones raíz**: Finanzas (dueño, hasta arriba), Contenedores, Stock, Usuarios (dueño). Lo que es específico de una sección vive DENTRO de ella, no en el menú: "Nuevo contenedor" y "Papelera" están dentro de Contenedores, "Dar salida" está dentro de las pestañas de Stock.
+
 ### Stack elegido (aprobado por Isaac — "si va")
 
 | Pieza | Qué es | Por qué |
@@ -143,9 +150,11 @@ Fuente de referencia: Excel "Stock y Envíos Daymart", hojas Stock/Entradas/Sali
 12. **Editar recepción**: si Isaac hace un conteo físico y algo no cuadra con lo que ya se recibió, puede volver a `/contenedores/[id]/recibir` (botón "Editar recepción" en la tarjeta de reconciliación) y corregir cantidades. Esto NO crea entradas nuevas — genera un movimiento de tipo `AJUSTE` con la diferencia (puede ser positiva o negativa), para no duplicar stock. Los ajustes no cuentan como salida real, así que no ensucian el cálculo de rotación/reorden. Por ahora esta capacidad es solo para Isaac — cuando haya más usuarios, se restringe con permisos.
 13. **Agregar stock manual** (`/stock/agregar`): para cargar de una vez el inventario de contenedores anteriores al 10 (u otro stock existente) sin tener que recrear el contenedor completo en el sistema. Crea una ENTRADA directa (sin contenedor asociado) con SKU, cantidad, costo por pieza y una nota libre.
 
-## Módulo 3 (en planeación, NO iniciado): Finanzas
+## Módulo 3 (en construcción): Finanzas
 
 Solo lo ve Isaac como dueño — bloqueado por completo para el rol "operadora" (ni lectura), igual que `/contenedores/nuevo`, `/usuarios` y `/papelera`.
+
+**Ya construido**: Cuentas (`/finanzas/cuentas`), Categorías (`/finanzas/categorias`), el libro de Movimientos con su panel de registro como pantalla principal (`/finanzas`, historial completo en `/finanzas/movimientos`), y Facturas pendientes de pagar (`/finanzas/facturas`). **Pendiente**: préstamos/prestamistas, proveedores financieros, pagos a China ligados a Finanzas, crédito de contenedor, y el estado de cuenta unificado de deudas.
 
 ### Cómo fluye el dinero en Daymart (contexto de Isaac)
 
@@ -187,6 +196,9 @@ Solo lo ve Isaac como dueño — bloqueado por completo para el rol "operadora" 
     - **Crédito del agente aduanal, en pesos, con fecha a 60 días típicamente**: el agente aduanal paga el fideicomiso de aduanas por adelantado, e Isaac se lo debe pagar después (ej. a 60 días) — es crédito nuevo, no existe hoy (`aduana_pesos` en el contenedor es solo un total, sin abonos ni fecha de pago). Se construye con el mismo patrón que mercancía (lista de abonos, cada uno "Pagado"/"Pendiente" con su fecha límite), pero en pesos y sin tipo de cambio.
     Ambos son opcionales por contenedor (no todo contenedor tiene crédito) y ambos se reflejan en Finanzas como deuda viva, separado por moneda: "debo en pesos" (préstamos en pesos + crédito de aduana pendiente) y "debo en dólares" (préstamos en dólares + crédito de proveedores pendiente).
 11. **Dashboard financiero** (`/finanzas`): saldo por cuenta, gasto por categoría, comisiones pagadas acumuladas, sueldo retirado acumulado, deuda viva (separada en pesos y dólares), y cuánto dinero se ha mandado por contenedor. El detalle línea por línea de la deuda vive en `/finanzas/deudas` (punto 6).
+12. **`/finanzas` (panel principal) es primero que nada el registro, no un resumen pasivo** — así lo pidió Isaac, como cualquier app de finanzas seria: arriba hay 3 botones — "Agregar dinero" (entrada, ej. recibir efectivo o depósito en banco), "Mandar dinero" (salida — NO se llama "gastar", Isaac lo aclaró: son pagos/transferencias que manda, no necesariamente un gasto propio) y "Mover entre mis cuentas" (transferencia). Abajo, saldos por cuenta y los últimos movimientos, con el historial completo en `/finanzas/movimientos`.
+13. **La comisión opcional aplica a salidas Y a transferencias** — Isaac aclaró que a veces mover dinero entre sus propias cuentas también genera comisión (ej. cargo del banco). Mismo mecanismo en ambos casos: el monto neto (lo que de verdad le llega al destinatario o a la cuenta destino) se guarda en el movimiento principal, y la diferencia se separa sola como gasto en "Comisiones" desde la misma cuenta de origen — nunca se infla ni se duplica. (Para entradas, el tema de comisiones se resuelve cuando se conecte ventas — Isaac ya lo sabe.)
+14. **Facturas pendientes de pagar** (`facturas_pendientes`, pantalla `/finanzas/facturas`): seguimiento de cuentas por pagar sueltas (proveedores de México, servicios, etc. — no son un préstamo ni un pago a China). Isaac captura proveedor, concepto, monto/moneda, fecha de la factura y fecha límite opcional. Se ven ordenadas por fecha límite más próxima primero. Al marcarse "Pagada" (eligiendo de qué cuenta sale y la categoría), se genera su movimiento de salida en Finanzas en la misma operación — la factura guarda el id de ese movimiento (mismo mecanismo de "una sola captura" que todo el módulo). Solo se puede borrar una factura que sigue sin pagar.
 
 ## Lo que se deja para después (NO hacer todavía)
 
