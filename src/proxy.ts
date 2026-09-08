@@ -1,7 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
-const RUTAS_PUBLICAS = ["/login", "/sin-acceso"];
+// "/api/respaldo" no lleva sesión de Supabase (lo llama Google Apps Script
+// desde afuera) — se protege solo con su propia clave secreta, no con
+// login. Si algún día se agregan más rutas bajo /api que sí deban requerir
+// sesión, hay que sacarlas de esta excepción.
+const RUTAS_PUBLICAS = ["/login", "/sin-acceso", "/api/respaldo"];
 
 // Una operadora ve todo lo de Stock y los contenedores (para poder hacer
 // match del inventario real) — las páginas mismas esconden los números de
