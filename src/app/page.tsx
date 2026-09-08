@@ -95,9 +95,12 @@ export default async function Dashboard() {
       </header>
 
       <main className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
-        <div className="mb-8">
-          <h1 className="text-2xl font-semibold tracking-tight text-zinc-900">Bienvenido a Daymart CRM</h1>
-          <p className="mt-1 text-sm text-zinc-500">Aquí tienes un vistazo rápido de todo el sistema.</p>
+        <div className="mb-10">
+          <p className="text-sm font-medium text-zinc-400">Bienvenido a</p>
+          <div className="mt-1">
+            <Logo tamano="lg" />
+          </div>
+          <p className="mt-3 text-sm text-zinc-500">Aquí tienes un vistazo rápido de todo el sistema.</p>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
