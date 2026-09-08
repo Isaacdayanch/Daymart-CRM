@@ -204,6 +204,14 @@ export interface MovimientoFinanciero {
   creado_en: string;
 }
 
+export interface RegistroGanancia {
+  id: string;
+  monto: number;
+  fecha: string;
+  notas: string | null;
+  creado_en: string;
+}
+
 export interface FacturaPendiente {
   id: string;
   proveedor: string;

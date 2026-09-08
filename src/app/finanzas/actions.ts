@@ -263,3 +263,29 @@ export async function eliminarFactura(facturaId: string) {
   await supabase.from("facturas_pendientes").delete().eq("id", facturaId).eq("pagada", false);
   revalidatePath("/finanzas/facturas");
 }
+
+/** Registra cuánto ganó Isaac (ganancia neta, después de gastos) en un
+ * periodo — es el dato del que se calcula el 10% de Maaser. No mueve
+ * dinero de ninguna cuenta (la ganancia ya se refleja sola en cómo se
+ * movió el dinero en Finanzas); es solo el número base del cálculo. */
+export async function agregarRegistroGanancia(formData: FormData) {
+  const supabase = await createClient();
+  const monto = Number(formData.get("monto"));
+  const notas = texto(formData, "notas");
+  if (!Number.isFinite(monto) || monto <= 0) return;
+
+  const fechaCampo = formData.get("fecha");
+  const fecha =
+    typeof fechaCampo === "string" && fechaCampo
+      ? new Date(`${fechaCampo}T12:00:00`).toISOString()
+      : new Date().toISOString();
+
+  await supabase.from("registros_ganancia").insert({ monto, fecha, notas });
+  revalidatePath("/finanzas/maaser");
+}
+
+export async function eliminarRegistroGanancia(registroId: string) {
+  const supabase = await createClient();
+  await supabase.from("registros_ganancia").delete().eq("id", registroId);
+  revalidatePath("/finanzas/maaser");
+}
