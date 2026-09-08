@@ -7,6 +7,20 @@ import { cerrarSesion } from "./login/actions";
 
 const ITEMS = [
   {
+    href: "/research",
+    etiqueta: "Research",
+    soloDueno: true,
+    icono: (
+      <path
+        d="M8 14a6 6 0 1 0 0-12 6 6 0 0 0 0 12ZM15.5 15.5 12.5 12.5"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    ),
+  },
+  {
     href: "/finanzas",
     etiqueta: "Finanzas",
     soloDueno: true,

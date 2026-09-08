@@ -217,3 +217,39 @@ export interface FacturaPendiente {
   notas: string | null;
   creado_en: string;
 }
+
+export type EstadoResearch = "BORRADOR" | "CONVERTIDO" | "DESCARTADO";
+
+export interface ResearchProducto {
+  id: string;
+  link_mercado_libre: string | null;
+  nombre: string;
+  imagen_url: string | null;
+  categoria_ml_id: string | null;
+  categoria_ml_nombre: string | null;
+  precio_referencia_ml: number;
+  ventas_ml: number | null;
+  precio_venta: number;
+  precio_compra_dolares: number;
+  tipo_cambio_estimado: number;
+  piezas_por_caja: number;
+  largo_cm: number;
+  ancho_cm: number;
+  alto_cm: number;
+  costo_por_cbm_pesos: number;
+  paquete_largo_cm: number;
+  paquete_ancho_cm: number;
+  paquete_alto_cm: number;
+  paquete_peso_fisico_kg: number | null;
+  comision_ml_pct: number;
+  envio_gratis: boolean;
+  costo_envio_pesos: number;
+  costo_estimado_pieza_pesos: number;
+  margen_estimado_pesos: number;
+  margen_estimado_pct: number;
+  notas: string | null;
+  estado: EstadoResearch;
+  contenedor_asignado_id: string | null;
+  creado_en: string;
+  actualizado_en: string;
+}
