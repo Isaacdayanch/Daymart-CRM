@@ -11,7 +11,9 @@ import {
 } from "@/lib/calculos";
 import { nombreArchivoSeguro, numero, texto } from "@/lib/form-helpers";
 import { completarColumnasOmitidas, insertarMovimientosStock } from "@/lib/movimientos-stock";
-import type { Contenedor, EstadoContenedor, PagoMercancia, Producto, TipoDocumento } from "@/lib/tipos";
+import { valorPendienteChinaPagado } from "@/lib/calculos-pendientes";
+import { formatoPesos } from "@/lib/formato";
+import type { Contenedor, EstadoContenedor, PagoMercancia, PendienteChina, Producto, TipoDocumento } from "@/lib/tipos";
 
 /** Si el estado cambió, guarda el momento en el historial del contenedor.
  * Por defecto usa la fecha/hora actual, pero se puede pasar una fecha
@@ -570,4 +572,46 @@ export async function actualizarAjusteDiferencia(contenedorId: string, formData:
     .eq("id", contenedorId);
 
   revalidatePath(`/contenedores/${contenedorId}`);
+}
+
+/** Calcula cuánto vale (en pesos) la mercancía de este contenedor que se
+ * quedó pendiente en China pero YA se pagó — no la marca como error: es
+ * dinero que salió del contenedor pero nunca entró a stock, así que es una
+ * explicación real de la diferencia, no un ajuste inventado. Solo calcula
+ * y regresa el resultado — no guarda nada hasta que Isaac lo confirme. */
+export async function calcularPendienteChinaPagado(contenedorId: string) {
+  const supabase = await createClient();
+
+  const [{ data: contenedor }, { data: productos }, { data: pagos }, { data: pendientes }] = await Promise.all([
+    supabase.from("contenedores").select("*").eq("id", contenedorId).single<Contenedor>(),
+    supabase.from("productos").select("*").eq("contenedor_id", contenedorId).returns<Producto[]>(),
+    supabase.from("pagos_mercancia").select("*").eq("contenedor_id", contenedorId).returns<PagoMercancia[]>(),
+    supabase
+      .from("pendientes_china")
+      .select("*")
+      .eq("contenedor_origen_id", contenedorId)
+      .eq("pagado", true)
+      .eq("estado", "PENDIENTE")
+      .returns<PendienteChina[]>(),
+  ]);
+
+  if (!contenedor) return { error: "No se encontró el contenedor.", valor: undefined, detalle: undefined };
+  const listaPendientes = pendientes ?? [];
+  if (listaPendientes.length === 0) {
+    return {
+      error: "Este contenedor no tiene mercancía pagada pendiente en China registrada.",
+      valor: undefined,
+      detalle: undefined,
+    };
+  }
+
+  const costoPorCbm = costoPorCbmContenedor(contenedor, productos ?? []);
+  const tipoCambioMercancia = tipoCambioPromedioMercancia(pagos ?? []);
+  const valor = valorPendienteChinaPagado(listaPendientes, costoPorCbm, tipoCambioMercancia);
+
+  const detalle = `Mercancía pagada pendiente en China: ${listaPendientes
+    .map((p) => `${p.nombre} (${p.cantidad_pendiente} pzas)`)
+    .join(", ")} — ${formatoPesos(valor)}`;
+
+  return { error: null, valor, detalle };
 }
