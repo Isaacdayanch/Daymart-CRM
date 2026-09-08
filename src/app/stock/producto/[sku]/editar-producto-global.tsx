@@ -3,13 +3,26 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { CampoImagen } from "@/components/campo-imagen";
-import type { Producto } from "@/lib/tipos";
 import { actualizarProductoGlobal } from "../../actions";
 
 const claseCampo =
   "mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500";
 
-export function EditarProductoGlobal({ sku, producto }: { sku: string; producto: Producto }) {
+/** Datos mínimos para prellenar el formulario — no requiere una fila real
+ * en "productos" (hay SKUs cargados con "Agregar stock manual"/"Carga
+ * masiva" que solo existen en movimientos_stock, y aun así deben poder
+ * editarse desde aquí). */
+interface DatosProducto {
+  sku: string;
+  nombre: string;
+  imagen_url: string | null;
+  categoria: string | null;
+  piezas_por_caja: number;
+  fabrica: string | null;
+  proveedor: string | null;
+}
+
+export function EditarProductoGlobal({ sku, producto }: { sku: string; producto: DatosProducto }) {
   const router = useRouter();
   const [editando, setEditando] = useState(false);
   const [error, setError] = useState<string | null>(null);

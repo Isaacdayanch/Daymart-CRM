@@ -50,7 +50,7 @@ export default async function ImprimirInventario() {
           </thead>
           <tbody className="divide-y divide-zinc-200">
             {resumenes.map((r) => (
-              <tr key={r.sku}>
+              <tr key={r.sku} className="break-inside-avoid" style={{ pageBreakInside: "avoid" }}>
                 <td className="py-2 pr-2">
                   <div className="h-4 w-4 border border-zinc-900" />
                 </td>

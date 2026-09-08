@@ -46,6 +46,20 @@ export default async function DetalleProducto({ params }: { params: Promise<{ sk
     listaMovimientos.find((m) => m.tipo === "ENTRADA" || m.tipo === "AJUSTE")?.piezas_por_caja ||
     1;
 
+  // Si el SKU nunca tuvo una fila en "productos" (ej. se cargó con
+  // "Agregar stock manual" o "Carga masiva"), igual se arma algo editable
+  // a partir del movimiento más reciente — que no exista en "productos"
+  // no debe bloquear el botón de editar.
+  const productoParaEditar = productoReferencia ?? {
+    sku,
+    nombre: masReciente.nombre,
+    imagen_url: masReciente.imagen_url,
+    categoria: null,
+    piezas_por_caja: piezasPorCaja,
+    fabrica: null,
+    proveedor: null,
+  };
+
   // Entradas agrupadas por contenedor — para responder "¿cuándo y en qué
   // contenedores he pedido esto?" de un vistazo, sin bucear en el libro
   // completo de movimientos.
@@ -107,7 +121,7 @@ export default async function DetalleProducto({ params }: { params: Promise<{ sk
             <h1 className="text-lg font-semibold text-zinc-900">{masReciente.nombre}</h1>
             <p className="font-mono text-sm text-zinc-400">{sku}</p>
           </div>
-          {verDinero && productoReferencia && <EditarProductoGlobal sku={sku} producto={productoReferencia} />}
+          {verDinero && <EditarProductoGlobal sku={sku} producto={productoParaEditar} />}
         </div>
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
