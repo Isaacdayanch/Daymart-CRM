@@ -7,20 +7,6 @@ import { cerrarSesion } from "./login/actions";
 
 const ITEMS = [
   {
-    href: "/research",
-    etiqueta: "Research",
-    soloDueno: true,
-    icono: (
-      <path
-        d="M8 14a6 6 0 1 0 0-12 6 6 0 0 0 0 12ZM15.5 15.5 12.5 12.5"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    ),
-  },
-  {
     href: "/finanzas",
     etiqueta: "Finanzas",
     soloDueno: true,
@@ -37,9 +23,33 @@ const ITEMS = [
   {
     href: "/contenedores",
     etiqueta: "Contenedores",
+    // Contenedor de embarque: rectángulo bajo y ancho con "costillas"
+    // verticales — muy distinto a la caja isométrica de Stock.
+    icono: (
+      <>
+        <path
+          d="M2.5 5.5h13v7.5h-13z"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinejoin="round"
+        />
+        <path
+          d="M5.5 5.5v7.5M8.5 5.5v7.5M11.5 5.5v7.5"
+          stroke="currentColor"
+          strokeWidth="1.2"
+          strokeLinecap="round"
+        />
+      </>
+    ),
+  },
+  {
+    href: "/stock",
+    etiqueta: "Stock",
+    // Caja isométrica (3D): una pila de mercancía, distinta al
+    // contenedor rectangular de arriba.
     icono: (
       <path
-        d="M2.5 6.5 9 3l6.5 3.5v7L9 17l-6.5-3.5v-7ZM2.5 6.5 9 10l6.5-3.5M9 10v7"
+        d="M3 6.5 9 3l6 3.5v6L9 16l-6-3.5v-6ZM3 6.5 9 10l6-3.5M9 10v6"
         stroke="currentColor"
         strokeWidth="1.5"
         strokeLinecap="round"
@@ -48,11 +58,12 @@ const ITEMS = [
     ),
   },
   {
-    href: "/stock",
-    etiqueta: "Stock",
+    href: "/research",
+    etiqueta: "Research",
+    soloDueno: true,
     icono: (
       <path
-        d="M3 6.5 9 3l6 3.5v6L9 16l-6-3.5v-6ZM3 6.5 9 10l6-3.5M9 10v6"
+        d="M8 14a6 6 0 1 0 0-12 6 6 0 0 0 0 12ZM15.5 15.5 12.5 12.5"
         stroke="currentColor"
         strokeWidth="1.5"
         strokeLinecap="round"
