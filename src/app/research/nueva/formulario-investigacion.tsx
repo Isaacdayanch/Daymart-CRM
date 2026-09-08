@@ -51,6 +51,19 @@ export function FormularioInvestigacion() {
   const [error, setError] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
 
+  function alCalcularPaquete() {
+    const piezas = num(piezasPorCaja) || 1;
+    const largo = num(largoCm);
+    if (!largo) return;
+    // Se asume que las piezas van acomodadas en fila a lo largo de la
+    // caja de importación: solo el largo se divide entre las piezas (con
+    // 1 cm extra de protección); ancho y alto de una pieza sola quedan
+    // igual que los de la caja completa.
+    setPaqueteLargoCm((largo / piezas + 1).toFixed(1));
+    setPaqueteAnchoCm(anchoCm);
+    setPaqueteAltoCm(altoCm);
+  }
+
   async function alTraerDatos() {
     if (!link.trim()) return;
     setBuscando(true);
@@ -285,7 +298,23 @@ export function FormularioInvestigacion() {
           </div>
         </div>
 
-        <p className="mt-4 text-xs font-medium text-zinc-500">Paquete individual (como le llega a tu cliente)</p>
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-xs font-medium text-zinc-500">Paquete individual (como le llega a tu cliente)</p>
+          <button
+            type="button"
+            onClick={alCalcularPaquete}
+            disabled={!largoCm}
+            className="text-xs font-medium text-zinc-500 underline hover:text-zinc-900 disabled:opacity-50"
+          >
+            Calcular tamaño estimado →
+          </button>
+        </div>
+        {largoCm && (
+          <p className="mt-1 text-xs text-zinc-400">
+            Divide el largo de la caja de importación entre las piezas por caja y le suma 1 cm de protección — asume que
+            van en fila a lo largo de la caja. Revisa y ajusta si tus productos van acomodados distinto.
+          </p>
+        )}
         <div className="mt-1 grid grid-cols-4 gap-3">
           <input
             type="number"
