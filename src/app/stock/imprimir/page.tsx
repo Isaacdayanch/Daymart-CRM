@@ -1,22 +1,28 @@
 import { createClient } from "@/lib/supabase/server";
 import { resumenPorSku } from "@/lib/calculos-stock";
 import { formatoCajas, formatoFecha } from "@/lib/formato";
-import { obtenerPiezasPorCajaPorSku } from "@/lib/productos-stock";
+import { obtenerCategoriaPorSku, obtenerPiezasPorCajaPorSku } from "@/lib/productos-stock";
 import type { ConfiguracionStock, MovimientoStock } from "@/lib/tipos";
 import { BotonImprimir } from "../../contenedores/[id]/imprimir/boton-imprimir";
 import { Logo } from "@/components/logo";
 
-export default async function ImprimirInventario() {
+export default async function ImprimirInventario({
+  searchParams,
+}: {
+  searchParams: Promise<{ categoria?: string }>;
+}) {
+  const { categoria } = await searchParams;
   const supabase = await createClient();
-  const [{ data: movimientos }, { data: configuracion }, piezasPorCajaPorSku] = await Promise.all([
+  const [{ data: movimientos }, { data: configuracion }, piezasPorCajaPorSku, categoriaPorSku] = await Promise.all([
     supabase.from("movimientos_stock").select("*").returns<MovimientoStock[]>(),
     supabase.from("configuracion_stock").select("*").single<ConfiguracionStock>(),
     obtenerPiezasPorCajaPorSku(supabase),
+    obtenerCategoriaPorSku(supabase),
   ]);
 
-  const resumenes = resumenPorSku(movimientos ?? [], configuracion?.dias_espera ?? 60, piezasPorCajaPorSku).filter(
-    (r) => r.stockActual !== 0,
-  );
+  const resumenes = resumenPorSku(movimientos ?? [], configuracion?.dias_espera ?? 60, piezasPorCajaPorSku, categoriaPorSku)
+    .filter((r) => r.stockActual !== 0)
+    .filter((r) => !categoria || r.categoria === categoria);
 
   return (
     <div className="bg-white">
@@ -31,6 +37,7 @@ export default async function ImprimirInventario() {
           <div>
             <Logo />
             <h1 className="mt-1 text-xl font-semibold text-zinc-900">Hoja de revisión de inventario</h1>
+            {categoria && <p className="text-sm text-zinc-500">Categoría: {categoria}</p>}
           </div>
           <p className="text-sm text-zinc-500">{formatoFecha(new Date().toISOString())}</p>
         </div>

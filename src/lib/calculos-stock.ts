@@ -7,6 +7,7 @@ import type { MovimientoStock } from "./tipos";
 export interface ResumenSku {
   sku: string;
   nombre: string;
+  categoria: string;
   stockActual: number;
   stockPorBodega: Map<string, number>;
   costoPromedio: number;
@@ -73,6 +74,7 @@ export function resumenPorSku(
   movimientos: MovimientoStock[],
   diasEspera: number,
   piezasPorCajaPorSku: Map<string, number> = new Map(),
+  categoriaPorSku: Map<string, string> = new Map(),
 ): ResumenSku[] {
   const porSku = new Map<string, MovimientoStock[]>();
   for (const m of movimientos) {
@@ -104,6 +106,7 @@ export function resumenPorSku(
     resumenes.push({
       sku,
       nombre: masReciente(movs).nombre,
+      categoria: categoriaPorSku.get(sku) || "Sin categoría",
       stockActual: actual,
       stockPorBodega,
       costoPromedio: costoProm,

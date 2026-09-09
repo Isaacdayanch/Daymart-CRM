@@ -18,3 +18,22 @@ export async function obtenerPiezasPorCajaPorSku(supabase: SupabaseClient): Prom
   }
   return mapa;
 }
+
+/** Categoría "de verdad" de cada SKU, según la tabla productos (la
+ * fuente real) — permite filtrar/imprimir Stock por categoría sin
+ * depender de un movimiento suelto. Mismo criterio que
+ * obtenerPiezasPorCajaPorSku: si un SKU aparece en varios productos, se
+ * usa el del más reciente. */
+export async function obtenerCategoriaPorSku(supabase: SupabaseClient): Promise<Map<string, string>> {
+  const { data } = await supabase
+    .from("productos")
+    .select("sku, categoria")
+    .order("creado_en", { ascending: false })
+    .returns<{ sku: string; categoria: string }[]>();
+
+  const mapa = new Map<string, string>();
+  for (const p of data ?? []) {
+    if (!mapa.has(p.sku) && p.categoria) mapa.set(p.sku, p.categoria);
+  }
+  return mapa;
+}

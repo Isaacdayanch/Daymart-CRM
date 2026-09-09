@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import type { ResumenSku } from "@/lib/calculos-stock";
 import { formatoCajas, formatoPesos } from "@/lib/formato";
+import { Selector } from "@/components/selector";
 
 function normaliza(texto: string) {
   return texto
@@ -12,51 +13,79 @@ function normaliza(texto: string) {
     .toLowerCase();
 }
 
+const TODAS_CATEGORIAS = "";
+
 export function TablaStock({
   resumenes,
   bodegasPorId,
   verDinero = true,
+  categorias = [],
 }: {
   resumenes: ResumenSku[];
   bodegasPorId: Record<string, string>;
   verDinero?: boolean;
+  categorias?: string[];
 }) {
   const [busqueda, setBusqueda] = useState("");
+  const [categoria, setCategoria] = useState(TODAS_CATEGORIAS);
 
   const filtrados = useMemo(() => {
     const texto = normaliza(busqueda.trim());
-    if (!texto) return resumenes;
-    return resumenes.filter(
-      (r) => normaliza(r.nombre).includes(texto) || normaliza(r.sku).includes(texto),
-    );
-  }, [resumenes, busqueda]);
+    return resumenes.filter((r) => {
+      const coincideTexto = !texto || normaliza(r.nombre).includes(texto) || normaliza(r.sku).includes(texto);
+      const coincideCategoria = !categoria || r.categoria === categoria;
+      return coincideTexto && coincideCategoria;
+    });
+  }, [resumenes, busqueda, categoria]);
+
+  const hrefImprimir = categoria ? `/stock/imprimir?categoria=${encodeURIComponent(categoria)}` : "/stock/imprimir";
 
   return (
     <>
-      <div className="border-b border-zinc-100 p-6">
-        <div className="relative">
-          <svg
-            width="15"
-            height="15"
-            viewBox="0 0 20 20"
-            fill="none"
-            className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-zinc-400"
-          >
-            <circle cx="9" cy="9" r="6.5" stroke="currentColor" strokeWidth="1.6" />
-            <path d="M14 14L18 18" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-          </svg>
-          <input
-            type="text"
-            value={busqueda}
-            onChange={(e) => setBusqueda(e.target.value)}
-            placeholder="Buscar por producto o SKU…"
-            className="w-full rounded-full border border-zinc-300 bg-zinc-50 py-2 pr-4 pl-9 text-sm placeholder:text-zinc-400 focus:border-zinc-500 focus:bg-white focus:ring-zinc-500 sm:max-w-xs"
-          />
+      <div className="flex flex-col gap-3 border-b border-zinc-100 p-6 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="relative">
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 20 20"
+              fill="none"
+              className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-zinc-400"
+            >
+              <circle cx="9" cy="9" r="6.5" stroke="currentColor" strokeWidth="1.6" />
+              <path d="M14 14L18 18" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+            </svg>
+            <input
+              type="text"
+              value={busqueda}
+              onChange={(e) => setBusqueda(e.target.value)}
+              placeholder="Buscar por producto o SKU…"
+              className="w-full rounded-full border border-zinc-300 bg-zinc-50 py-2 pr-4 pl-9 text-sm placeholder:text-zinc-400 focus:border-zinc-500 focus:bg-white focus:ring-zinc-500 sm:w-56"
+            />
+          </div>
+          {categorias.length > 0 && (
+            <div className="sm:w-48">
+              <Selector
+                onChange={setCategoria}
+                defaultValue={TODAS_CATEGORIAS}
+                opciones={[
+                  { value: TODAS_CATEGORIAS, label: "Todas las categorías" },
+                  ...categorias.map((c) => ({ value: c, label: c })),
+                ]}
+              />
+            </div>
+          )}
         </div>
+        <Link href={hrefImprimir} className="shrink-0 text-xs font-medium text-zinc-500 transition hover:text-zinc-900">
+          Imprimir {categoria ? `“${categoria}”` : "hoja de conteo"} →
+        </Link>
       </div>
 
       {filtrados.length === 0 ? (
-        <p className="p-6 text-sm text-zinc-500">No se encontró ningún producto con &ldquo;{busqueda}&rdquo;.</p>
+        <p className="p-6 text-sm text-zinc-500">
+          No se encontró ningún producto{busqueda && ` con “${busqueda}”`}
+          {categoria && ` en la categoría “${categoria}”`}.
+        </p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
