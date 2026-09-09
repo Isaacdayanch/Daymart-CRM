@@ -289,3 +289,244 @@ export async function eliminarRegistroGanancia(registroId: string) {
   await supabase.from("registros_ganancia").delete().eq("id", registroId);
   revalidatePath("/finanzas/maaser");
 }
+
+export async function agregarSocio(formData: FormData) {
+  const supabase = await createClient();
+  const nombre = texto(formData, "nombre");
+  if (!nombre) return;
+  await supabase.from("socios").insert({ nombre });
+  revalidatePath("/finanzas/socios");
+}
+
+/** Un aporte de capital o un reparto de un socio — genera su movimiento
+ * real en Finanzas (Entrada "Aporte a capital" o Salida "Repartos") en la
+ * misma operación, igual que el resto del módulo. */
+export async function registrarMovimientoSocio(formData: FormData) {
+  const supabase = await createClient();
+
+  const socioId = formData.get("socio_id") as string;
+  const tipo = formData.get("tipo") as "APORTE" | "REPARTO";
+  const cuentaId = formData.get("cuenta_id") as string;
+  const monto = Number(formData.get("monto"));
+  const moneda = (formData.get("moneda") as Moneda) || "MXN";
+  const notas = texto(formData, "notas");
+
+  if (!socioId || !cuentaId || !Number.isFinite(monto) || monto <= 0) {
+    return { error: "Falta el socio, la cuenta o el monto no es válido." };
+  }
+
+  const fechaCampo = formData.get("fecha");
+  const fecha =
+    typeof fechaCampo === "string" && fechaCampo
+      ? new Date(`${fechaCampo}T12:00:00`).toISOString()
+      : new Date().toISOString();
+
+  const { data: categoria } = await supabase
+    .from("categorias_financieras")
+    .select("id")
+    .eq("nombre", tipo === "APORTE" ? "Aporte a capital" : "Repartos")
+    .maybeSingle<{ id: string }>();
+
+  const { data: movimiento, error: errorMovimiento } = await supabase
+    .from("movimientos_financieros")
+    .insert({
+      tipo: tipo === "APORTE" ? "ENTRADA" : "SALIDA",
+      cuenta_id: cuentaId,
+      categoria_id: categoria?.id ?? null,
+      monto,
+      moneda,
+      fecha,
+      notas,
+    })
+    .select("id")
+    .single();
+  if (errorMovimiento || !movimiento) {
+    return { error: errorMovimiento?.message ?? "No se pudo guardar el movimiento." };
+  }
+
+  const { error: errorSocio } = await supabase.from("movimientos_socio").insert({
+    socio_id: socioId,
+    tipo,
+    monto,
+    moneda,
+    fecha,
+    notas,
+    cuenta_id: cuentaId,
+    movimiento_financiero_id: movimiento.id,
+  });
+  if (errorSocio) {
+    return { error: `Se guardó en Finanzas, pero no se pudo ligar al socio: ${errorSocio.message}` };
+  }
+
+  revalidatePath("/finanzas/socios");
+  revalidatePath("/finanzas");
+  revalidatePath("/finanzas/movimientos");
+  return { error: null };
+}
+
+export async function agregarPrestamista(formData: FormData) {
+  const supabase = await createClient();
+  const nombre = texto(formData, "nombre");
+  if (!nombre) return;
+  await supabase.from("prestamistas").insert({ nombre, notas: texto(formData, "notas") });
+  revalidatePath("/finanzas/prestamistas");
+}
+
+/** Un préstamo recibido o un pago hecho a un prestamista — genera su
+ * movimiento real en Finanzas (Entrada "Préstamo recibido" o Salida "Pago
+ * préstamo") en la misma operación. */
+export async function registrarMovimientoPrestamista(formData: FormData) {
+  const supabase = await createClient();
+
+  const prestamistaId = formData.get("prestamista_id") as string;
+  const tipo = formData.get("tipo") as "PRESTAMO" | "PAGO";
+  const cuentaId = formData.get("cuenta_id") as string;
+  const monto = Number(formData.get("monto"));
+  const moneda = (formData.get("moneda") as Moneda) || "MXN";
+  const notas = texto(formData, "notas");
+
+  if (!prestamistaId || !cuentaId || !Number.isFinite(monto) || monto <= 0) {
+    return { error: "Falta el prestamista, la cuenta o el monto no es válido." };
+  }
+
+  const fechaCampo = formData.get("fecha");
+  const fecha =
+    typeof fechaCampo === "string" && fechaCampo
+      ? new Date(`${fechaCampo}T12:00:00`).toISOString()
+      : new Date().toISOString();
+
+  const { data: categoria } = await supabase
+    .from("categorias_financieras")
+    .select("id")
+    .eq("nombre", tipo === "PRESTAMO" ? "Préstamo recibido" : "Pago préstamo")
+    .maybeSingle<{ id: string }>();
+
+  const { data: movimiento, error: errorMovimiento } = await supabase
+    .from("movimientos_financieros")
+    .insert({
+      tipo: tipo === "PRESTAMO" ? "ENTRADA" : "SALIDA",
+      cuenta_id: cuentaId,
+      categoria_id: categoria?.id ?? null,
+      monto,
+      moneda,
+      fecha,
+      notas,
+    })
+    .select("id")
+    .single();
+  if (errorMovimiento || !movimiento) {
+    return { error: errorMovimiento?.message ?? "No se pudo guardar el movimiento." };
+  }
+
+  const { error: errorPrestamista } = await supabase.from("movimientos_prestamista").insert({
+    prestamista_id: prestamistaId,
+    tipo,
+    monto,
+    moneda,
+    fecha,
+    notas,
+    cuenta_id: cuentaId,
+    movimiento_financiero_id: movimiento.id,
+  });
+  if (errorPrestamista) {
+    return { error: `Se guardó en Finanzas, pero no se pudo ligar al prestamista: ${errorPrestamista.message}` };
+  }
+
+  revalidatePath("/finanzas/prestamistas");
+  revalidatePath("/finanzas");
+  revalidatePath("/finanzas/movimientos");
+  return { error: null };
+}
+
+/** Un cargo de deuda con un proveedor (ej. el costo de un pedido nuevo) es
+ * solo informativo — no mueve dinero de ninguna cuenta todavía, por eso no
+ * genera movimiento en Finanzas (mismo principio que registros_ganancia de
+ * Maaser). */
+export async function agregarCargoProveedor(formData: FormData) {
+  const supabase = await createClient();
+  const proveedor = texto(formData, "proveedor");
+  const monto = Number(formData.get("monto"));
+  const moneda = (formData.get("moneda") as Moneda) || "USD";
+  if (!proveedor || !Number.isFinite(monto) || monto <= 0) return;
+
+  const fechaCampo = formData.get("fecha");
+  const fecha =
+    typeof fechaCampo === "string" && fechaCampo
+      ? new Date(`${fechaCampo}T12:00:00`).toISOString()
+      : new Date().toISOString();
+
+  await supabase.from("movimientos_deuda_proveedor").insert({
+    proveedor,
+    tipo: "CARGO",
+    monto,
+    moneda,
+    fecha,
+    notas: texto(formData, "notas"),
+  });
+  revalidatePath("/finanzas/proveedores");
+}
+
+/** Un abono a un proveedor sí es dinero real: genera su salida en Finanzas
+ * (categoría "Pago proveedor") en la misma operación. */
+export async function registrarAbonoProveedor(formData: FormData) {
+  const supabase = await createClient();
+
+  const proveedor = texto(formData, "proveedor");
+  const cuentaId = formData.get("cuenta_id") as string;
+  const monto = Number(formData.get("monto"));
+  const moneda = (formData.get("moneda") as Moneda) || "USD";
+  const notas = texto(formData, "notas");
+
+  if (!proveedor || !cuentaId || !Number.isFinite(monto) || monto <= 0) {
+    return { error: "Falta el proveedor, la cuenta o el monto no es válido." };
+  }
+
+  const fechaCampo = formData.get("fecha");
+  const fecha =
+    typeof fechaCampo === "string" && fechaCampo
+      ? new Date(`${fechaCampo}T12:00:00`).toISOString()
+      : new Date().toISOString();
+
+  const { data: categoria } = await supabase
+    .from("categorias_financieras")
+    .select("id")
+    .eq("nombre", "Pago proveedor")
+    .maybeSingle<{ id: string }>();
+
+  const { data: movimiento, error: errorMovimiento } = await supabase
+    .from("movimientos_financieros")
+    .insert({
+      tipo: "SALIDA",
+      cuenta_id: cuentaId,
+      categoria_id: categoria?.id ?? null,
+      monto,
+      moneda,
+      fecha,
+      contraparte: proveedor,
+      notas,
+    })
+    .select("id")
+    .single();
+  if (errorMovimiento || !movimiento) {
+    return { error: errorMovimiento?.message ?? "No se pudo guardar el movimiento." };
+  }
+
+  const { error: errorAbono } = await supabase.from("movimientos_deuda_proveedor").insert({
+    proveedor,
+    tipo: "ABONO",
+    monto,
+    moneda,
+    fecha,
+    notas,
+    cuenta_id: cuentaId,
+    movimiento_financiero_id: movimiento.id,
+  });
+  if (errorAbono) {
+    return { error: `Se guardó en Finanzas, pero no se pudo ligar al proveedor: ${errorAbono.message}` };
+  }
+
+  revalidatePath("/finanzas/proveedores");
+  revalidatePath("/finanzas");
+  revalidatePath("/finanzas/movimientos");
+  return { error: null };
+}

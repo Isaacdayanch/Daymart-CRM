@@ -204,6 +204,65 @@ export interface MovimientoFinanciero {
   creado_en: string;
 }
 
+export interface Socio {
+  id: string;
+  nombre: string;
+  creado_en: string;
+}
+
+export type TipoMovimientoSocio = "APORTE" | "REPARTO";
+
+export interface MovimientoSocio {
+  id: string;
+  socio_id: string;
+  tipo: TipoMovimientoSocio;
+  monto: number;
+  moneda: Moneda;
+  fecha: string;
+  notas: string | null;
+  cuenta_id: string | null;
+  movimiento_financiero_id: string | null;
+  creado_en: string;
+}
+
+export interface Prestamista {
+  id: string;
+  nombre: string;
+  notas: string | null;
+  creado_en: string;
+}
+
+export type TipoMovimientoPrestamista = "PRESTAMO" | "PAGO";
+
+export interface MovimientoPrestamista {
+  id: string;
+  prestamista_id: string;
+  tipo: TipoMovimientoPrestamista;
+  monto: number;
+  moneda: Moneda;
+  fecha: string;
+  notas: string | null;
+  cuenta_id: string | null;
+  movimiento_financiero_id: string | null;
+  creado_en: string;
+}
+
+export type TipoMovimientoDeudaProveedor = "CARGO" | "ABONO";
+
+export interface MovimientoDeudaProveedor {
+  id: string;
+  proveedor: string;
+  tipo: TipoMovimientoDeudaProveedor;
+  monto: number;
+  moneda: Moneda;
+  fecha: string;
+  notas: string | null;
+  contenedor_id: string | null;
+  cuenta_id: string | null;
+  movimiento_financiero_id: string | null;
+  creado_en: string;
+}
+
 export interface RegistroGanancia {
   id: string;
   monto: number;
