@@ -17,3 +17,21 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Reglas para TODAS las hojas imprimibles del sistema (Stock, Contenedores,
+   y cualquiera que se agregue después): que un producto nunca se corte a la
+   mitad entre una hoja y otra, y que el encabezado de la tabla se repita en
+   cada página — así el PDF que genera "Imprimir → Guardar como PDF" se ve
+   profesional sin tener que acordarse de repetirlo en cada pantalla nueva. */
+@media print {
+  thead {
+    display: table-header-group;
+  }
+  tfoot {
+    display: table-footer-group;
+  }
+  tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}

@@ -98,7 +98,7 @@ export default async function ImprimirContenedor({
           </thead>
           <tbody className="divide-y divide-zinc-200">
             {listaProductos.map((producto) => (
-              <tr key={producto.id} className="break-inside-avoid" style={{ pageBreakInside: "avoid" }}>
+              <tr key={producto.id}>
                 <td className="py-2 pr-2">
                   {producto.imagen_url ? (
                     // eslint-disable-next-line @next/next/no-img-element -- se imprime/exporta a PDF, next/image no aplica
