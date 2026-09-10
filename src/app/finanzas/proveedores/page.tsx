@@ -1,17 +1,25 @@
 import { createClient } from "@/lib/supabase/server";
 import { formatoPesos, formatoDolares, formatoFecha } from "@/lib/formato";
-import { proveedoresConDeuda, saldoProveedor } from "@/lib/calculos-socios-deuda";
-import type { CuentaFinanciera, MovimientoDeudaProveedor } from "@/lib/tipos";
+import { cargosAbiertosProveedor, proveedoresConDeuda, saldoProveedor } from "@/lib/calculos-socios-deuda";
+import type { Contenedor, CuentaFinanciera, MovimientoDeudaProveedor } from "@/lib/tipos";
 import { FormularioProveedor } from "./formulario-proveedor";
+import { EnvioPuente } from "./envio-puente";
 
 export default async function ProveedoresFinanzas() {
   const supabase = await createClient();
-  const [{ data: movimientos }, { data: cuentas }] = await Promise.all([
+  const [{ data: movimientos }, { data: cuentas }, { data: contenedores }] = await Promise.all([
     supabase.from("movimientos_deuda_proveedor").select("*").returns<MovimientoDeudaProveedor[]>(),
     supabase.from("cuentas_financieras").select("*").is("eliminado_en", null).returns<CuentaFinanciera[]>(),
+    supabase
+      .from("contenedores")
+      .select("*")
+      .is("eliminado_en", null)
+      .order("numero", { ascending: false })
+      .returns<Contenedor[]>(),
   ]);
 
   const listaMovimientos = movimientos ?? [];
+  const listaCuentas = cuentas ?? [];
   const nombresProveedores = proveedoresConDeuda(listaMovimientos);
   const historial = [...listaMovimientos].sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
 
@@ -19,7 +27,8 @@ export default async function ProveedoresFinanzas() {
     <div className="space-y-6">
       <p className="text-sm text-zinc-500">
         Cuánto le debes a cada proveedor — el saldo se lleva por proveedor en general (no por contenedor), igual
-        que abonas &ldquo;a cuenta&rdquo;.
+        que abonas &ldquo;a cuenta&rdquo;. Cada cargo puede traer su propia fecha límite; los abonos se aplican
+        al cargo más viejo primero.
       </p>
 
       <div className="grid gap-3 sm:grid-cols-2">
@@ -30,6 +39,9 @@ export default async function ProveedoresFinanzas() {
             const usd = saldoProveedor(listaMovimientos, proveedor, "USD");
             const mxn = saldoProveedor(listaMovimientos, proveedor, "MXN");
             if (usd === 0 && mxn === 0) return null;
+            const abiertosUsd = cargosAbiertosProveedor(listaMovimientos, proveedor, "USD");
+            const abiertosMxn = cargosAbiertosProveedor(listaMovimientos, proveedor, "MXN");
+            const conVencimiento = [...abiertosUsd, ...abiertosMxn].filter((a) => a.cargo.fecha_limite);
             return (
               <div key={proveedor} className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
                 <p className="text-sm font-semibold text-zinc-900">{proveedor}</p>
@@ -45,13 +57,29 @@ export default async function ProveedoresFinanzas() {
                     </p>
                   )}
                 </div>
+                {conVencimiento.length > 0 && (
+                  <div className="mt-2 space-y-1 border-t border-zinc-100 pt-2">
+                    {conVencimiento.map(({ cargo, pendiente }) => (
+                      <p key={cargo.id} className="text-xs text-zinc-400">
+                        {cargo.moneda === "USD" ? formatoDolares(pendiente) : formatoPesos(pendiente)} vence{" "}
+                        {formatoFecha(cargo.fecha_limite!)}
+                      </p>
+                    ))}
+                  </div>
+                )}
               </div>
             );
           })
         )}
       </div>
 
-      <FormularioProveedor proveedores={nombresProveedores} cuentas={cuentas ?? []} />
+      <FormularioProveedor proveedores={nombresProveedores} cuentas={listaCuentas} />
+
+      <EnvioPuente
+        cuentas={listaCuentas}
+        proveedores={nombresProveedores}
+        contenedores={(contenedores ?? []).map((c) => ({ id: c.id, numero: c.numero }))}
+      />
 
       <div className="rounded-2xl border border-zinc-200 bg-white shadow-sm">
         <div className="border-b border-zinc-100 p-6">
@@ -69,6 +97,7 @@ export default async function ProveedoresFinanzas() {
                   </p>
                   <p className="text-xs text-zinc-500">
                     {formatoFecha(m.fecha)} {m.notas ? `— ${m.notas}` : ""}
+                    {m.tipo === "CARGO" && m.fecha_limite ? ` · vence ${formatoFecha(m.fecha_limite)}` : ""}
                   </p>
                 </div>
                 <p className={`font-semibold ${m.tipo === "CARGO" ? "text-red-600" : "text-emerald-600"}`}>

@@ -39,7 +39,8 @@ export default async function BalanceFinanzas() {
   const resumenes = resumenPorSku(movimientosStock ?? [], configuracion?.dias_espera ?? 60, piezasPorCajaPorSku);
   const valorInventario = resumenes.reduce((s, r) => s + r.valorInventario, 0);
 
-  const saldos = saldosPorCuenta(cuentas ?? [], movimientosFinancieros ?? []);
+  const cuentasReales = (cuentas ?? []).filter((c) => !c.cuenta_transito);
+  const saldos = saldosPorCuenta(cuentasReales, movimientosFinancieros ?? []);
   const cajaMxn = saldos.reduce((s, c) => s + c.saldoMxn, 0);
   const cajaUsd = saldos.reduce((s, c) => s + c.saldoUsd, 0);
 

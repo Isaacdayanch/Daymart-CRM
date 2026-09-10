@@ -80,8 +80,9 @@ export default async function Dashboard() {
   const valorInventario = resumenes.reduce((s, r) => s + r.valorInventario, 0);
 
   const saldos = verDinero ? saldosPorCuenta(cuentas ?? [], movimientosFinancieros ?? []) : [];
-  const totalMxn = saldos.reduce((s, c) => s + c.saldoMxn, 0);
-  const totalUsd = saldos.reduce((s, c) => s + c.saldoUsd, 0);
+  const saldosReales = saldos.filter((s) => !s.cuenta.cuenta_transito);
+  const totalMxn = saldosReales.reduce((s, c) => s + c.saldoMxn, 0);
+  const totalUsd = saldosReales.reduce((s, c) => s + c.saldoUsd, 0);
 
   const accesos = ACCESOS.filter((a) => verDinero || !a.soloDueno);
 

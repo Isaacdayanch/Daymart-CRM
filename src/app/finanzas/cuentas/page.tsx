@@ -51,6 +51,10 @@ export default async function CuentasFinanzas() {
               <Selector name="tipo" defaultValue="BANCO" opciones={TIPOS} />
             </div>
           </div>
+          <label className="flex items-center gap-2 pb-2 text-xs font-medium text-zinc-600">
+            <input type="checkbox" name="cuenta_transito" value="true" className="h-4 w-4 rounded border-zinc-300" />
+            De tránsito (ej. Mercado Pago — no cuenta como saldo real)
+          </label>
           <button
             type="submit"
             className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-700"
@@ -65,7 +69,14 @@ export default async function CuentasFinanzas() {
           {saldos.map(({ cuenta, saldoMxn, saldoUsd }) => (
             <div key={cuenta.id} className="flex items-center justify-between px-6 py-4">
               <div>
-                <p className="text-sm font-medium text-zinc-900">{cuenta.nombre}</p>
+                <p className="text-sm font-medium text-zinc-900">
+                  {cuenta.nombre}
+                  {cuenta.cuenta_transito && (
+                    <span className="ml-2 rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-500">
+                      de tránsito
+                    </span>
+                  )}
+                </p>
                 <p className="text-xs text-zinc-400">
                   {TIPOS.find((t) => t.value === cuenta.tipo)?.label ?? cuenta.tipo} · desde{" "}
                   {formatoFecha(cuenta.creado_en)}

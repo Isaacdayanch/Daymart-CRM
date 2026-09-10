@@ -39,8 +39,8 @@ export default async function ResumenFinanzas() {
   const categoriasPorId = new Map((categorias ?? []).map((c) => [c.id, c.nombre]));
 
   const saldos = saldosPorCuenta(listaCuentas, listaMovimientos);
-  const totalMxn = saldos.reduce((s, c) => s + c.saldoMxn, 0);
-  const totalUsd = saldos.reduce((s, c) => s + c.saldoUsd, 0);
+  const totalMxn = saldos.filter((s) => !s.cuenta.cuenta_transito).reduce((s, c) => s + c.saldoMxn, 0);
+  const totalUsd = saldos.filter((s) => !s.cuenta.cuenta_transito).reduce((s, c) => s + c.saldoUsd, 0);
   const ultimosMovimientos = listaMovimientos.slice(0, 8);
 
   return (

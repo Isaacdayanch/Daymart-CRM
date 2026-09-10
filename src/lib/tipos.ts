@@ -83,6 +83,8 @@ export interface PagoMercancia {
   pagado: boolean;
   fecha: string | null;
   notas: string | null;
+  cuenta_id: string | null;
+  movimiento_financiero_id: string | null;
   creado_en: string;
 }
 
@@ -172,6 +174,9 @@ export interface CuentaFinanciera {
   id: string;
   nombre: string;
   tipo: TipoCuentaFinanciera;
+  // "De tránsito": no cuenta como saldo real en el Balance (ej. Mercado
+  // Pago) — solo sirve para etiquetar de dónde salió un gasto.
+  cuenta_transito: boolean;
   eliminado_en: string | null;
   creado_en: string;
 }
@@ -256,6 +261,10 @@ export interface MovimientoDeudaProveedor {
   monto: number;
   moneda: Moneda;
   fecha: string;
+  // Solo aplica a tipo CARGO — cada cargo tiene su propia fecha límite (no
+  // una sola por proveedor). Los abonos se aplican al cargo más viejo
+  // primero (FIFO) para saber cuál sigue abierto.
+  fecha_limite: string | null;
   notas: string | null;
   contenedor_id: string | null;
   cuenta_id: string | null;

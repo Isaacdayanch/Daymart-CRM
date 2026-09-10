@@ -315,11 +315,30 @@ export async function agregarAbono(contenedorId: string, formData: FormData) {
   revalidatePath(`/contenedores/${contenedorId}`);
 }
 
+/** Si el abono se generó desde una cuenta puente de Finanzas
+ * (registrarEnvioCuentaPuente), también borra su movimiento de Finanzas y
+ * su abono a la deuda del proveedor ligado — nunca se queda un registro
+ * suelto que "debería" coincidir con otro. */
 export async function eliminarAbono(contenedorId: string, abonoId: string) {
   const supabase = await createClient();
+
+  const { data: abono } = await supabase
+    .from("pagos_mercancia")
+    .select("movimiento_financiero_id")
+    .eq("id", abonoId)
+    .maybeSingle<{ movimiento_financiero_id: string | null }>();
+
+  if (abono?.movimiento_financiero_id) {
+    await supabase.from("movimientos_deuda_proveedor").delete().eq("movimiento_financiero_id", abono.movimiento_financiero_id);
+    await supabase.from("movimientos_financieros").delete().eq("id", abono.movimiento_financiero_id);
+  }
+
   await supabase.from("pagos_mercancia").delete().eq("id", abonoId);
   await recalcularCostoEntradasContenedor(contenedorId);
   revalidatePath(`/contenedores/${contenedorId}`);
+  revalidatePath("/finanzas/proveedores");
+  revalidatePath("/finanzas");
+  revalidatePath("/finanzas/movimientos");
 }
 
 export async function actualizarFechaAbono(contenedorId: string, abonoId: string, formData: FormData) {

@@ -102,6 +102,12 @@ export function FormularioProveedor({ proveedores, cuentas }: { proveedores: str
           <label className="block text-xs font-medium text-zinc-500">Fecha</label>
           <CampoFecha name="fecha" defaultValue={hoyTexto} max={hoyTexto} required />
         </div>
+        {modo === "CARGO" && (
+          <div>
+            <label className="block text-xs font-medium text-zinc-500">Fecha límite de pago (opcional)</label>
+            <CampoFecha name="fecha_limite" />
+          </div>
+        )}
         <div>
           <label className="block text-xs font-medium text-zinc-500">Notas</label>
           <input type="text" name="notas" placeholder="Ej. pedido / contenedor" className={claseCampo} />

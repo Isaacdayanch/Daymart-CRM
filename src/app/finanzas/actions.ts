@@ -4,17 +4,20 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { texto } from "@/lib/form-helpers";
 import type { Moneda, TipoCuentaFinanciera, TipoMovimientoFinanciero } from "@/lib/tipos";
+import { recalcularCostoEntradasContenedor } from "@/app/contenedores/[id]/actions";
 
 export async function agregarCuenta(formData: FormData) {
   const supabase = await createClient();
   const nombre = texto(formData, "nombre");
   const tipo = (texto(formData, "tipo") as TipoCuentaFinanciera) ?? "OTRO";
+  const cuentaTransito = formData.get("cuenta_transito") === "true";
   if (!nombre) return;
 
-  await supabase.from("cuentas_financieras").insert({ nombre, tipo });
+  await supabase.from("cuentas_financieras").insert({ nombre, tipo, cuenta_transito: cuentaTransito });
 
   revalidatePath("/finanzas");
   revalidatePath("/finanzas/cuentas");
+  revalidatePath("/finanzas/balance");
 }
 
 export async function eliminarCuenta(cuentaId: string) {
@@ -214,13 +217,19 @@ export async function registrarPagoFactura(formData: FormData) {
 
   const facturaId = formData.get("factura_id") as string;
   const cuentaId = formData.get("cuenta_id") as string;
+  const cuentaDestinoId = texto(formData, "cuenta_destino_id");
   const categoriaId = texto(formData, "categoria_id");
   const monto = Number(formData.get("monto"));
   const notas = texto(formData, "notas");
+  const tieneComision = formData.get("tiene_comision") === "true" && !!cuentaDestinoId;
+  const montoNeto = Number(formData.get("monto_neto"));
 
   if (!facturaId) return { error: "Elige qué factura vas a pagar." };
   if (!cuentaId) return { error: "Elige de qué cuenta sale el pago." };
   if (!Number.isFinite(monto) || monto <= 0) return { error: "El monto no es válido." };
+  if (tieneComision && (!Number.isFinite(montoNeto) || montoNeto <= 0 || montoNeto >= monto)) {
+    return { error: "El monto neto debe ser mayor a cero y menor al monto que se debitó." };
+  }
 
   const { data: factura } = await supabase
     .from("facturas_pendientes")
@@ -235,17 +244,20 @@ export async function registrarPagoFactura(formData: FormData) {
       ? new Date(`${fechaCampo}T12:00:00`).toISOString()
       : new Date().toISOString();
 
+  const notasMovimiento = notas ?? (factura.folio ? `Factura ${factura.folio}` : null);
+
   const { data: movimiento, error: errorMovimiento } = await supabase
     .from("movimientos_financieros")
     .insert({
-      tipo: "SALIDA",
+      tipo: cuentaDestinoId ? "TRANSFERENCIA" : "SALIDA",
       cuenta_id: cuentaId,
-      categoria_id: categoriaId,
-      monto,
+      cuenta_destino_id: cuentaDestinoId || null,
+      categoria_id: cuentaDestinoId ? null : categoriaId,
+      monto: tieneComision ? montoNeto : monto,
       moneda: factura.moneda,
       fecha,
       contraparte: factura.proveedor,
-      notas: notas ?? (factura.folio ? `Factura ${factura.folio}` : null),
+      notas: notasMovimiento,
       referencia_tipo: "FACTURA",
       referencia_id: facturaId,
     })
@@ -253,6 +265,30 @@ export async function registrarPagoFactura(formData: FormData) {
     .single();
   if (errorMovimiento || !movimiento) {
     return { error: errorMovimiento?.message ?? "No se pudo guardar el pago." };
+  }
+
+  if (tieneComision) {
+    const { data: categoriaComisiones } = await supabase
+      .from("categorias_financieras")
+      .select("id")
+      .eq("nombre", "Comisiones")
+      .maybeSingle<{ id: string }>();
+
+    const { error: errorComision } = await supabase.from("movimientos_financieros").insert({
+      tipo: "SALIDA",
+      cuenta_id: cuentaId,
+      categoria_id: categoriaComisiones?.id ?? null,
+      monto: monto - montoNeto,
+      moneda: factura.moneda,
+      fecha,
+      contraparte: factura.proveedor,
+      notas: "Comisión de la transacción",
+      referencia_tipo: "COMISION",
+      referencia_id: movimiento.id,
+    });
+    if (errorComision) {
+      return { error: `Se guardó el movimiento, pero la comisión no se pudo guardar: ${errorComision.message}` };
+    }
   }
 
   const { error: errorPago } = await supabase.from("pagos_factura").insert({
@@ -545,15 +581,118 @@ export async function agregarCargoProveedor(formData: FormData) {
       ? new Date(`${fechaCampo}T12:00:00`).toISOString()
       : new Date().toISOString();
 
+  const fechaLimiteCampo = formData.get("fecha_limite");
+  const fechaLimite =
+    typeof fechaLimiteCampo === "string" && fechaLimiteCampo
+      ? new Date(`${fechaLimiteCampo}T12:00:00`).toISOString()
+      : null;
+
   await supabase.from("movimientos_deuda_proveedor").insert({
     proveedor,
     tipo: "CARGO",
     monto,
     moneda,
     fecha,
+    fecha_limite: fechaLimite,
     notas: texto(formData, "notas"),
   });
   revalidatePath("/finanzas/proveedores");
+}
+
+/** Un envío desde una cuenta puente (ej. Jaim T., el encargado financiero
+ * que le manda dinero a China) hacia un proveedor específico — el peso y
+ * el dólar pueden no coincidir 1 a 1 porque hay una conversión + comisión
+ * de por medio en esa transacción exacta. En una sola captura: sale la
+ * salida real de la cuenta puente en Finanzas, se abona a la deuda de ese
+ * proveedor (en SU moneda), y si se liga a un contenedor, se registra el
+ * abono de mercancía con el tipo de cambio efectivo de esa transacción
+ * (incluye la comisión — mismo principio que flete/aduana: es costo
+ * directo de traer la mercancía). */
+export async function registrarEnvioCuentaPuente(formData: FormData) {
+  const supabase = await createClient();
+
+  const cuentaId = formData.get("cuenta_id") as string;
+  const proveedor = texto(formData, "proveedor");
+  const montoPesos = Number(formData.get("monto_pesos"));
+  const comisionPesos = Number(formData.get("comision_pesos")) || 0;
+  const montoAbono = Number(formData.get("monto_abono"));
+  const monedaProveedor = (formData.get("moneda_proveedor") as Moneda) || "USD";
+  const montoDolares = formData.get("monto_dolares") ? Number(formData.get("monto_dolares")) : null;
+  const contenedorId = texto(formData, "contenedor_id");
+  const notas = texto(formData, "notas");
+
+  if (!cuentaId) return { error: "Elige de qué cuenta puente sale." };
+  if (!proveedor) return { error: "Elige a qué proveedor va." };
+  if (!Number.isFinite(montoPesos) || montoPesos <= 0) return { error: "El monto en pesos no es válido." };
+  if (!Number.isFinite(montoAbono) || montoAbono <= 0) return { error: "El monto a abonar no es válido." };
+
+  const totalPesos = montoPesos + comisionPesos;
+  const fechaCampo = formData.get("fecha");
+  const fecha =
+    typeof fechaCampo === "string" && fechaCampo
+      ? new Date(`${fechaCampo}T12:00:00`).toISOString()
+      : new Date().toISOString();
+
+  const { data: categoria } = await supabase
+    .from("categorias_financieras")
+    .select("id")
+    .eq("nombre", "Pago proveedor")
+    .maybeSingle<{ id: string }>();
+
+  const { data: movimiento, error: errorMovimiento } = await supabase
+    .from("movimientos_financieros")
+    .insert({
+      tipo: "SALIDA",
+      cuenta_id: cuentaId,
+      categoria_id: categoria?.id ?? null,
+      monto: totalPesos,
+      moneda: "MXN",
+      fecha,
+      contraparte: proveedor,
+      notas,
+    })
+    .select("id")
+    .single();
+  if (errorMovimiento || !movimiento) {
+    return { error: errorMovimiento?.message ?? "No se pudo guardar el movimiento." };
+  }
+
+  const { error: errorAbono } = await supabase.from("movimientos_deuda_proveedor").insert({
+    proveedor,
+    tipo: "ABONO",
+    monto: montoAbono,
+    moneda: monedaProveedor,
+    fecha,
+    notas,
+    cuenta_id: cuentaId,
+    movimiento_financiero_id: movimiento.id,
+  });
+  if (errorAbono) {
+    return { error: `Se guardó en Finanzas, pero no se pudo ligar al proveedor: ${errorAbono.message}` };
+  }
+
+  if (contenedorId && montoDolares && montoDolares > 0) {
+    const { error: errorPago } = await supabase.from("pagos_mercancia").insert({
+      contenedor_id: contenedorId,
+      monto_dolares: montoDolares,
+      tipo_cambio: totalPesos / montoDolares,
+      pagado: true,
+      fecha,
+      notas,
+      cuenta_id: cuentaId,
+      movimiento_financiero_id: movimiento.id,
+    });
+    if (errorPago) {
+      return { error: `Se guardó el abono, pero no se pudo ligar al contenedor: ${errorPago.message}` };
+    }
+    await recalcularCostoEntradasContenedor(contenedorId);
+    revalidatePath(`/contenedores/${contenedorId}`);
+  }
+
+  revalidatePath("/finanzas/proveedores");
+  revalidatePath("/finanzas");
+  revalidatePath("/finanzas/movimientos");
+  return { error: null };
 }
 
 /** Un abono a un proveedor sí es dinero real: genera su salida en Finanzas
