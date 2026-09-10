@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { CampoFecha } from "@/components/campo-fecha";
+import { CampoMonto } from "@/components/campo-monto";
 import { Selector } from "@/components/selector";
 import type { CategoriaFinanciera, CuentaFinanciera, TipoMovimientoFinanciero } from "@/lib/tipos";
 import { registrarMovimiento } from "./actions";
@@ -111,14 +112,7 @@ export function FormularioMovimiento({
             <label className="block text-xs font-medium text-zinc-500">
               {tipo !== "ENTRADA" && tieneComision ? "Monto que se debitó" : "Monto"}
             </label>
-            <input
-              type="number"
-              name="monto"
-              min={0.01}
-              step="0.01"
-              required
-              className={claseCampo}
-            />
+            <CampoMonto name="monto" required className={claseCampo} />
           </div>
           <div>
             <label className="block text-xs font-medium text-zinc-500">Moneda</label>
@@ -171,14 +165,7 @@ export function FormularioMovimiento({
                     ? "Monto neto que realmente llegó a la cuenta destino"
                     : "Monto neto que realmente le llegó al destinatario"}
                 </label>
-                <input
-                  type="number"
-                  name="monto_neto"
-                  min={0.01}
-                  step="0.01"
-                  required
-                  className={claseCampo}
-                />
+                <CampoMonto name="monto_neto" required className={claseCampo} />
                 <p className="mt-1 text-[11px] text-zinc-400">
                   La diferencia entre el monto que se debitó y este monto neto se guarda sola como gasto en
                   &ldquo;Comisiones&rdquo;.

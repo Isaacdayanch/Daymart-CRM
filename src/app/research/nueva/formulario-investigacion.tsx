@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { CampoMonto } from "@/components/campo-monto";
 import { costoEnvioMercadoLibre } from "@/lib/costos-envio-ml";
 import { costoEstimadoPorPiezaResearch, margenEstimadoResearch } from "@/lib/calculos-research";
 import { formatoPesos } from "@/lib/formato";
@@ -195,11 +196,9 @@ export function FormularioInvestigacion() {
         <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
           <div>
             <label className="block text-xs font-medium text-zinc-500">Precio de compra (USD)</label>
-            <input
-              type="number"
-              step="0.01"
+            <CampoMonto
               value={precioCompraDolares}
-              onChange={(e) => setPrecioCompraDolares(e.target.value)}
+              onChange={setPrecioCompraDolares}
               name="precio_compra_dolares"
               className={claseCampo}
             />
@@ -227,11 +226,9 @@ export function FormularioInvestigacion() {
           </div>
           <div>
             <label className="block text-xs font-medium text-zinc-500">$/CBM estimado (pesos)</label>
-            <input
-              type="number"
-              step="0.01"
+            <CampoMonto
               value={costoPorCbmPesos}
-              onChange={(e) => setCostoPorCbmPesos(e.target.value)}
+              onChange={setCostoPorCbmPesos}
               name="costo_por_cbm_pesos"
               className={claseCampo}
             />
@@ -274,11 +271,9 @@ export function FormularioInvestigacion() {
         <div className="mt-3 grid grid-cols-2 gap-3">
           <div>
             <label className="block text-xs font-medium text-zinc-500">Precio de venta</label>
-            <input
-              type="number"
-              step="0.01"
+            <CampoMonto
               value={precioVenta}
-              onChange={(e) => setPrecioVenta(e.target.value)}
+              onChange={setPrecioVenta}
               name="precio_venta"
               className={claseCampo}
             />
@@ -364,11 +359,9 @@ export function FormularioInvestigacion() {
           <label className="block text-xs font-medium text-zinc-500">
             Costo de envío propuesto (pesos) — editable
           </label>
-          <input
-            type="number"
-            step="0.01"
+          <CampoMonto
             value={costoEnvioManual ?? costoEnvioSugerido.toFixed(2)}
-            onChange={(e) => setCostoEnvioManual(e.target.value)}
+            onChange={setCostoEnvioManual}
             className={claseCampo}
           />
         </div>

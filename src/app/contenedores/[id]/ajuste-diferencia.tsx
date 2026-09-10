@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CampoNumero } from "@/components/campo-numero";
+import { CampoMonto } from "@/components/campo-monto";
 import { formatoPesos } from "@/lib/formato";
 import { actualizarAjusteDiferencia, calcularPendienteChinaPagado } from "./actions";
 
@@ -94,7 +94,7 @@ export function AjusteDiferencia({
       )}
       <div>
         <label className="block text-xs font-medium text-zinc-500">Monto (pesos)</label>
-        <CampoNumero
+        <CampoMonto
           key={montoSugerido ?? "manual"}
           name="ajuste_diferencia_pesos"
           defaultValue={montoSugerido ?? (ajusteActual !== 0 ? ajusteActual : Math.round(diferenciaBruta))}

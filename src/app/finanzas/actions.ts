@@ -313,13 +313,17 @@ export async function registrarPagoFactura(formData: FormData) {
 /** Corrige un pago de factura ya guardado — actualiza el pago Y su
  * movimiento de Finanzas ligado en la misma operación (nunca dos registros
  * sueltos que "deberían" coincidir). */
+/** El pago puede quedar "sin cuenta" (cuentaId vacío) para un pago que ya
+ * había pasado antes de usar el sistema — se guarda el abono a la factura
+ * para llevar el saldo, pero sin tocar ninguna cuenta real de Finanzas.
+ * Por eso este update tiene que poder crear, actualizar o borrar el
+ * movimiento_financiero ligado según cómo cambie la cuenta. */
 export async function actualizarPagoFactura(pagoId: string, formData: FormData) {
   const supabase = await createClient();
 
   const monto = Number(formData.get("monto"));
-  const cuentaId = formData.get("cuenta_id") as string;
+  const cuentaId = texto(formData, "cuenta_id");
   const notas = texto(formData, "notas");
-  if (!cuentaId) return { error: "Elige de qué cuenta sale el pago." };
   if (!Number.isFinite(monto) || monto <= 0) return { error: "El monto no es válido." };
 
   const fechaCampo = formData.get("fecha");
@@ -330,12 +334,20 @@ export async function actualizarPagoFactura(pagoId: string, formData: FormData) 
 
   const { data: pago } = await supabase
     .from("pagos_factura")
-    .select("movimiento_financiero_id")
+    .select("movimiento_financiero_id, factura_id")
     .eq("id", pagoId)
-    .maybeSingle<{ movimiento_financiero_id: string | null }>();
+    .maybeSingle<{ movimiento_financiero_id: string | null; factura_id: string }>();
   if (!pago) return { error: "No se encontró el pago." };
 
-  if (pago.movimiento_financiero_id) {
+  if (pago.movimiento_financiero_id && !cuentaId) {
+    // Tenía cuenta y ahora se está marcando como "sin cuenta": se borra el
+    // movimiento real de Finanzas, ya no debe contar contra ninguna cuenta.
+    const { error: errorBorrar } = await supabase
+      .from("movimientos_financieros")
+      .delete()
+      .eq("id", pago.movimiento_financiero_id);
+    if (errorBorrar) return { error: errorBorrar.message };
+  } else if (pago.movimiento_financiero_id && cuentaId) {
     const { error: errorMovimiento } = await supabase
       .from("movimientos_financieros")
       .update({ monto, cuenta_id: cuentaId, fecha, notas })
@@ -343,9 +355,41 @@ export async function actualizarPagoFactura(pagoId: string, formData: FormData) 
     if (errorMovimiento) return { error: errorMovimiento.message };
   }
 
+  let movimientoFinancieroId = pago.movimiento_financiero_id;
+  if (!pago.movimiento_financiero_id && cuentaId) {
+    // No tenía cuenta y ahora sí se le está asignando una: se crea el
+    // movimiento real de Finanzas por primera vez.
+    const { data: factura } = await supabase
+      .from("facturas_pendientes")
+      .select("proveedor, folio, moneda")
+      .eq("id", pago.factura_id)
+      .maybeSingle<{ proveedor: string; folio: string | null; moneda: Moneda }>();
+    if (!factura) return { error: "No se encontró la factura." };
+
+    const { data: movimiento, error: errorMovimiento } = await supabase
+      .from("movimientos_financieros")
+      .insert({
+        tipo: "SALIDA",
+        cuenta_id: cuentaId,
+        monto,
+        moneda: factura.moneda,
+        fecha,
+        contraparte: factura.proveedor,
+        notas: notas ?? (factura.folio ? `Factura ${factura.folio}` : null),
+        referencia_tipo: "FACTURA",
+        referencia_id: pago.factura_id,
+      })
+      .select("id")
+      .single();
+    if (errorMovimiento || !movimiento) return { error: errorMovimiento?.message ?? "No se pudo guardar el pago." };
+    movimientoFinancieroId = movimiento.id;
+  } else if (!cuentaId) {
+    movimientoFinancieroId = null;
+  }
+
   const { error: errorPago } = await supabase
     .from("pagos_factura")
-    .update({ monto, cuenta_id: cuentaId, fecha, notas })
+    .update({ monto, cuenta_id: cuentaId || null, movimiento_financiero_id: movimientoFinancieroId, fecha, notas })
     .eq("id", pagoId);
   if (errorPago) return { error: errorPago.message };
 

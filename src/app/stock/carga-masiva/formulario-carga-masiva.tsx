@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { CampoMonto } from "@/components/campo-monto";
 import { CampoSugerencias } from "@/components/campo-sugerencias";
 import { Selector } from "@/components/selector";
 import type { Bodega, Producto } from "@/lib/tipos";
@@ -105,13 +106,9 @@ export function FormularioCargaMasiva({ bodegas, catalogo }: { bodegas: Bodega[]
           </div>
           <div>
             <label className="block text-xs font-medium text-zinc-500">Costo por pieza (pesos, opcional)</label>
-            <input
-              type="number"
-              min={0}
-              step="0.01"
+            <CampoMonto
               value={costo}
-              onChange={(e) => setCosto(e.target.value)}
-              placeholder="0"
+              onChange={setCosto}
               className="mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500"
             />
           </div>

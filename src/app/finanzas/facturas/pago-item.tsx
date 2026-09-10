@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { CampoFecha } from "@/components/campo-fecha";
+import { CampoMonto } from "@/components/campo-monto";
 import { Selector } from "@/components/selector";
 import { formatoDolares, formatoFecha, formatoPesos } from "@/lib/formato";
 import type { CuentaFinanciera, Moneda, PagoFactura } from "@/lib/tipos";
@@ -57,7 +58,7 @@ export function PagoItem({ pago, moneda, cuentas }: { pago: PagoFactura; moneda:
     >
       <div>
         <label className="block text-xs font-medium text-zinc-500">Monto</label>
-        <input type="number" name="monto" min={0.01} step="0.01" defaultValue={pago.monto} required className={claseCampo} />
+        <CampoMonto name="monto" defaultValue={pago.monto} required className={claseCampo} />
       </div>
       <div>
         <label className="block text-xs font-medium text-zinc-500">Fecha</label>
@@ -66,7 +67,14 @@ export function PagoItem({ pago, moneda, cuentas }: { pago: PagoFactura; moneda:
       <div>
         <label className="block text-xs font-medium text-zinc-500">Cuenta</label>
         <div className="mt-1">
-          <Selector name="cuenta_id" defaultValue={pago.cuenta_id} opciones={cuentas.map((c) => ({ value: c.id, label: c.nombre }))} />
+          <Selector
+            name="cuenta_id"
+            defaultValue={pago.cuenta_id ?? ""}
+            opciones={[
+              { value: "", label: "Sin cuenta (fue antes de usar el sistema)" },
+              ...cuentas.map((c) => ({ value: c.id, label: c.nombre })),
+            ]}
+          />
         </div>
       </div>
       <button type="submit" disabled={enviando} className="h-fit rounded-lg bg-zinc-900 px-3 py-2 text-xs font-medium text-white hover:bg-zinc-700 disabled:opacity-50">

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { CampoNumero } from "@/components/campo-numero";
+import { CampoMonto } from "@/components/campo-monto";
 import { CampoFecha } from "@/components/campo-fecha";
 import { Selector } from "@/components/selector";
 
@@ -29,7 +30,7 @@ export function AbonosMercancia() {
           <div key={fila.id} className="grid grid-cols-[1fr_1fr_1fr_auto_auto] items-end gap-2">
             <div>
               <label className="block text-xs font-medium text-zinc-500">Monto USD</label>
-              <CampoNumero name="abono_monto" className={claseCampo} />
+              <CampoMonto name="abono_monto" className={claseCampo} />
             </div>
             <div>
               <label className="block text-xs font-medium text-zinc-500">Tipo de cambio</label>

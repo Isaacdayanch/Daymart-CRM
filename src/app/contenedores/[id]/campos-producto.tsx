@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { CampoNumero } from "@/components/campo-numero";
+import { CampoMonto } from "@/components/campo-monto";
 import { CampoImagen } from "@/components/campo-imagen";
 import { CampoSugerencias } from "@/components/campo-sugerencias";
 import { skuSugerido } from "@/lib/calculos";
@@ -162,7 +163,7 @@ export function CamposProducto({
         </div>
         <div>
           <label className="block text-xs font-medium text-zinc-500">Precio USD</label>
-          <CampoNumero name="precio_dolares" defaultValue={inicial?.precio_dolares} className={claseCampo} />
+          <CampoMonto name="precio_dolares" defaultValue={inicial?.precio_dolares} className={claseCampo} />
         </div>
         <div>
           <label className="block text-xs font-medium text-zinc-500">Piezas por caja</label>

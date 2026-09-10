@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { CampoFecha } from "@/components/campo-fecha";
+import { CampoMonto } from "@/components/campo-monto";
 import { Selector } from "@/components/selector";
 import { formatoDolares, formatoPesos } from "@/lib/formato";
 import type { CategoriaFinanciera, CuentaFinanciera } from "@/lib/tipos";
@@ -93,7 +94,7 @@ export function RegistrarPago({
           <label className="block text-xs font-medium text-zinc-500">
             {modo === "PUENTE" && tieneComision ? "Monto que se debitó" : "Monto que pagas"}
           </label>
-          <input type="number" name="monto" min={0.01} step="0.01" required className={claseCampo} />
+          <CampoMonto name="monto" required className={claseCampo} />
         </div>
         <div>
           <label className="block text-xs font-medium text-zinc-500">Cuenta de origen</label>
@@ -151,7 +152,7 @@ export function RegistrarPago({
             {tieneComision && (
               <div className="mt-3">
                 <label className="block text-xs font-medium text-zinc-500">Monto neto que de verdad se abonó ahí</label>
-                <input type="number" name="monto_neto" min={0.01} step="0.01" required className={claseCampo} />
+                <CampoMonto name="monto_neto" required className={claseCampo} />
                 <p className="mt-1 text-[11px] text-zinc-400">
                   La diferencia se guarda sola como gasto en &ldquo;Comisiones&rdquo;.
                 </p>

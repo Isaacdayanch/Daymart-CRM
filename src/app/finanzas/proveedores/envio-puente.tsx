@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { CampoFecha } from "@/components/campo-fecha";
+import { CampoMonto } from "@/components/campo-monto";
 import { CampoSugerencias } from "@/components/campo-sugerencias";
 import { Selector } from "@/components/selector";
 import type { CuentaFinanciera, Moneda } from "@/lib/tipos";
@@ -74,11 +75,11 @@ export function EnvioPuente({
         </div>
         <div>
           <label className="block text-xs font-medium text-zinc-500">Pesos que salen (sin comisión)</label>
-          <input type="number" name="monto_pesos" min={0.01} step="0.01" required className={claseCampo} />
+          <CampoMonto name="monto_pesos" required className={claseCampo} />
         </div>
         <div>
           <label className="block text-xs font-medium text-zinc-500">Comisión de esta transacción (pesos)</label>
-          <input type="number" name="comision_pesos" min={0} step="0.01" defaultValue={0} className={claseCampo} />
+          <CampoMonto name="comision_pesos" defaultValue={0} className={claseCampo} />
         </div>
         <div>
           <label className="block text-xs font-medium text-zinc-500">Moneda de la deuda de ese proveedor</label>
@@ -97,12 +98,12 @@ export function EnvioPuente({
           <label className="block text-xs font-medium text-zinc-500">
             Monto a abonarle a su deuda (en {monedaProveedor === "USD" ? "dólares" : "pesos"})
           </label>
-          <input type="number" name="monto_abono" min={0.01} step="0.01" required className={claseCampo} />
+          <CampoMonto name="monto_abono" required className={claseCampo} />
         </div>
         {monedaProveedor === "USD" && (
           <div>
             <label className="block text-xs font-medium text-zinc-500">Dólares que le llegaron (si va a un contenedor)</label>
-            <input type="number" name="monto_dolares" min={0.01} step="0.01" className={claseCampo} />
+            <CampoMonto name="monto_dolares" className={claseCampo} />
           </div>
         )}
         <div>

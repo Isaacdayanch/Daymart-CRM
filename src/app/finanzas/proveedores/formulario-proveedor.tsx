@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { CampoFecha } from "@/components/campo-fecha";
+import { CampoMonto } from "@/components/campo-monto";
 import { CampoSugerencias } from "@/components/campo-sugerencias";
 import { Selector } from "@/components/selector";
 import type { CuentaFinanciera } from "@/lib/tipos";
@@ -83,7 +84,7 @@ export function FormularioProveedor({ proveedores, cuentas }: { proveedores: str
         )}
         <div>
           <label className="block text-xs font-medium text-zinc-500">Monto</label>
-          <input type="number" name="monto" min={0.01} step="0.01" required className={claseCampo} />
+          <CampoMonto name="monto" required className={claseCampo} />
         </div>
         <div>
           <label className="block text-xs font-medium text-zinc-500">Moneda</label>

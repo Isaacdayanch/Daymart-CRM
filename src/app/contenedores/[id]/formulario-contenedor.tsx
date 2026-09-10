@@ -1,6 +1,7 @@
 "use client";
 
 import { CampoNumero } from "@/components/campo-numero";
+import { CampoMonto } from "@/components/campo-monto";
 import { Selector } from "@/components/selector";
 import { CamposProveedorPrincipal } from "@/components/campos-proveedor-principal";
 import { ESTADOS_CONTENEDOR, type Contenedor } from "@/lib/tipos";
@@ -69,7 +70,7 @@ export function FormularioContenedor({
             <label htmlFor="flete_dolares" className="block text-xs font-medium text-zinc-500">
               Monto USD
             </label>
-            <CampoNumero
+            <CampoMonto
               id="flete_dolares"
               name="flete_dolares"
               defaultValue={contenedor.flete_dolares}
@@ -94,7 +95,7 @@ export function FormularioContenedor({
         <label htmlFor="aduana_pesos" className="block text-sm font-medium text-zinc-700">
           Aduana (pesos)
         </label>
-        <CampoNumero
+        <CampoMonto
           id="aduana_pesos"
           name="aduana_pesos"
           defaultValue={contenedor.aduana_pesos}
@@ -117,7 +118,7 @@ export function FormularioContenedor({
             <label htmlFor="otros_gastos_dolares" className="block text-xs font-medium text-zinc-500">
               Monto USD
             </label>
-            <CampoNumero
+            <CampoMonto
               id="otros_gastos_dolares"
               name="otros_gastos_dolares"
               defaultValue={contenedor.otros_gastos_dolares}

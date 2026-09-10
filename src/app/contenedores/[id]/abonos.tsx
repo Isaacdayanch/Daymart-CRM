@@ -1,6 +1,7 @@
 "use client";
 
 import { CampoNumero } from "@/components/campo-numero";
+import { CampoMonto } from "@/components/campo-monto";
 import { CampoFecha } from "@/components/campo-fecha";
 import { Selector } from "@/components/selector";
 import { tipoCambioPromedioMercancia } from "@/lib/calculos";
@@ -41,7 +42,7 @@ export function Abonos({ contenedorId, abonos }: { contenedorId: string; abonos:
       >
         <div>
           <label className="block text-xs font-medium text-zinc-500">Monto USD</label>
-          <CampoNumero name="monto_dolares" className={claseCampo} />
+          <CampoMonto name="monto_dolares" className={claseCampo} />
         </div>
         <div>
           <label className="block text-xs font-medium text-zinc-500">Tipo de cambio</label>

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { crearContenedor } from "./actions";
 import { AbonosMercancia } from "./abonos-mercancia";
 import { CampoNumero } from "@/components/campo-numero";
+import { CampoMonto } from "@/components/campo-monto";
 import { Selector } from "@/components/selector";
 import { CamposProveedorPrincipal } from "@/components/campos-proveedor-principal";
 import { createClient } from "@/lib/supabase/server";
@@ -99,7 +100,7 @@ export default async function NuevoContenedor({
                 <label htmlFor="flete_dolares" className="block text-xs font-medium text-zinc-500">
                   Monto USD
                 </label>
-                <CampoNumero id="flete_dolares" name="flete_dolares" className={claseCampo} />
+                <CampoMonto id="flete_dolares" name="flete_dolares" className={claseCampo} />
               </div>
               <div>
                 <label htmlFor="flete_tipo_cambio" className="block text-xs font-medium text-zinc-500">
@@ -114,7 +115,7 @@ export default async function NuevoContenedor({
             <label htmlFor="aduana_pesos" className="block text-sm font-medium text-zinc-700">
               Aduana (pesos)
             </label>
-            <CampoNumero id="aduana_pesos" name="aduana_pesos" className={`${claseCampo} w-40`} />
+            <CampoMonto id="aduana_pesos" name="aduana_pesos" className={`${claseCampo} w-40`} />
           </div>
 
           <details className="border-t border-zinc-100 pt-4">
@@ -129,7 +130,7 @@ export default async function NuevoContenedor({
                 <label htmlFor="otros_gastos_dolares" className="block text-xs font-medium text-zinc-500">
                   Monto USD
                 </label>
-                <CampoNumero id="otros_gastos_dolares" name="otros_gastos_dolares" className={claseCampo} />
+                <CampoMonto id="otros_gastos_dolares" name="otros_gastos_dolares" className={claseCampo} />
               </div>
               <div>
                 <label htmlFor="otros_gastos_tipo_cambio" className="block text-xs font-medium text-zinc-500">

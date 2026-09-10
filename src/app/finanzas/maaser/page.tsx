@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { CampoFecha } from "@/components/campo-fecha";
+import { CampoMonto } from "@/components/campo-monto";
 import { formatoPesos, formatoFecha } from "@/lib/formato";
 import { totalGanancias, totalPagadoMaaser } from "@/lib/calculos-maaser";
 import type { CategoriaFinanciera, MovimientoFinanciero, RegistroGanancia } from "@/lib/tipos";
@@ -65,7 +66,7 @@ export default async function MaaserFinanzas() {
         <form action={agregarRegistroGanancia} className="mt-4 grid gap-3 sm:grid-cols-[1fr_1fr_2fr_auto] sm:items-end">
           <div>
             <label className="block text-xs font-medium text-zinc-500">Ganancia neta (pesos)</label>
-            <input type="number" name="monto" min={0.01} step="0.01" required className={claseCampo} />
+            <CampoMonto name="monto" required className={claseCampo} />
           </div>
           <div>
             <label className="block text-xs font-medium text-zinc-500">Fecha</label>

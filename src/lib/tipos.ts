@@ -300,7 +300,8 @@ export interface PagoFactura {
   factura_id: string;
   monto: number;
   fecha: string;
-  cuenta_id: string;
+  /** null = pago de antes de usar el sistema, no toca ninguna cuenta real. */
+  cuenta_id: string | null;
   categoria_id: string | null;
   notas: string | null;
   movimiento_financiero_id: string | null;
