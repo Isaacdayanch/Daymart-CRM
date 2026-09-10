@@ -160,16 +160,22 @@ export async function registrarMovimiento(formData: FormData) {
 /** Da de alta una factura pendiente de pagar (proveedor de México, etc.)
  * — todavía no genera ningún movimiento, es solo el recordatorio de que se
  * debe. El movimiento real se crea hasta que se marca "Pagada". */
+/** Da de alta una factura pendiente — no toca préstamos, deuda de
+ * proveedores ni crédito de China, es un mundo aparte (cuentas por pagar
+ * sueltas). Regresa el error real si algo falla, en vez de fallar en
+ * silencio (antes esta acción no avisaba nada si el monto venía inválido). */
 export async function agregarFactura(formData: FormData) {
   const supabase = await createClient();
 
+  const folio = texto(formData, "folio");
   const proveedor = texto(formData, "proveedor");
   const concepto = texto(formData, "concepto");
   const monto = Number(formData.get("monto"));
   const moneda = (formData.get("moneda") as Moneda) || "MXN";
   const notas = texto(formData, "notas");
 
-  if (!proveedor || !Number.isFinite(monto) || monto <= 0) return;
+  if (!proveedor) return { error: "Falta el proveedor." };
+  if (!Number.isFinite(monto) || monto <= 0) return { error: "El monto no es válido." };
 
   const fechaEmisionCampo = formData.get("fecha_emision");
   const fechaEmision =
@@ -183,7 +189,8 @@ export async function agregarFactura(formData: FormData) {
       ? new Date(`${fechaLimiteCampo}T12:00:00`).toISOString()
       : null;
 
-  await supabase.from("facturas_pendientes").insert({
+  const { error } = await supabase.from("facturas_pendientes").insert({
+    folio,
     proveedor,
     concepto,
     monto,
@@ -192,29 +199,37 @@ export async function agregarFactura(formData: FormData) {
     fecha_limite: fechaLimite,
     notas,
   });
+  if (error) return { error: error.message };
 
   revalidatePath("/finanzas/facturas");
+  return { error: null };
 }
 
-/** Marca una factura como pagada y genera su salida en Finanzas en la
- * misma operación — la factura guarda el id del movimiento que generó, así
- * que nunca hay dos registros sueltos que "deberían" coincidir. Si falla
- * guardar el movimiento, la factura se queda como pendiente. */
-export async function marcarFacturaPagada(facturaId: string, formData: FormData) {
+/** Registra un abono a una factura (puede ser parcial) — genera su salida
+ * en Finanzas en la misma operación, igual que el resto del sistema. La
+ * factura nunca guarda "pagada" a mano: su saldo se calcula sumando todos
+ * sus pagos (src/lib/calculos-facturas.ts). */
+export async function registrarPagoFactura(formData: FormData) {
   const supabase = await createClient();
+
+  const facturaId = formData.get("factura_id") as string;
+  const cuentaId = formData.get("cuenta_id") as string;
+  const categoriaId = texto(formData, "categoria_id");
+  const monto = Number(formData.get("monto"));
+  const notas = texto(formData, "notas");
+
+  if (!facturaId) return { error: "Elige qué factura vas a pagar." };
+  if (!cuentaId) return { error: "Elige de qué cuenta sale el pago." };
+  if (!Number.isFinite(monto) || monto <= 0) return { error: "El monto no es válido." };
 
   const { data: factura } = await supabase
     .from("facturas_pendientes")
-    .select("*")
+    .select("proveedor, folio, moneda")
     .eq("id", facturaId)
-    .maybeSingle<{ proveedor: string; concepto: string | null; monto: number; moneda: Moneda }>();
+    .maybeSingle<{ proveedor: string; folio: string | null; moneda: Moneda }>();
   if (!factura) return { error: "No se encontró la factura." };
 
-  const cuentaId = formData.get("cuenta_id") as string;
-  const categoriaId = texto(formData, "categoria_id");
-  if (!cuentaId) return { error: "Elige de qué cuenta sale el pago." };
-
-  const fechaCampo = formData.get("fecha_pago");
+  const fechaCampo = formData.get("fecha");
   const fecha =
     typeof fechaCampo === "string" && fechaCampo
       ? new Date(`${fechaCampo}T12:00:00`).toISOString()
@@ -226,27 +241,31 @@ export async function marcarFacturaPagada(facturaId: string, formData: FormData)
       tipo: "SALIDA",
       cuenta_id: cuentaId,
       categoria_id: categoriaId,
-      monto: factura.monto,
+      monto,
       moneda: factura.moneda,
       fecha,
       contraparte: factura.proveedor,
-      notas: factura.concepto,
+      notas: notas ?? (factura.folio ? `Factura ${factura.folio}` : null),
       referencia_tipo: "FACTURA",
       referencia_id: facturaId,
     })
     .select("id")
     .single();
-
   if (errorMovimiento || !movimiento) {
     return { error: errorMovimiento?.message ?? "No se pudo guardar el pago." };
   }
 
-  const { error: errorFactura } = await supabase
-    .from("facturas_pendientes")
-    .update({ pagada: true, movimiento_financiero_id: movimiento.id })
-    .eq("id", facturaId);
-  if (errorFactura) {
-    return { error: `El pago se guardó en Finanzas, pero no se pudo marcar la factura: ${errorFactura.message}` };
+  const { error: errorPago } = await supabase.from("pagos_factura").insert({
+    factura_id: facturaId,
+    monto,
+    fecha,
+    cuenta_id: cuentaId,
+    categoria_id: categoriaId,
+    notas,
+    movimiento_financiero_id: movimiento.id,
+  });
+  if (errorPago) {
+    return { error: `Se guardó en Finanzas, pero no se pudo ligar el pago a la factura: ${errorPago.message}` };
   }
 
   revalidatePath("/finanzas/facturas");
@@ -255,12 +274,83 @@ export async function marcarFacturaPagada(facturaId: string, formData: FormData)
   return { error: null };
 }
 
-/** Solo se puede borrar una factura que todavía no se ha pagado — una ya
- * pagada tiene un movimiento real ligado y borrarla dejaría ese gasto sin
- * explicación. */
+/** Corrige un pago de factura ya guardado — actualiza el pago Y su
+ * movimiento de Finanzas ligado en la misma operación (nunca dos registros
+ * sueltos que "deberían" coincidir). */
+export async function actualizarPagoFactura(pagoId: string, formData: FormData) {
+  const supabase = await createClient();
+
+  const monto = Number(formData.get("monto"));
+  const cuentaId = formData.get("cuenta_id") as string;
+  const notas = texto(formData, "notas");
+  if (!cuentaId) return { error: "Elige de qué cuenta sale el pago." };
+  if (!Number.isFinite(monto) || monto <= 0) return { error: "El monto no es válido." };
+
+  const fechaCampo = formData.get("fecha");
+  const fecha =
+    typeof fechaCampo === "string" && fechaCampo
+      ? new Date(`${fechaCampo}T12:00:00`).toISOString()
+      : new Date().toISOString();
+
+  const { data: pago } = await supabase
+    .from("pagos_factura")
+    .select("movimiento_financiero_id")
+    .eq("id", pagoId)
+    .maybeSingle<{ movimiento_financiero_id: string | null }>();
+  if (!pago) return { error: "No se encontró el pago." };
+
+  if (pago.movimiento_financiero_id) {
+    const { error: errorMovimiento } = await supabase
+      .from("movimientos_financieros")
+      .update({ monto, cuenta_id: cuentaId, fecha, notas })
+      .eq("id", pago.movimiento_financiero_id);
+    if (errorMovimiento) return { error: errorMovimiento.message };
+  }
+
+  const { error: errorPago } = await supabase
+    .from("pagos_factura")
+    .update({ monto, cuenta_id: cuentaId, fecha, notas })
+    .eq("id", pagoId);
+  if (errorPago) return { error: errorPago.message };
+
+  revalidatePath("/finanzas/facturas");
+  revalidatePath("/finanzas");
+  revalidatePath("/finanzas/movimientos");
+  return { error: null };
+}
+
+/** Borra un pago de factura junto con su movimiento de Finanzas ligado. */
+export async function eliminarPagoFactura(pagoId: string) {
+  const supabase = await createClient();
+
+  const { data: pago } = await supabase
+    .from("pagos_factura")
+    .select("movimiento_financiero_id")
+    .eq("id", pagoId)
+    .maybeSingle<{ movimiento_financiero_id: string | null }>();
+
+  if (pago?.movimiento_financiero_id) {
+    await supabase.from("movimientos_financieros").delete().eq("id", pago.movimiento_financiero_id);
+  }
+  await supabase.from("pagos_factura").delete().eq("id", pagoId);
+
+  revalidatePath("/finanzas/facturas");
+  revalidatePath("/finanzas");
+  revalidatePath("/finanzas/movimientos");
+}
+
+/** Solo se puede borrar una factura que todavía no tiene ningún pago
+ * registrado — una con pagos ya tiene movimientos reales de Finanzas
+ * ligados y borrarla los dejaría sin explicación. */
 export async function eliminarFactura(facturaId: string) {
   const supabase = await createClient();
-  await supabase.from("facturas_pendientes").delete().eq("id", facturaId).eq("pagada", false);
+  const { count } = await supabase
+    .from("pagos_factura")
+    .select("id", { count: "exact", head: true })
+    .eq("factura_id", facturaId);
+  if (count && count > 0) return;
+
+  await supabase.from("facturas_pendientes").delete().eq("id", facturaId);
   revalidatePath("/finanzas/facturas");
 }
 

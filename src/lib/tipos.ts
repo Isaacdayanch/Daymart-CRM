@@ -273,6 +273,7 @@ export interface RegistroGanancia {
 
 export interface FacturaPendiente {
   id: string;
+  folio: string | null;
   proveedor: string;
   concepto: string | null;
   monto: number;
@@ -282,6 +283,18 @@ export interface FacturaPendiente {
   pagada: boolean;
   movimiento_financiero_id: string | null;
   notas: string | null;
+  creado_en: string;
+}
+
+export interface PagoFactura {
+  id: string;
+  factura_id: string;
+  monto: number;
+  fecha: string;
+  cuenta_id: string;
+  categoria_id: string | null;
+  notas: string | null;
+  movimiento_financiero_id: string | null;
   creado_en: string;
 }
 
