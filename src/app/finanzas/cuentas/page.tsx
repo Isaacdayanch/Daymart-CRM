@@ -1,9 +1,9 @@
 import { createClient } from "@/lib/supabase/server";
 import { saldosPorCuenta } from "@/lib/calculos-financieras";
 import { formatoPesos, formatoDolares, formatoFecha } from "@/lib/formato";
-import { Selector } from "@/components/selector";
 import type { CuentaFinanciera, MovimientoFinanciero } from "@/lib/tipos";
-import { agregarCuenta, eliminarCuenta } from "../actions";
+import { eliminarCuenta } from "../actions";
+import { FormularioCuenta } from "./formulario-cuenta";
 
 const TIPOS = [
   { value: "EFECTIVO", label: "Efectivo" },
@@ -34,34 +34,7 @@ export default async function CuentasFinanzas() {
           Caja, bancos, y más adelante cuentas como Mercado Pago — el saldo se calcula solo, nunca se
           escribe a mano.
         </p>
-        <form action={agregarCuenta} className="mt-4 flex flex-wrap items-end gap-2">
-          <div className="flex-1">
-            <label className="block text-xs font-medium text-zinc-500">Nombre</label>
-            <input
-              type="text"
-              name="nombre"
-              required
-              placeholder="Ej. Banco Santander"
-              className="mt-1 block w-full max-w-xs rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-zinc-500">Tipo</label>
-            <div className="mt-1">
-              <Selector name="tipo" defaultValue="BANCO" opciones={TIPOS} />
-            </div>
-          </div>
-          <label className="flex items-center gap-2 pb-2 text-xs font-medium text-zinc-600">
-            <input type="checkbox" name="cuenta_transito" value="true" className="h-4 w-4 rounded border-zinc-300" />
-            De tránsito (ej. Mercado Pago — no cuenta como saldo real)
-          </label>
-          <button
-            type="submit"
-            className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-700"
-          >
-            Agregar
-          </button>
-        </form>
+        <FormularioCuenta />
       </div>
 
       <div className="rounded-2xl border border-zinc-200 bg-white shadow-sm">

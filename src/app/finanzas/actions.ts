@@ -11,13 +11,17 @@ export async function agregarCuenta(formData: FormData) {
   const nombre = texto(formData, "nombre");
   const tipo = (texto(formData, "tipo") as TipoCuentaFinanciera) ?? "OTRO";
   const cuentaTransito = formData.get("cuenta_transito") === "true";
-  if (!nombre) return;
+  if (!nombre) return { error: "Falta el nombre de la cuenta." };
 
-  await supabase.from("cuentas_financieras").insert({ nombre, tipo, cuenta_transito: cuentaTransito });
+  const { error } = await supabase
+    .from("cuentas_financieras")
+    .insert({ nombre, tipo, cuenta_transito: cuentaTransito });
+  if (error) return { error: error.message };
 
   revalidatePath("/finanzas");
   revalidatePath("/finanzas/cuentas");
   revalidatePath("/finanzas/balance");
+  return { error: null };
 }
 
 export async function eliminarCuenta(cuentaId: string) {
@@ -617,7 +621,8 @@ export async function agregarCargoProveedor(formData: FormData) {
   const proveedor = texto(formData, "proveedor");
   const monto = Number(formData.get("monto"));
   const moneda = (formData.get("moneda") as Moneda) || "USD";
-  if (!proveedor || !Number.isFinite(monto) || monto <= 0) return;
+  if (!proveedor) return { error: "Falta el proveedor." };
+  if (!Number.isFinite(monto) || monto <= 0) return { error: "El monto no es válido." };
 
   const fechaCampo = formData.get("fecha");
   const fecha =
@@ -631,7 +636,7 @@ export async function agregarCargoProveedor(formData: FormData) {
       ? new Date(`${fechaLimiteCampo}T12:00:00`).toISOString()
       : null;
 
-  await supabase.from("movimientos_deuda_proveedor").insert({
+  const { error } = await supabase.from("movimientos_deuda_proveedor").insert({
     proveedor,
     tipo: "CARGO",
     monto,
@@ -640,7 +645,10 @@ export async function agregarCargoProveedor(formData: FormData) {
     fecha_limite: fechaLimite,
     notas: texto(formData, "notas"),
   });
+  if (error) return { error: error.message };
+
   revalidatePath("/finanzas/proveedores");
+  return { error: null };
 }
 
 /** Un envío desde una cuenta puente (ej. Jaim T., el encargado financiero

@@ -44,10 +44,14 @@ export function FormularioProveedor({ proveedores, cuentas }: { proveedores: str
           setEnviando(true);
           setError(null);
           if (modo === "CARGO") {
-            await agregarCargoProveedor(formData);
+            const resultadoCargo = await agregarCargoProveedor(formData);
             setEnviando(false);
-            setProveedor("");
-            router.refresh();
+            if (resultadoCargo?.error) {
+              setError(resultadoCargo.error);
+            } else {
+              setProveedor("");
+              router.refresh();
+            }
             return;
           }
           const resultado = await registrarAbonoProveedor(formData);
