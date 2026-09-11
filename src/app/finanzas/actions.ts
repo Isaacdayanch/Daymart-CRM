@@ -164,6 +164,112 @@ export async function registrarMovimiento(formData: FormData) {
   return { error: null };
 }
 
+/** Un movimiento está "ligado" cuando otra pantalla lo generó y guarda su
+ * propio dato en paralelo (un abono de mercancía, un abono a proveedor, un
+ * pago de factura) — editarlo aquí directo lo desincronizaría de ese otro
+ * registro (el mismo tipo de bug que ya se corrigió varias veces en este
+ * proyecto). Esos casos se editan desde su pantalla de origen; aquí solo
+ * se pueden editar/borrar los movimientos "sueltos" (ej. Sueldo, Nómina,
+ * cualquier "Agregar/Mandar dinero" o transferencia registrada directo en
+ * Movimientos). */
+async function movimientoEstaLigado(supabase: Awaited<ReturnType<typeof createClient>>, movimientoId: string) {
+  const [{ count: enMercancia }, { count: enDeudaProveedor }, { count: enFactura }] = await Promise.all([
+    supabase
+      .from("pagos_mercancia")
+      .select("id", { count: "exact", head: true })
+      .eq("movimiento_financiero_id", movimientoId),
+    supabase
+      .from("movimientos_deuda_proveedor")
+      .select("id", { count: "exact", head: true })
+      .eq("movimiento_financiero_id", movimientoId),
+    supabase
+      .from("pagos_factura")
+      .select("id", { count: "exact", head: true })
+      .eq("movimiento_financiero_id", movimientoId),
+  ]);
+  return Boolean(enMercancia || enDeudaProveedor || enFactura);
+}
+
+const MENSAJE_MOVIMIENTO_LIGADO =
+  "Este movimiento viene de un abono de contenedor, de proveedores o de una factura — edítalo desde esa pantalla para no desincronizar los datos.";
+
+/** Edita un movimiento "suelto" (sin dueño en otra pantalla) — ej. cuando
+ * Isaac saca un sueldo y luego quiere sumarle un complemento del mismo
+ * día, entra aquí y corrige el monto en vez de crear un movimiento aparte. */
+export async function actualizarMovimiento(movimientoId: string, formData: FormData) {
+  const supabase = await createClient();
+
+  if (await movimientoEstaLigado(supabase, movimientoId)) {
+    return { error: MENSAJE_MOVIMIENTO_LIGADO };
+  }
+
+  const { data: actual } = await supabase
+    .from("movimientos_financieros")
+    .select("tipo")
+    .eq("id", movimientoId)
+    .maybeSingle<{ tipo: TipoMovimientoFinanciero }>();
+  if (!actual) return { error: "No se encontró el movimiento." };
+
+  const cuentaId = formData.get("cuenta_id") as string;
+  const cuentaDestinoId = texto(formData, "cuenta_destino_id");
+  const categoriaId = texto(formData, "categoria_id");
+  const monto = Number(formData.get("monto"));
+  const contraparte = texto(formData, "contraparte");
+  const notas = texto(formData, "notas");
+
+  if (!cuentaId || !Number.isFinite(monto) || monto <= 0) {
+    return { error: "Falta la cuenta o el monto no es válido." };
+  }
+  if (actual.tipo === "TRANSFERENCIA" && (!cuentaDestinoId || cuentaDestinoId === cuentaId)) {
+    return { error: "Elige una cuenta destino distinta a la de origen." };
+  }
+
+  const fechaCampo = formData.get("fecha");
+  const fecha =
+    typeof fechaCampo === "string" && fechaCampo
+      ? new Date(`${fechaCampo}T12:00:00`).toISOString()
+      : new Date().toISOString();
+
+  const { error } = await supabase
+    .from("movimientos_financieros")
+    .update({
+      cuenta_id: cuentaId,
+      cuenta_destino_id: actual.tipo === "TRANSFERENCIA" ? cuentaDestinoId : null,
+      categoria_id: actual.tipo === "TRANSFERENCIA" ? null : categoriaId,
+      monto,
+      fecha,
+      contraparte,
+      notas,
+    })
+    .eq("id", movimientoId);
+  if (error) return { error: error.message };
+
+  revalidatePath("/finanzas");
+  revalidatePath("/finanzas/movimientos");
+  revalidatePath("/finanzas/balance");
+  revalidatePath("/finanzas/maaser");
+  revalidatePath("/");
+  return { error: null };
+}
+
+export async function eliminarMovimiento(movimientoId: string) {
+  const supabase = await createClient();
+
+  if (await movimientoEstaLigado(supabase, movimientoId)) {
+    return { error: MENSAJE_MOVIMIENTO_LIGADO };
+  }
+
+  const { error } = await supabase.from("movimientos_financieros").delete().eq("id", movimientoId);
+  if (error) return { error: error.message };
+
+  revalidatePath("/finanzas");
+  revalidatePath("/finanzas/movimientos");
+  revalidatePath("/finanzas/balance");
+  revalidatePath("/finanzas/maaser");
+  revalidatePath("/");
+  return { error: null };
+}
+
 /** Da de alta una factura pendiente de pagar (proveedor de México, etc.)
  * — todavía no genera ningún movimiento, es solo el recordatorio de que se
  * debe. El movimiento real se crea hasta que se marca "Pagada". */

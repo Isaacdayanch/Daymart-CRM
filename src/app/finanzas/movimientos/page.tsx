@@ -1,11 +1,18 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { formatoPesos, formatoDolares, formatoFecha } from "@/lib/formato";
 import type { CategoriaFinanciera, CuentaFinanciera, MovimientoFinanciero } from "@/lib/tipos";
+import { FilaMovimiento } from "./fila-movimiento";
 
 export default async function MovimientosFinanzas() {
   const supabase = await createClient();
-  const [{ data: movimientos }, { data: cuentas }, { data: categorias }] = await Promise.all([
+  const [
+    { data: movimientos },
+    { data: cuentas },
+    { data: categorias },
+    { data: pagosMercancia },
+    { data: movimientosDeuda },
+    { data: pagosFactura },
+  ] = await Promise.all([
     supabase
       .from("movimientos_financieros")
       .select("*")
@@ -14,11 +21,26 @@ export default async function MovimientosFinanzas() {
       .returns<MovimientoFinanciero[]>(),
     supabase.from("cuentas_financieras").select("*").returns<CuentaFinanciera[]>(),
     supabase.from("categorias_financieras").select("*").returns<CategoriaFinanciera[]>(),
+    supabase.from("pagos_mercancia").select("movimiento_financiero_id").not("movimiento_financiero_id", "is", null),
+    supabase
+      .from("movimientos_deuda_proveedor")
+      .select("movimiento_financiero_id")
+      .not("movimiento_financiero_id", "is", null),
+    supabase.from("pagos_factura").select("movimiento_financiero_id").not("movimiento_financiero_id", "is", null),
   ]);
 
   const listaMovimientos = movimientos ?? [];
   const cuentasPorId = new Map((cuentas ?? []).map((c) => [c.id, c.nombre]));
   const categoriasPorId = new Map((categorias ?? []).map((c) => [c.id, c.nombre]));
+
+  // Un movimiento "ligado" viene de otra pantalla (abono de contenedor,
+  // abono a proveedor, pago de factura) — se edita desde ahí, no aquí, para
+  // no desincronizar los dos registros del mismo dato.
+  const idsLigados = new Set(
+    [...(pagosMercancia ?? []), ...(movimientosDeuda ?? []), ...(pagosFactura ?? [])]
+      .map((r) => r.movimiento_financiero_id)
+      .filter((id): id is string => Boolean(id)),
+  );
 
   return (
     <div className="rounded-2xl border border-zinc-200 bg-white shadow-sm">
@@ -44,42 +66,21 @@ export default async function MovimientosFinanzas() {
                 <th className="px-6 py-2.5 font-medium">Categoría</th>
                 <th className="px-6 py-2.5 font-medium">Contraparte / notas</th>
                 <th className="px-6 py-2.5 font-medium text-right">Monto</th>
+                <th className="px-6 py-2.5 font-medium text-right"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-50">
               {listaMovimientos.map((m) => (
-                <tr key={m.id}>
-                  <td className="px-6 py-3 text-xs text-zinc-500">{formatoFecha(m.fecha)}</td>
-                  <td className="px-6 py-3">
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${
-                        m.tipo === "ENTRADA"
-                          ? "bg-emerald-50 text-emerald-700 ring-emerald-600/20"
-                          : m.tipo === "SALIDA"
-                            ? "bg-red-50 text-red-700 ring-red-600/20"
-                            : "bg-zinc-100 text-zinc-600 ring-zinc-500/20"
-                      }`}
-                    >
-                      {m.tipo === "ENTRADA" ? "Entrada" : m.tipo === "SALIDA" ? "Salida" : "Transferencia"}
-                    </span>
-                  </td>
-                  <td className="px-6 py-3 text-zinc-600">
-                    {cuentasPorId.get(m.cuenta_id) ?? "—"}
-                    {m.tipo === "TRANSFERENCIA" && ` → ${cuentasPorId.get(m.cuenta_destino_id ?? "") ?? "—"}`}
-                  </td>
-                  <td className="px-6 py-3 text-zinc-600">{categoriasPorId.get(m.categoria_id ?? "") ?? "—"}</td>
-                  <td className="px-6 py-3 text-xs text-zinc-500">
-                    {[m.contraparte, m.notas].filter(Boolean).join(" · ") || "—"}
-                  </td>
-                  <td
-                    className={`px-6 py-3 text-right font-semibold ${
-                      m.tipo === "ENTRADA" ? "text-emerald-600" : m.tipo === "SALIDA" ? "text-red-600" : "text-zinc-900"
-                    }`}
-                  >
-                    {m.tipo === "SALIDA" ? "-" : m.tipo === "ENTRADA" ? "+" : ""}
-                    {m.moneda === "USD" ? formatoDolares(m.monto) : formatoPesos(m.monto)}
-                  </td>
-                </tr>
+                <FilaMovimiento
+                  key={m.id}
+                  movimiento={m}
+                  cuentas={cuentas ?? []}
+                  categorias={categorias ?? []}
+                  cuentaNombre={cuentasPorId.get(m.cuenta_id) ?? "—"}
+                  cuentaDestinoNombre={cuentasPorId.get(m.cuenta_destino_id ?? "") ?? "—"}
+                  categoriaNombre={categoriasPorId.get(m.categoria_id ?? "") ?? "—"}
+                  bloqueado={idsLigados.has(m.id)}
+                />
               ))}
             </tbody>
           </table>
