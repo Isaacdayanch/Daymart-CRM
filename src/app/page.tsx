@@ -106,17 +106,23 @@ export default async function Dashboard() {
 
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
-            <p className="text-sm font-medium text-zinc-500">Valor de inventario</p>
-            {verDinero ? (
-              <p className="mt-2 text-3xl font-semibold text-zinc-900">{formatoPesos(valorInventario)}</p>
-            ) : (
-              <p className="mt-2 text-3xl font-semibold text-zinc-900">{productosPorReordenar}</p>
-            )}
-            <p className="mt-1 text-xs text-zinc-400">
-              {verDinero
-                ? `${productosPorReordenar} ${productosPorReordenar === 1 ? "producto sugerido" : "productos sugeridos"} para reordenar`
-                : `${productosPorReordenar === 1 ? "producto sugerido" : "productos sugeridos"} para reordenar`}
+            <p className="text-sm font-medium text-zinc-500">
+              {verDinero ? "Valor de inventario" : "Productos por reordenar"}
             </p>
+            {verDinero ? (
+              <>
+                <p className="mt-2 text-3xl font-semibold text-zinc-900">{formatoPesos(valorInventario)}</p>
+                <p className="mt-1 text-xs text-zinc-400">
+                  {productosPorReordenar} {productosPorReordenar === 1 ? "producto sugerido" : "productos sugeridos"}{" "}
+                  para reordenar
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="mt-2 text-3xl font-semibold text-zinc-900">{productosPorReordenar}</p>
+                <p className="mt-1 text-xs text-zinc-400">Revisa Stock para ver el detalle.</p>
+              </>
+            )}
           </div>
 
           {verDinero && (
