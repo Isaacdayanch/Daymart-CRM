@@ -8,6 +8,7 @@ import { Logo } from "@/components/logo";
 import type { Bodega, Contenedor, MovimientoStock, Producto } from "@/lib/tipos";
 import { EditarProductoGlobal } from "./editar-producto-global";
 import { AjustarCantidad } from "./ajustar-cantidad";
+import { EditarCostoManual } from "./editar-costo-manual";
 
 export default async function DetalleProducto({ params }: { params: Promise<{ sku: string }> }) {
   const { sku: skuCrudo } = await params;
@@ -215,6 +216,7 @@ export default async function DetalleProducto({ params }: { params: Promise<{ sk
                   <th className="px-6 py-2.5 font-medium">Tipo</th>
                   <th className="px-6 py-2.5 font-medium text-right">Cantidad</th>
                   <th className="px-6 py-2.5 font-medium">Origen / destino</th>
+                  {verDinero && <th className="px-6 py-2.5 font-medium text-right">Costo/pza</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-50">
@@ -247,6 +249,15 @@ export default async function DetalleProducto({ params }: { params: Promise<{ sk
                         [m.destino, m.referencia].filter(Boolean).join(" · ") || "—"
                       )}
                     </td>
+                    {verDinero && (
+                      <td className="px-6 py-3 text-right">
+                        {!m.contenedor_id && (m.tipo === "ENTRADA" || m.tipo === "AJUSTE") ? (
+                          <EditarCostoManual movimientoId={m.id} costoActual={m.costo_unitario_pesos} />
+                        ) : (
+                          <span className="text-xs text-zinc-400">{formatoPesos(m.costo_unitario_pesos)}</span>
+                        )}
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>

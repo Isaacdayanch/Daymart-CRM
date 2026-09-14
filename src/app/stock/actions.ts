@@ -415,6 +415,37 @@ export async function actualizarProductoGlobal(skuActual: string, formData: Form
   return { error: errorImagen ? `La foto no se pudo subir: ${errorImagen}` : null, skuNuevo };
 }
 
+/** Corrige el costo de una entrada cargada a mano (ej. "Agregar stock
+ * manual" con el costo en blanco/mal). Solo aplica a movimientos SIN
+ * contenedor — los que sí vienen de un contenedor se corrigen desde ahí
+ * con "Recalcular costo →", para no pisar ese mecanismo. */
+export async function actualizarCostoManual(movimientoId: string, formData: FormData) {
+  const supabase = await createClient();
+  const costo = Number(formData.get("costo_unitario_pesos"));
+  if (!Number.isFinite(costo) || costo < 0) return { error: "El costo no es válido." };
+
+  const { data: movimiento } = await supabase
+    .from("movimientos_stock")
+    .select("sku, contenedor_id")
+    .eq("id", movimientoId)
+    .maybeSingle<{ sku: string; contenedor_id: string | null }>();
+  if (!movimiento) return { error: "No se encontró el movimiento." };
+  if (movimiento.contenedor_id) {
+    return { error: "Esta entrada viene de un contenedor — corrígela desde ahí con \"Recalcular costo →\"." };
+  }
+
+  const { error } = await supabase
+    .from("movimientos_stock")
+    .update({ costo_unitario_pesos: costo })
+    .eq("id", movimientoId);
+  if (error) return { error: error.message };
+
+  revalidatePath("/stock");
+  revalidatePath("/stock/movimientos");
+  revalidatePath(`/stock/producto/${encodeURIComponent(movimiento.sku)}`);
+  return { error: null };
+}
+
 export async function actualizarDiasEspera(formData: FormData) {
   const supabase = await createClient();
   const diasEspera = Number(formData.get("dias_espera")) || 60;
