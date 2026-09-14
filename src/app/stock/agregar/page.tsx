@@ -18,9 +18,10 @@ export default async function AgregarStockManual() {
   return (
     <div className="max-w-xl space-y-4">
       <p className="text-sm text-zinc-500">
-        Para cargar de una vez el inventario que ya tienes en bodega (por ejemplo, de contenedores
-        anteriores al 10 que no vas a recrear completos en el sistema). Si el SKU ya existe, se suma a lo
-        que ya había.
+        Para cualquier mercancía que entra a bodega SIN pasar por un contenedor: si compras algo aquí en
+        México, pones el costo directo en pesos. También sirve para cargar de una vez el inventario que ya
+        tenías (ej. contenedores anteriores al 10 que no vas a recrear completos en el sistema). Si el SKU
+        ya existe, se suma a lo que ya había.
       </p>
       <FormularioStockManual bodegas={bodegas ?? []} catalogo={catalogo} />
     </div>
