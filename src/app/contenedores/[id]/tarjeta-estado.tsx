@@ -54,9 +54,10 @@ export function TarjetaEstado({
       router.push(`/contenedores/${contenedorId}/recibir`);
       return;
     }
-    // Con crédito del proveedor, la fecha de salida importa: de ahí corren
-    // los días — se confirma antes de guardar (hoy por defecto, editable).
-    if (nuevoEstado === "EN_TRANSITO" && creditoDias && creditoDias > 0) {
+    // La fecha de salida de China siempre se confirma (hoy por defecto,
+    // editable): es la fecha real del embarque y, si hay crédito del
+    // proveedor, de ahí corren los días.
+    if (nuevoEstado === "EN_TRANSITO") {
       setPidiendoSalida(true);
       return;
     }
@@ -64,6 +65,7 @@ export function TarjetaEstado({
   }
 
   if (pidiendoSalida) {
+    const tieneCredito = Boolean(creditoDias && creditoDias > 0);
     const limite = new Date(`${fechaSalida}T12:00:00`);
     limite.setDate(limite.getDate() + (creditoDias ?? 0));
     return (
@@ -72,10 +74,17 @@ export function TarjetaEstado({
         <div className="mt-1.5">
           <CampoFecha defaultValue={fechaSalida} onChange={setFechaSalida} max={hoyTexto} />
         </div>
-        <p className="mt-1.5 text-[11px] text-amber-800">
-          Con {creditoDias} días de crédito, el pago vence el{" "}
-          <span className="font-medium">{limite.toLocaleDateString("es-MX", { day: "numeric", month: "short", year: "numeric" })}</span>.
-        </p>
+        {tieneCredito ? (
+          <p className="mt-1.5 text-[11px] text-amber-800">
+            Con {creditoDias} días de crédito, el pago vence el{" "}
+            <span className="font-medium">{limite.toLocaleDateString("es-MX", { day: "numeric", month: "short", year: "numeric" })}</span>.
+          </p>
+        ) : (
+          <p className="mt-1.5 text-[11px] text-amber-800">
+            Sin crédito del proveedor. Si este contenedor viene a crédito, cancela y primero ponle los &ldquo;Días de
+            crédito&rdquo; en Editar (abajo de Proveedor principal).
+          </p>
+        )}
         <div className="mt-2 flex gap-2">
           <button
             type="button"

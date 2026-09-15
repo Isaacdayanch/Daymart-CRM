@@ -13,11 +13,29 @@ import { nombreArchivoSeguro, numero, texto } from "@/lib/form-helpers";
 import { completarColumnasOmitidas, insertarMovimientosStock } from "@/lib/movimientos-stock";
 import { valorPendienteChinaPagado } from "@/lib/calculos-pendientes";
 import { formatoPesos } from "@/lib/formato";
-import type { Contenedor, EstadoContenedor, PagoMercancia, PendienteChina, Producto, TipoDocumento } from "@/lib/tipos";
+import {
+  ESTADOS_CONTENEDOR,
+  type Contenedor,
+  type EstadoContenedor,
+  type PagoMercancia,
+  type PendienteChina,
+  type Producto,
+  type TipoDocumento,
+} from "@/lib/tipos";
+
+const ORDEN_ESTADOS = ESTADOS_CONTENEDOR.map((e) => e.valor);
 
 /** Si el estado cambió, guarda el momento en el historial del contenedor.
  * Por defecto usa la fecha/hora actual, pero se puede pasar una fecha
- * explícita (ej. al recibir un contenedor histórico con fecha pasada). */
+ * explícita (ej. al recibir un contenedor histórico con fecha pasada).
+ *
+ * Si el contenedor REGRESA a un estado anterior (Isaac se equivocó, ej.
+ * marcó "En tránsito" y lo devolvió a "Configurándose"), las fechas de los
+ * estados posteriores se borran — no eran reales — y si se regresa antes
+ * de "En tránsito" también se deshace el crédito del proveedor (fecha
+ * límite y cargo en Finanzas), porque los días todavía no corren. Si
+ * avanza a un estado que ya tenía una fecha vieja de un intento anterior,
+ * esa fecha se reemplaza por la nueva. */
 export async function registrarHistorialSiCambia(
   supabase: Awaited<ReturnType<typeof createClient>>,
   contenedorId: string,
@@ -28,13 +46,83 @@ export async function registrarHistorialSiCambia(
     .from("contenedores")
     .select("estado")
     .eq("id", contenedorId)
-    .single();
+    .single<{ estado: EstadoContenedor }>();
 
-  if (actual?.estado !== estadoNuevo) {
+  const idxNuevo = ORDEN_ESTADOS.indexOf(estadoNuevo);
+  const idxActual = actual ? ORDEN_ESTADOS.indexOf(actual.estado) : -1;
+  const posteriores = ORDEN_ESTADOS.slice(idxNuevo + 1);
+
+  if (actual?.estado === estadoNuevo) {
+    // Sin cambio de estado: solo limpia fechas "del futuro" que hayan quedado
+    // de un intento anterior (ej. un "En tránsito" que se regresó).
+    if (posteriores.length) {
+      await supabase
+        .from("historial_estados_contenedor")
+        .delete()
+        .eq("contenedor_id", contenedorId)
+        .in("estado", posteriores);
+    }
+    return;
+  }
+
+  if (idxNuevo < idxActual) {
     await supabase
       .from("historial_estados_contenedor")
-      .insert({ contenedor_id: contenedorId, estado: estadoNuevo, ...(fecha ? { fecha } : {}) });
+      .delete()
+      .eq("contenedor_id", contenedorId)
+      .in("estado", posteriores);
+    // Se conserva la fecha original del estado al que se regresa, si la tenía.
+    const { count } = await supabase
+      .from("historial_estados_contenedor")
+      .select("id", { count: "exact", head: true })
+      .eq("contenedor_id", contenedorId)
+      .eq("estado", estadoNuevo);
+    if (!count) {
+      await supabase
+        .from("historial_estados_contenedor")
+        .insert({ contenedor_id: contenedorId, estado: estadoNuevo, ...(fecha ? { fecha } : {}) });
+    }
+    if (idxNuevo < ORDEN_ESTADOS.indexOf("EN_TRANSITO")) {
+      await revertirCreditoProveedor(supabase, contenedorId);
+    }
+    return;
   }
+
+  await supabase
+    .from("historial_estados_contenedor")
+    .delete()
+    .eq("contenedor_id", contenedorId)
+    .in("estado", [estadoNuevo, ...posteriores]);
+  await supabase
+    .from("historial_estados_contenedor")
+    .insert({ contenedor_id: contenedorId, estado: estadoNuevo, ...(fecha ? { fecha } : {}) });
+}
+
+/** Deshace lo que aplicarCreditoProveedor generó: quita la fecha límite de
+ * los abonos pendientes y borra sus cargos en Finanzas → Proveedores. Se
+ * usa cuando el contenedor se regresa a antes de "En tránsito". */
+async function revertirCreditoProveedor(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  contenedorId: string,
+) {
+  const { data: pendientes } = await supabase
+    .from("pagos_mercancia")
+    .select("id, cargo_deuda_id")
+    .eq("contenedor_id", contenedorId)
+    .eq("pagado", false)
+    .returns<{ id: string; cargo_deuda_id: string | null }[]>();
+
+  for (const abono of pendientes ?? []) {
+    if (abono.cargo_deuda_id) {
+      await supabase.from("movimientos_deuda_proveedor").delete().eq("id", abono.cargo_deuda_id);
+    }
+    await supabase
+      .from("pagos_mercancia")
+      .update({ fecha_limite: null, cargo_deuda_id: null })
+      .eq("id", abono.id);
+  }
+  revalidatePath("/finanzas/proveedores");
+  revalidatePath("/finanzas");
 }
 
 /** Crédito del proveedor: a cada abono que siga "Pendiente" le pone su
