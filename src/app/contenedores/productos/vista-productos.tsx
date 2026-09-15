@@ -28,8 +28,8 @@ export function VistaProductos({ grupos, verDinero }: { grupos: Grupo[]; verDine
   if (totalProductos === 0) {
     return (
       <div className="rounded-xl border border-dashed border-zinc-300 bg-white p-12 text-center">
-        <p className="text-base font-medium text-zinc-900">No hay productos en camino</p>
-        <p className="mt-1 text-sm text-zinc-500">Los productos de los contenedores que todavía no llegan a bodega se ven aquí.</p>
+        <p className="text-base font-medium text-zinc-900">No hay productos que mostrar</p>
+        <p className="mt-1 text-sm text-zinc-500">Aquí se ven todos los productos de tus contenedores, del más nuevo al más viejo.</p>
       </div>
     );
   }

@@ -8,17 +8,17 @@ import { SelectorVistaContenedores } from "../selector-vista";
 import type { Contenedor, PagoMercancia, Producto } from "@/lib/tipos";
 import { VistaProductos } from "./vista-productos";
 
-/** Todo lo que viene en camino, visto por PRODUCTO (no por contenedor):
- * la misma vista "de un guamazo" que Isaac tenía en su hoja de Sheets. Por
- * defecto solo contenedores que todavía no llegan a bodega; con ?todos=1
- * también los recibidos. */
+/** Todos los contenedores vistos por PRODUCTO (no por contenedor), del más
+ * nuevo al más viejo: la misma vista "de un guamazo" que Isaac tenía en su
+ * hoja de Sheets. Con ?encamino=1 se filtra a solo lo que todavía no llega
+ * a bodega. */
 export default async function ProductosEnCamino({
   searchParams,
 }: {
-  searchParams: Promise<{ todos?: string }>;
+  searchParams: Promise<{ encamino?: string }>;
 }) {
-  const { todos } = await searchParams;
-  const incluirRecibidos = todos === "1";
+  const { encamino } = await searchParams;
+  const soloEnCamino = encamino === "1";
   const supabase = await createClient();
   const perfil = await obtenerPerfilActual();
   const verDinero = perfil?.rol !== "operadora";
@@ -34,7 +34,7 @@ export default async function ProductosEnCamino({
     supabase.from("pagos_mercancia").select("*").returns<PagoMercancia[]>(),
   ]);
 
-  const visibles = (contenedores ?? []).filter((c) => incluirRecibidos || c.estado !== "RECIBIDO_BODEGA");
+  const visibles = (contenedores ?? []).filter((c) => !soloEnCamino || c.estado !== "RECIBIDO_BODEGA");
 
   const grupos = visibles.map((contenedor) => {
     const suyos = (productos ?? []).filter((p) => p.contenedor_id === contenedor.id);
@@ -63,10 +63,10 @@ export default async function ProductosEnCamino({
             <SelectorVistaContenedores actual="productos" />
           </div>
           <Link
-            href={incluirRecibidos ? "/contenedores/productos" : "/contenedores/productos?todos=1"}
+            href={soloEnCamino ? "/contenedores/productos" : "/contenedores/productos?encamino=1"}
             className="text-xs font-medium text-zinc-500 hover:text-zinc-900"
           >
-            {incluirRecibidos ? "Ver solo lo que viene en camino" : "Incluir contenedores ya recibidos"}
+            {soloEnCamino ? "Ver todos los contenedores" : "Ver solo lo que viene en camino"}
           </Link>
         </div>
 
