@@ -9,7 +9,7 @@ import {
 } from "@/lib/calculos";
 import { reconciliacionContenedor } from "@/lib/calculos-stock";
 import { obtenerSugerenciasCatalogo } from "@/lib/catalogo-proveedores";
-import { formatoPesos } from "@/lib/formato";
+import { formatoFecha, formatoPesos } from "@/lib/formato";
 import { obtenerPerfilActual } from "@/lib/perfil";
 import { Logo } from "@/components/logo";
 import { MenuMas } from "../../menu-mas";
@@ -148,6 +148,7 @@ export default async function DetalleContenedor({
             contenedorId={contenedor.id}
             estado={contenedor.estado}
             stockGeneradoEn={contenedor.stock_generado_en}
+            creditoDias={contenedor.credito_dias}
             soloLectura={!verDinero}
           />
           <div className="rounded-xl border border-zinc-200 bg-white p-4">
@@ -167,6 +168,40 @@ export default async function DetalleContenedor({
             </div>
           )}
         </div>
+
+        {verDinero && contenedor.credito_dias && contenedor.credito_dias > 0 && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <p className="text-xs text-amber-800">Crédito del proveedor</p>
+                <p className="mt-1 text-sm font-semibold text-amber-900">{contenedor.credito_dias} días desde que sale de China</p>
+              </div>
+              <div>
+                <p className="text-xs text-amber-800">Pendiente de pagar</p>
+                <p className="mt-1 text-sm font-semibold text-amber-900">
+                  ${listaAbonos.filter((a) => !a.pagado).reduce((s, a) => s + a.monto_dolares, 0).toLocaleString("es-MX")} USD
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-amber-800">Vence</p>
+                <p className="mt-1 text-sm font-semibold text-amber-900">
+                  {(() => {
+                    const pendienteConFecha = listaAbonos.find((a) => !a.pagado && a.fecha_limite);
+                    if (pendienteConFecha?.fecha_limite) return formatoFecha(pendienteConFecha.fecha_limite);
+                    return listaAbonos.some((a) => !a.pagado)
+                      ? "se calcula al marcar “En tránsito”"
+                      : "nada pendiente";
+                  })()}
+                </p>
+              </div>
+            </div>
+            <p className="mt-2 text-[11px] text-amber-800">
+              Registra el saldo a crédito como un abono &ldquo;Pendiente&rdquo; con un tipo de cambio estimado — así el
+              costo por pieza ya sale completo desde hoy. Al pagarlo desde Finanzas (cuenta puente), se reemplaza por el
+              tipo de cambio real.
+            </p>
+          </div>
+        )}
 
         {verDinero && contenedor.stock_generado_en && (
           <div className="rounded-xl border border-zinc-200 bg-white p-4">

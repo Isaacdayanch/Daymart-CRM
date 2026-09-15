@@ -21,6 +21,7 @@ export async function crearContenedor(formData: FormData) {
       otros_gastos_tipo_cambio: numero(formData, "otros_gastos_tipo_cambio"),
       fabrica_principal: texto(formData, "fabrica_principal"),
       proveedor_principal: texto(formData, "proveedor_principal"),
+      credito_dias: numero(formData, "credito_dias") || null,
     })
     .select("id")
     .single();

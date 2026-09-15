@@ -6,6 +6,7 @@ import { CampoFecha } from "@/components/campo-fecha";
 import { CampoMonto } from "@/components/campo-monto";
 import { CampoSugerencias } from "@/components/campo-sugerencias";
 import { Selector } from "@/components/selector";
+import { formatoFecha } from "@/lib/formato";
 import type { CuentaFinanciera, Moneda } from "@/lib/tipos";
 import { registrarEnvioCuentaPuente } from "../actions";
 
@@ -15,24 +16,58 @@ const claseCampo =
 interface ContenedorOpcion {
   id: string;
   numero: number;
+  proveedor: string | null;
+}
+
+export interface AbonoPendienteOpcion {
+  id: string;
+  contenedor_id: string;
+  monto_dolares: number;
+  fecha_limite: string | null;
 }
 
 export function EnvioPuente({
   cuentas,
   proveedores,
   contenedores,
+  abonosPendientes,
 }: {
   cuentas: CuentaFinanciera[];
   proveedores: string[];
   contenedores: ContenedorOpcion[];
+  /** Abonos "Pendiente" (crédito del proveedor) por contenedor — al elegir
+   * uno, el pago se le aplica en vez de crear un abono nuevo. */
+  abonosPendientes: AbonoPendienteOpcion[];
 }) {
   const router = useRouter();
   const [proveedor, setProveedor] = useState("");
   const [monedaProveedor, setMonedaProveedor] = useState<Moneda>("USD");
+  const [contenedorId, setContenedorId] = useState("");
+  const [abonoPendienteId, setAbonoPendienteId] = useState("");
+  const [montoDolares, setMontoDolares] = useState("");
+  const [montoAbono, setMontoAbono] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
   const [version, setVersion] = useState(0);
   const hoyTexto = new Date().toISOString().slice(0, 10);
+
+  const pendientesDelContenedor = abonosPendientes.filter((a) => a.contenedor_id === contenedorId);
+
+  function alElegirContenedor(id: string) {
+    setContenedorId(id);
+    setAbonoPendienteId("");
+    const contenedor = contenedores.find((c) => c.id === id);
+    if (contenedor?.proveedor && !proveedor) setProveedor(contenedor.proveedor);
+  }
+
+  function alElegirAbono(id: string) {
+    setAbonoPendienteId(id);
+    const abono = abonosPendientes.find((a) => a.id === id);
+    if (abono) {
+      setMontoDolares(String(abono.monto_dolares));
+      if (monedaProveedor === "USD") setMontoAbono(String(abono.monto_dolares));
+    }
+  }
 
   return (
     <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
@@ -48,11 +83,17 @@ export function EnvioPuente({
           setEnviando(true);
           setError(null);
           formData.set("moneda_proveedor", monedaProveedor);
+          formData.set("contenedor_id", contenedorId);
+          formData.set("abono_pendiente_id", abonoPendienteId);
           const resultado = await registrarEnvioCuentaPuente(formData);
           setEnviando(false);
           if (resultado?.error) setError(resultado.error);
           else {
             setProveedor("");
+            setContenedorId("");
+            setAbonoPendienteId("");
+            setMontoDolares("");
+            setMontoAbono("");
             setVersion((v) => v + 1);
             router.refresh();
           }
@@ -70,16 +111,48 @@ export function EnvioPuente({
           </div>
         </div>
         <div>
+          <label className="block text-xs font-medium text-zinc-500">Contenedor (opcional)</label>
+          <div className="mt-1">
+            <Selector
+              defaultValue=""
+              onChange={alElegirContenedor}
+              opciones={[
+                { value: "", label: "Sin contenedor todavía" },
+                ...contenedores.map((c) => ({ value: c.id, label: `Contenedor ${c.numero}` })),
+              ]}
+            />
+          </div>
+        </div>
+        {pendientesDelContenedor.length > 0 && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 sm:col-span-2">
+            <label className="block text-xs font-medium text-amber-900">
+              Este contenedor tiene crédito pendiente — ¿a qué abono aplica este pago?
+            </label>
+            <div className="mt-1">
+              <Selector
+                key={contenedorId}
+                defaultValue=""
+                onChange={alElegirAbono}
+                opciones={[
+                  { value: "", label: "Es un abono nuevo (no aplica a los pendientes)" },
+                  ...pendientesDelContenedor.map((a) => ({
+                    value: a.id,
+                    label: `Pendiente de $${a.monto_dolares.toLocaleString("es-MX")} USD${
+                      a.fecha_limite ? ` — vence ${formatoFecha(a.fecha_limite)}` : ""
+                    }`,
+                  })),
+                ]}
+              />
+            </div>
+            <p className="mt-1 text-[11px] text-amber-800">
+              Al aplicarlo, ese abono pasa a Pagado con el tipo de cambio real de esta transacción y el costo por
+              pieza se recalcula solo.
+            </p>
+          </div>
+        )}
+        <div>
           <label className="block text-xs font-medium text-zinc-500">Proveedor destino</label>
           <CampoSugerencias name="proveedor" value={proveedor} onChange={setProveedor} sugerencias={proveedores} required />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-zinc-500">Pesos que salen (sin comisión)</label>
-          <CampoMonto name="monto_pesos" required className={claseCampo} />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-zinc-500">Comisión de esta transacción (pesos)</label>
-          <CampoMonto name="comision_pesos" defaultValue={0} className={claseCampo} />
         </div>
         <div>
           <label className="block text-xs font-medium text-zinc-500">Moneda de la deuda de ese proveedor</label>
@@ -95,30 +168,25 @@ export function EnvioPuente({
           </div>
         </div>
         <div>
+          <label className="block text-xs font-medium text-zinc-500">Pesos que salen (sin comisión)</label>
+          <CampoMonto name="monto_pesos" required className={claseCampo} />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-zinc-500">Comisión de esta transacción (pesos)</label>
+          <CampoMonto name="comision_pesos" defaultValue={0} className={claseCampo} />
+        </div>
+        <div>
           <label className="block text-xs font-medium text-zinc-500">
             Monto a abonarle a su deuda (en {monedaProveedor === "USD" ? "dólares" : "pesos"})
           </label>
-          <CampoMonto name="monto_abono" required className={claseCampo} />
+          <CampoMonto name="monto_abono" value={montoAbono} onChange={setMontoAbono} required className={claseCampo} />
         </div>
         {monedaProveedor === "USD" && (
           <div>
             <label className="block text-xs font-medium text-zinc-500">Dólares que le llegaron (si va a un contenedor)</label>
-            <CampoMonto name="monto_dolares" className={claseCampo} />
+            <CampoMonto name="monto_dolares" value={montoDolares} onChange={setMontoDolares} className={claseCampo} />
           </div>
         )}
-        <div>
-          <label className="block text-xs font-medium text-zinc-500">Contenedor (opcional)</label>
-          <div className="mt-1">
-            <Selector
-              name="contenedor_id"
-              defaultValue=""
-              opciones={[
-                { value: "", label: "Sin contenedor todavía" },
-                ...contenedores.map((c) => ({ value: c.id, label: `Contenedor ${c.numero}` })),
-              ]}
-            />
-          </div>
-        </div>
         <div>
           <label className="block text-xs font-medium text-zinc-500">Fecha</label>
           <CampoFecha name="fecha" defaultValue={hoyTexto} max={hoyTexto} required />

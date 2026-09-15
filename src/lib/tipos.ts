@@ -36,6 +36,9 @@ export interface Contenedor {
   proveedor_principal: string | null;
   ajuste_diferencia_pesos: number;
   ajuste_diferencia_nota: string | null;
+  /** Días de crédito que da el proveedor, contados desde que el
+   * contenedor pasa a "En tránsito". null = sin crédito. */
+  credito_dias: number | null;
   eliminado_en: string | null;
   stock_generado_en: string | null;
   creado_en: string;
@@ -85,6 +88,11 @@ export interface PagoMercancia {
   notas: string | null;
   cuenta_id: string | null;
   movimiento_financiero_id: string | null;
+  /** Solo para abonos "Pendiente" con crédito: fecha de salida de China +
+   * credito_dias del contenedor. Editable a mano. */
+  fecha_limite: string | null;
+  /** Cargo que este abono pendiente generó en Finanzas → Proveedores. */
+  cargo_deuda_id: string | null;
   creado_en: string;
 }
 

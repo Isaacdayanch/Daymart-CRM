@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { CampoFecha } from "@/components/campo-fecha";
 import { ESTADOS_CONTENEDOR, type EstadoContenedor } from "@/lib/tipos";
 import { ESTILO_ESTADO } from "@/lib/formato";
 import { cambiarEstado } from "./actions";
@@ -10,15 +11,23 @@ export function TarjetaEstado({
   contenedorId,
   estado,
   stockGeneradoEn,
+  creditoDias = null,
   soloLectura = false,
 }: {
   contenedorId: string;
   estado: EstadoContenedor;
   stockGeneradoEn: string | null;
+  /** Si el proveedor dio crédito, al pasar a "En tránsito" se pregunta la
+   * fecha exacta de salida — de ahí corren los días de crédito. */
+  creditoDias?: number | null;
   soloLectura?: boolean;
 }) {
   const router = useRouter();
   const [abierto, setAbierto] = useState(false);
+  const [pidiendoSalida, setPidiendoSalida] = useState(false);
+  const hoyTexto = new Date().toISOString().slice(0, 10);
+  const [fechaSalida, setFechaSalida] = useState(hoyTexto);
+  const [guardando, setGuardando] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const etiqueta = ESTADOS_CONTENEDOR.find((e) => e.valor === estado)?.etiqueta ?? estado;
 
@@ -45,7 +54,49 @@ export function TarjetaEstado({
       router.push(`/contenedores/${contenedorId}/recibir`);
       return;
     }
+    // Con crédito del proveedor, la fecha de salida importa: de ahí corren
+    // los días — se confirma antes de guardar (hoy por defecto, editable).
+    if (nuevoEstado === "EN_TRANSITO" && creditoDias && creditoDias > 0) {
+      setPidiendoSalida(true);
+      return;
+    }
     cambiarEstado(contenedorId, nuevoEstado);
+  }
+
+  if (pidiendoSalida) {
+    const limite = new Date(`${fechaSalida}T12:00:00`);
+    limite.setDate(limite.getDate() + (creditoDias ?? 0));
+    return (
+      <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+        <p className="text-xs font-medium text-amber-900">¿Qué día salió de China?</p>
+        <div className="mt-1.5">
+          <CampoFecha defaultValue={fechaSalida} onChange={setFechaSalida} max={hoyTexto} />
+        </div>
+        <p className="mt-1.5 text-[11px] text-amber-800">
+          Con {creditoDias} días de crédito, el pago vence el{" "}
+          <span className="font-medium">{limite.toLocaleDateString("es-MX", { day: "numeric", month: "short", year: "numeric" })}</span>.
+        </p>
+        <div className="mt-2 flex gap-2">
+          <button
+            type="button"
+            disabled={guardando}
+            onClick={async () => {
+              setGuardando(true);
+              await cambiarEstado(contenedorId, "EN_TRANSITO", fechaSalida);
+              setGuardando(false);
+              setPidiendoSalida(false);
+              router.refresh();
+            }}
+            className="rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
+          >
+            {guardando ? "Guardando..." : "Confirmar salida"}
+          </button>
+          <button type="button" onClick={() => setPidiendoSalida(false)} className="text-xs text-zinc-500 hover:text-zinc-900">
+            Cancelar
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (

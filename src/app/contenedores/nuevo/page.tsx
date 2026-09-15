@@ -90,6 +90,15 @@ export default async function NuevoContenedor({
               consolidado (varios proveedores), lo puedes cambiar por producto.
             </p>
             <CamposProveedorPrincipal fabricas={fabricas} proveedores={proveedores} />
+            <div className="mt-3">
+              <label htmlFor="credito_dias" className="block text-xs font-medium text-zinc-500">
+                Días de crédito del proveedor (opcional)
+              </label>
+              <CampoNumero id="credito_dias" name="credito_dias" className={`${claseCampo} w-40`} />
+              <p className="mt-1 text-[11px] text-zinc-400">
+                Ej. 60 — corren desde el día en que marques el contenedor &ldquo;En tránsito&rdquo;.
+              </p>
+            </div>
           </div>
 
           <div className="border-t border-zinc-100 pt-4">

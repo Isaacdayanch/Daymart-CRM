@@ -777,6 +777,10 @@ export async function registrarEnvioCuentaPuente(formData: FormData) {
   const monedaProveedor = (formData.get("moneda_proveedor") as Moneda) || "USD";
   const montoDolares = formData.get("monto_dolares") ? Number(formData.get("monto_dolares")) : null;
   const contenedorId = texto(formData, "contenedor_id");
+  // Abono "Pendiente" del contenedor (crédito del proveedor) al que se le
+  // aplica este pago: se marca pagado con el tipo de cambio real en vez
+  // de crear un abono nuevo (que duplicaría los dólares en el promedio).
+  const abonoPendienteId = texto(formData, "abono_pendiente_id");
   const notas = texto(formData, "notas");
 
   if (!cuentaId) return { error: "Elige de qué cuenta puente sale." };
@@ -830,16 +834,30 @@ export async function registrarEnvioCuentaPuente(formData: FormData) {
   }
 
   if (contenedorId && montoDolares && montoDolares > 0) {
-    const { error: errorPago } = await supabase.from("pagos_mercancia").insert({
-      contenedor_id: contenedorId,
-      monto_dolares: montoDolares,
-      tipo_cambio: totalPesos / montoDolares,
-      pagado: true,
-      fecha,
-      notas,
-      cuenta_id: cuentaId,
-      movimiento_financiero_id: movimiento.id,
-    });
+    const { error: errorPago } = abonoPendienteId
+      ? await supabase
+          .from("pagos_mercancia")
+          .update({
+            monto_dolares: montoDolares,
+            tipo_cambio: totalPesos / montoDolares,
+            pagado: true,
+            fecha,
+            notas,
+            cuenta_id: cuentaId,
+            movimiento_financiero_id: movimiento.id,
+          })
+          .eq("id", abonoPendienteId)
+          .eq("contenedor_id", contenedorId)
+      : await supabase.from("pagos_mercancia").insert({
+          contenedor_id: contenedorId,
+          monto_dolares: montoDolares,
+          tipo_cambio: totalPesos / montoDolares,
+          pagado: true,
+          fecha,
+          notas,
+          cuenta_id: cuentaId,
+          movimiento_financiero_id: movimiento.id,
+        });
     if (errorPago) {
       return { error: `Se guardó el abono, pero no se pudo ligar al contenedor: ${errorPago.message}` };
     }

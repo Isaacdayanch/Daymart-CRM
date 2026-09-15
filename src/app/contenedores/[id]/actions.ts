@@ -37,6 +37,85 @@ export async function registrarHistorialSiCambia(
   }
 }
 
+/** Crédito del proveedor: a cada abono que siga "Pendiente" le pone su
+ * fecha límite (fecha de salida de China + credito_dias) y le genera (o
+ * actualiza) su cargo en Finanzas → Proveedores, para que la deuda se vea
+ * en "Debes" y en el aviso de vencimiento. Si no se pasa la fecha de
+ * salida, se toma del historial ("En tránsito"); si el contenedor todavía
+ * no ha salido o no tiene crédito, no hace nada. El cargo queda ligado
+ * desde el abono (cargo_deuda_id): un solo dato, nunca dos sueltos. */
+export async function aplicarCreditoProveedor(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  contenedorId: string,
+  fechaSalida?: string,
+) {
+  const { data: contenedor } = await supabase
+    .from("contenedores")
+    .select("numero, credito_dias, fabrica_principal, proveedor_principal")
+    .eq("id", contenedorId)
+    .maybeSingle<Pick<Contenedor, "numero" | "credito_dias" | "fabrica_principal" | "proveedor_principal">>();
+  if (!contenedor?.credito_dias || contenedor.credito_dias <= 0) return;
+
+  let salida = fechaSalida;
+  if (!salida) {
+    const { data: transito } = await supabase
+      .from("historial_estados_contenedor")
+      .select("fecha")
+      .eq("contenedor_id", contenedorId)
+      .eq("estado", "EN_TRANSITO")
+      .order("fecha", { ascending: true })
+      .limit(1)
+      .maybeSingle<{ fecha: string }>();
+    salida = transito?.fecha;
+  }
+  if (!salida) return;
+
+  const limite = new Date(salida);
+  limite.setDate(limite.getDate() + contenedor.credito_dias);
+  const fechaLimite = limite.toISOString();
+
+  const proveedor = contenedor.fabrica_principal ?? contenedor.proveedor_principal ?? `Contenedor ${contenedor.numero}`;
+
+  const { data: pendientes } = await supabase
+    .from("pagos_mercancia")
+    .select("*")
+    .eq("contenedor_id", contenedorId)
+    .eq("pagado", false)
+    .returns<PagoMercancia[]>();
+
+  for (const abono of pendientes ?? []) {
+    if (abono.cargo_deuda_id) {
+      await supabase
+        .from("movimientos_deuda_proveedor")
+        .update({ monto: abono.monto_dolares, fecha_limite: fechaLimite })
+        .eq("id", abono.cargo_deuda_id);
+      await supabase.from("pagos_mercancia").update({ fecha_limite: fechaLimite }).eq("id", abono.id);
+      continue;
+    }
+    const { data: cargo } = await supabase
+      .from("movimientos_deuda_proveedor")
+      .insert({
+        proveedor,
+        tipo: "CARGO",
+        monto: abono.monto_dolares,
+        moneda: "USD",
+        fecha: salida,
+        fecha_limite: fechaLimite,
+        notas: `Crédito del contenedor ${contenedor.numero}`,
+        contenedor_id: contenedorId,
+      })
+      .select("id")
+      .single();
+    await supabase
+      .from("pagos_mercancia")
+      .update({ fecha_limite: fechaLimite, cargo_deuda_id: cargo?.id ?? null })
+      .eq("id", abono.id);
+  }
+
+  revalidatePath("/finanzas/proveedores");
+  revalidatePath("/finanzas");
+}
+
 /** El costo por pieza que entra a stock se calcula con el flete/aduana/
  * abonos que haya AL MOMENTO de recibir el contenedor. Si Isaac llena esos
  * gastos después (algo muy normal: la mercancía llega antes de que se
@@ -272,17 +351,25 @@ export async function actualizarContenedor(contenedorId: string, formData: FormD
       otros_gastos_tipo_cambio: numero(formData, "otros_gastos_tipo_cambio"),
       fabrica_principal: texto(formData, "fabrica_principal"),
       proveedor_principal: texto(formData, "proveedor_principal"),
+      credito_dias: numero(formData, "credito_dias") || null,
     })
     .eq("id", contenedorId);
 
+  await aplicarCreditoProveedor(supabase, contenedorId);
   await recalcularCostoEntradasContenedor(contenedorId);
   revalidatePath(`/contenedores/${contenedorId}`);
 }
 
-export async function cambiarEstado(contenedorId: string, estado: EstadoContenedor) {
+/** fechaSalida (YYYY-MM-DD) solo aplica al pasar a "En tránsito" — es el
+ * día en que el contenedor salió de China, de ahí corren los días de
+ * crédito del proveedor. */
+export async function cambiarEstado(contenedorId: string, estado: EstadoContenedor, fechaSalida?: string) {
   const supabase = await createClient();
-  await registrarHistorialSiCambia(supabase, contenedorId, estado);
+  const fecha =
+    estado === "EN_TRANSITO" && fechaSalida ? new Date(`${fechaSalida}T12:00:00`).toISOString() : undefined;
+  await registrarHistorialSiCambia(supabase, contenedorId, estado, fecha);
   await supabase.from("contenedores").update({ estado }).eq("id", contenedorId);
+  if (estado === "EN_TRANSITO") await aplicarCreditoProveedor(supabase, contenedorId, fecha);
   revalidatePath(`/contenedores/${contenedorId}`);
   revalidatePath("/contenedores");
   revalidatePath("/");
@@ -311,8 +398,67 @@ export async function agregarAbono(contenedorId: string, formData: FormData) {
     fecha: fecha ? new Date(`${fecha}T12:00:00`).toISOString() : new Date().toISOString(),
   });
 
+  // Si el contenedor ya salió de China y tiene crédito, el abono pendiente
+  // nuevo recibe su fecha límite y su cargo en Finanzas de inmediato.
+  await aplicarCreditoProveedor(supabase, contenedorId);
   await recalcularCostoEntradasContenedor(contenedorId);
   revalidatePath(`/contenedores/${contenedorId}`);
+}
+
+/** Corrige un abono ya guardado (monto, tipo de cambio estimado o real,
+ * fecha, fecha límite). Si tiene cargo ligado en Finanzas, el cargo se
+ * actualiza en la misma operación. "Pagado" solo se puede cambiar aquí
+ * cuando el abono NO tiene cargo — con cargo, se paga desde Finanzas
+ * (cuenta puente) para que el dinero real y la deuda queden en un solo
+ * registro. */
+export async function actualizarAbono(contenedorId: string, abonoId: string, formData: FormData) {
+  const supabase = await createClient();
+
+  const { data: abono } = await supabase
+    .from("pagos_mercancia")
+    .select("*")
+    .eq("id", abonoId)
+    .maybeSingle<PagoMercancia>();
+  if (!abono) return { error: "No se encontró el abono." };
+
+  const montoDolares = numero(formData, "monto_dolares");
+  const tipoCambio = numero(formData, "tipo_cambio");
+  if (montoDolares <= 0) return { error: "El monto no es válido." };
+  if (tipoCambio <= 0) return { error: "El tipo de cambio no es válido." };
+
+  const fecha = texto(formData, "fecha");
+  const fechaLimite = texto(formData, "fecha_limite");
+  const pagadoCampo = formData.get("pagado");
+  const pagado = abono.cargo_deuda_id ? abono.pagado : pagadoCampo === null ? abono.pagado : pagadoCampo === "true";
+
+  const { error } = await supabase
+    .from("pagos_mercancia")
+    .update({
+      monto_dolares: montoDolares,
+      tipo_cambio: tipoCambio,
+      pagado,
+      fecha: fecha ? new Date(`${fecha}T12:00:00`).toISOString() : abono.fecha,
+      fecha_limite: fechaLimite ? new Date(`${fechaLimite}T12:00:00`).toISOString() : abono.fecha_limite,
+    })
+    .eq("id", abonoId);
+  if (error) return { error: error.message };
+
+  if (abono.cargo_deuda_id) {
+    const { error: errorCargo } = await supabase
+      .from("movimientos_deuda_proveedor")
+      .update({
+        monto: montoDolares,
+        fecha_limite: fechaLimite ? new Date(`${fechaLimite}T12:00:00`).toISOString() : abono.fecha_limite,
+      })
+      .eq("id", abono.cargo_deuda_id);
+    if (errorCargo) return { error: errorCargo.message };
+  }
+
+  await recalcularCostoEntradasContenedor(contenedorId);
+  revalidatePath(`/contenedores/${contenedorId}`);
+  revalidatePath("/finanzas/proveedores");
+  revalidatePath("/finanzas");
+  return { error: null };
 }
 
 /** Si el abono se generó desde una cuenta puente de Finanzas
@@ -324,13 +470,18 @@ export async function eliminarAbono(contenedorId: string, abonoId: string) {
 
   const { data: abono } = await supabase
     .from("pagos_mercancia")
-    .select("movimiento_financiero_id")
+    .select("movimiento_financiero_id, cargo_deuda_id")
     .eq("id", abonoId)
-    .maybeSingle<{ movimiento_financiero_id: string | null }>();
+    .maybeSingle<{ movimiento_financiero_id: string | null; cargo_deuda_id: string | null }>();
 
   if (abono?.movimiento_financiero_id) {
     await supabase.from("movimientos_deuda_proveedor").delete().eq("movimiento_financiero_id", abono.movimiento_financiero_id);
     await supabase.from("movimientos_financieros").delete().eq("id", abono.movimiento_financiero_id);
+  }
+  // El cargo de crédito que este abono pendiente generó en Proveedores se
+  // va con él — si no, quedaría una deuda fantasma.
+  if (abono?.cargo_deuda_id) {
+    await supabase.from("movimientos_deuda_proveedor").delete().eq("id", abono.cargo_deuda_id);
   }
 
   await supabase.from("pagos_mercancia").delete().eq("id", abonoId);

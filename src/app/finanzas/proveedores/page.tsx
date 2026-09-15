@@ -7,16 +7,22 @@ import { EnvioPuente } from "./envio-puente";
 
 export default async function ProveedoresFinanzas() {
   const supabase = await createClient();
-  const [{ data: movimientos }, { data: cuentas }, { data: contenedores }] = await Promise.all([
-    supabase.from("movimientos_deuda_proveedor").select("*").returns<MovimientoDeudaProveedor[]>(),
-    supabase.from("cuentas_financieras").select("*").is("eliminado_en", null).returns<CuentaFinanciera[]>(),
-    supabase
-      .from("contenedores")
-      .select("*")
-      .is("eliminado_en", null)
-      .order("numero", { ascending: false })
-      .returns<Contenedor[]>(),
-  ]);
+  const [{ data: movimientos }, { data: cuentas }, { data: contenedores }, { data: abonosPendientes }] =
+    await Promise.all([
+      supabase.from("movimientos_deuda_proveedor").select("*").returns<MovimientoDeudaProveedor[]>(),
+      supabase.from("cuentas_financieras").select("*").is("eliminado_en", null).returns<CuentaFinanciera[]>(),
+      supabase
+        .from("contenedores")
+        .select("*")
+        .is("eliminado_en", null)
+        .order("numero", { ascending: false })
+        .returns<Contenedor[]>(),
+      supabase
+        .from("pagos_mercancia")
+        .select("id, contenedor_id, monto_dolares, fecha_limite")
+        .eq("pagado", false)
+        .returns<{ id: string; contenedor_id: string; monto_dolares: number; fecha_limite: string | null }[]>(),
+    ]);
 
   const listaMovimientos = movimientos ?? [];
   const listaCuentas = cuentas ?? [];
@@ -78,7 +84,12 @@ export default async function ProveedoresFinanzas() {
       <EnvioPuente
         cuentas={listaCuentas}
         proveedores={nombresProveedores}
-        contenedores={(contenedores ?? []).map((c) => ({ id: c.id, numero: c.numero }))}
+        contenedores={(contenedores ?? []).map((c) => ({
+          id: c.id,
+          numero: c.numero,
+          proveedor: c.fabrica_principal ?? c.proveedor_principal,
+        }))}
+        abonosPendientes={abonosPendientes ?? []}
       />
 
       <div className="rounded-2xl border border-zinc-200 bg-white shadow-sm">

@@ -61,6 +61,21 @@ export function FormularioContenedor({
           fabricaInicial={contenedor.fabrica_principal}
           proveedorInicial={contenedor.proveedor_principal}
         />
+        <div className="mt-3">
+          <label htmlFor="credito_dias" className="block text-xs font-medium text-zinc-500">
+            Días de crédito del proveedor (opcional)
+          </label>
+          <CampoNumero
+            id="credito_dias"
+            name="credito_dias"
+            defaultValue={contenedor.credito_dias ?? undefined}
+            className={`${claseCampo} w-40`}
+          />
+          <p className="mt-1 text-[11px] text-zinc-400">
+            Ej. 60 — corren desde el día en que marques el contenedor &ldquo;En tránsito&rdquo;. Los abonos que
+            sigan pendientes reciben su fecha límite y aparecen como deuda en Finanzas → Proveedores.
+          </p>
+        </div>
       </div>
 
       <div className="border-t border-zinc-100 pt-4">
