@@ -7,6 +7,7 @@ import { ESTADOS_CONTENEDOR, type Contenedor, type MovimientoStock, type PagoMer
 import { obtenerPerfilActual } from "@/lib/perfil";
 import { MenuMas } from "../menu-mas";
 import { Logo } from "@/components/logo";
+import { SelectorVistaContenedores } from "./selector-vista";
 
 function etiquetaEstado(estado: Contenedor["estado"]) {
   return ESTADOS_CONTENEDOR.find((e) => e.valor === estado)?.etiqueta ?? estado;
@@ -58,8 +59,11 @@ export default async function ListaContenedores() {
       </header>
 
       <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
-        <div className="mb-6 flex items-center justify-between">
-          <h1 className="text-xl font-semibold tracking-tight text-zinc-900">Contenedores</h1>
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-4">
+            <h1 className="text-xl font-semibold tracking-tight text-zinc-900">Contenedores</h1>
+            <SelectorVistaContenedores actual="general" />
+          </div>
           {verDinero && (
             <div className="flex items-center gap-4">
               <Link href="/papelera" className="text-sm font-medium text-zinc-500 hover:text-zinc-900">
