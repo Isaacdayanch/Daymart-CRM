@@ -130,6 +130,13 @@ export default async function DetalleContenedor({
   const diferenciaBruta = costoTotal - valorEntradoStock;
   const diferenciaFinal = diferenciaBruta - contenedor.ajuste_diferencia_pesos;
 
+  const etiquetasEstimados = [
+    contenedor.flete_estimado ? "flete" : null,
+    contenedor.aduana_estimada ? "aduana" : null,
+    contenedor.otros_gastos_estimado ? "otros gastos" : null,
+  ].filter((e): e is string => Boolean(e));
+  const hayEstimados = etiquetasEstimados.length > 0;
+
   return (
     <div className="min-h-screen bg-zinc-50">
       <header className="border-b border-zinc-200 bg-white">
@@ -156,18 +163,29 @@ export default async function DetalleContenedor({
             <p className="mt-1 text-sm font-semibold text-zinc-900">{cbmTotal.toFixed(2)} m³</p>
           </div>
           {verDinero && (
-            <div className="rounded-xl border border-zinc-200 bg-white p-4">
-              <p className="text-xs text-zinc-500">Costo por CBM</p>
-              <p className="mt-1 text-sm font-semibold text-zinc-900">{formatoPesos(costoPorCbm)}</p>
+            <div className={`rounded-xl border p-4 ${hayEstimados ? "border-amber-200 bg-amber-50" : "border-zinc-200 bg-white"}`}>
+              <p className={`text-xs ${hayEstimados ? "text-amber-800" : "text-zinc-500"}`}>Costo por CBM</p>
+              <p className={`mt-1 text-sm font-semibold ${hayEstimados ? "text-amber-900" : "text-zinc-900"}`}>
+                {formatoPesos(costoPorCbm)}
+              </p>
             </div>
           )}
           {verDinero && (
-            <div className="rounded-xl border border-zinc-200 bg-white p-4">
-              <p className="text-xs text-zinc-500">Costo total contenedor</p>
-              <p className="mt-1 text-sm font-semibold text-zinc-900">{formatoPesos(costoTotal)}</p>
+            <div className={`rounded-xl border p-4 ${hayEstimados ? "border-amber-200 bg-amber-50" : "border-zinc-200 bg-white"}`}>
+              <p className={`text-xs ${hayEstimados ? "text-amber-800" : "text-zinc-500"}`}>Costo total contenedor</p>
+              <p className={`mt-1 text-sm font-semibold ${hayEstimados ? "text-amber-900" : "text-zinc-900"}`}>
+                {formatoPesos(costoTotal)}
+              </p>
             </div>
           )}
         </div>
+
+        {verDinero && hayEstimados && (
+          <p className="-mt-3 text-xs text-amber-800">
+            ⚠ Incluye montos estimados: {etiquetasEstimados.join(", ")}. Cuando tengas la factura real, edita el
+            contenedor, pon el monto y desmarca &ldquo;Es estimado&rdquo; — el costo por pieza se recalcula solo.
+          </p>
+        )}
 
         {verDinero && contenedor.credito_dias && contenedor.credito_dias > 0 && (
           <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">

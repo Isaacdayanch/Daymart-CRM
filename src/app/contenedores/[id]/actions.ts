@@ -352,6 +352,9 @@ export async function actualizarContenedor(contenedorId: string, formData: FormD
       fabrica_principal: texto(formData, "fabrica_principal"),
       proveedor_principal: texto(formData, "proveedor_principal"),
       credito_dias: numero(formData, "credito_dias") || null,
+      flete_estimado: formData.get("flete_estimado") === "true",
+      aduana_estimada: formData.get("aduana_estimada") === "true",
+      otros_gastos_estimado: formData.get("otros_gastos_estimado") === "true",
     })
     .eq("id", contenedorId);
 

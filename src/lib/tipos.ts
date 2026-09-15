@@ -39,6 +39,11 @@ export interface Contenedor {
   /** Días de crédito que da el proveedor, contados desde que el
    * contenedor pasa a "En tránsito". null = sin crédito. */
   credito_dias: number | null;
+  /** true mientras el monto sea una estimación de Isaac (todavía no llega
+   * la factura real) — se muestra en ámbar para que no se confunda. */
+  flete_estimado: boolean;
+  aduana_estimada: boolean;
+  otros_gastos_estimado: boolean;
   eliminado_en: string | null;
   stock_generado_en: string | null;
   creado_en: string;

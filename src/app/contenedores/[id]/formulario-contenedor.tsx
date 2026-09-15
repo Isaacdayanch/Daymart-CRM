@@ -104,6 +104,16 @@ export function FormularioContenedor({
             />
           </div>
         </div>
+        <label className="mt-2 flex items-center gap-2 text-xs font-medium text-zinc-600">
+          <input
+            type="checkbox"
+            name="flete_estimado"
+            value="true"
+            defaultChecked={contenedor.flete_estimado}
+            className="h-4 w-4 rounded border-zinc-300"
+          />
+          Es estimado (todavía no tengo la factura real)
+        </label>
       </div>
 
       <div className="border-t border-zinc-100 pt-4">
@@ -116,6 +126,16 @@ export function FormularioContenedor({
           defaultValue={contenedor.aduana_pesos}
           className={`${claseCampo} w-40`}
         />
+        <label className="mt-2 flex items-center gap-2 text-xs font-medium text-zinc-600">
+          <input
+            type="checkbox"
+            name="aduana_estimada"
+            value="true"
+            defaultChecked={contenedor.aduana_estimada}
+            className="h-4 w-4 rounded border-zinc-300"
+          />
+          Es estimado (todavía no tengo la factura real)
+        </label>
       </div>
 
       <details
@@ -152,6 +172,16 @@ export function FormularioContenedor({
             />
           </div>
         </div>
+        <label className="mt-2 flex items-center gap-2 text-xs font-medium text-zinc-600">
+          <input
+            type="checkbox"
+            name="otros_gastos_estimado"
+            value="true"
+            defaultChecked={contenedor.otros_gastos_estimado}
+            className="h-4 w-4 rounded border-zinc-300"
+          />
+          Es estimado (todavía no tengo la factura real)
+        </label>
       </details>
 
       <div className="flex items-center justify-between border-t border-zinc-100 pt-4">
