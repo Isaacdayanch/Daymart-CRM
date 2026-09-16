@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 
 const PESTANAS = [
   { href: "/mercadolibre", etiqueta: "Ventas" },
+  { href: "/mercadolibre/stock", etiqueta: "Stock" },
   { href: "/mercadolibre/conexion", etiqueta: "Conexión" },
 ];
 
@@ -13,7 +14,7 @@ export function NavMercadoLibre() {
   return (
     <nav className="flex gap-1 overflow-x-auto">
       {PESTANAS.map((p) => {
-        const activa = p.href === "/mercadolibre" ? pathname === "/mercadolibre" : pathname.startsWith(p.href);
+        const activa = p.href === "/mercadolibre" ? pathname === "/mercadolibre" || pathname === "/mercadolibre/ventas" : pathname.startsWith(p.href);
         return (
           <Link
             key={p.href}

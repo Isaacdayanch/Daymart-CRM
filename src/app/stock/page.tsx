@@ -6,6 +6,7 @@ import { obtenerPerfilActual } from "@/lib/perfil";
 import { obtenerCategoriaPorSku, obtenerPiezasPorCajaPorSku } from "@/lib/productos-stock";
 import type { Bodega, ConfiguracionStock, MovimientoStock } from "@/lib/tipos";
 import { TablaStock } from "./tabla-stock";
+import { obtenerResumenFull } from "@/lib/mercadolibre-stock";
 
 export default async function ResumenStock() {
   const supabase = await createClient();
@@ -35,6 +36,10 @@ export default async function ResumenStock() {
   const valorTotal = valorTotalInventario(resumenes);
   const paraReordenar = resumenes.filter((r) => r.necesitaReorden && r.stockActual > 0);
   const bodegasPorId = Object.fromEntries((bodegas ?? []).map((b) => [b.id, b.nombre]));
+  // Stock en Full de Mercado Libre (solo dueño; null si no está conectado).
+  const full = verDinero ? await obtenerResumenFull(resumenes) : null;
+  const fullPorSku = full ? Object.fromEntries(full.porSku) : undefined;
+  const piezasBodega = resumenes.reduce((s, r) => s + r.stockActual, 0);
 
   return (
     <div className="space-y-8">
@@ -51,8 +56,23 @@ export default async function ResumenStock() {
         {verDinero && (
           <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
             <p className="text-xs font-medium text-zinc-400 uppercase tracking-wide">Valor de inventario</p>
-            <p className="mt-2 text-3xl font-semibold tracking-tight text-zinc-900">{formatoPesos(valorTotal)}</p>
-            <p className="mt-1 text-xs text-zinc-400">Lo que tienes hoy, en bodega, a costo real</p>
+            <p className="mt-2 text-3xl font-semibold tracking-tight text-zinc-900">{formatoPesos(valorTotal + (full?.valor ?? 0))}</p>
+            {full ? (
+              <p className="mt-1 text-xs text-zinc-400">
+                Bodega {formatoPesos(valorTotal)} ({piezasBodega.toLocaleString("es-MX")} pzas) + Full {formatoPesos(full.valor)} (
+                {full.piezas.toLocaleString("es-MX")} pzas)
+                {full.inventariosSinLigar > 0 && (
+                  <>
+                    {" · "}
+                    <Link href="/mercadolibre/stock?filtro=sinligar" className="text-amber-700 hover:underline">
+                      {full.inventariosSinLigar} en Full sin ligar
+                    </Link>
+                  </>
+                )}
+              </p>
+            ) : (
+              <p className="mt-1 text-xs text-zinc-400">Lo que tienes hoy, en bodega, a costo real</p>
+            )}
           </div>
         )}
         <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
@@ -109,7 +129,13 @@ export default async function ResumenStock() {
             Todavía no hay movimientos de stock. Se generan solos al recibir un contenedor.
           </p>
         ) : (
-          <TablaStock resumenes={resumenes} bodegasPorId={bodegasPorId} verDinero={verDinero} categorias={categorias} />
+          <TablaStock
+            fullPorSku={fullPorSku}
+            resumenes={resumenes}
+            bodegasPorId={bodegasPorId}
+            verDinero={verDinero}
+            categorias={categorias}
+          />
         )}
       </div>
     </div>

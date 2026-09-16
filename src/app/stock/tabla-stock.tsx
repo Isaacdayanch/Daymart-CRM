@@ -20,11 +20,14 @@ export function TablaStock({
   bodegasPorId,
   verDinero = true,
   categorias = [],
+  fullPorSku,
 }: {
   resumenes: ResumenSku[];
   bodegasPorId: Record<string, string>;
   verDinero?: boolean;
   categorias?: string[];
+  /** Piezas en Full de Mercado Libre por SKU (solo dueño, si ML está conectado). */
+  fullPorSku?: Record<string, number>;
 }) {
   const [busqueda, setBusqueda] = useState("");
   const [categoria, setCategoria] = useState(TODAS_CATEGORIAS);
@@ -92,7 +95,8 @@ export function TablaStock({
             <thead>
               <tr className="border-b border-zinc-100 text-xs text-zinc-400">
                 <th className="px-6 py-2.5 font-medium">Producto</th>
-                <th className="px-6 py-2.5 font-medium text-right">Piezas</th>
+                <th className="px-6 py-2.5 font-medium text-right">{fullPorSku ? "En bodega" : "Piezas"}</th>
+                {fullPorSku && <th className="px-6 py-2.5 font-medium text-right text-[#2D3277]">En Full</th>}
                 <th className="px-6 py-2.5 font-medium text-right">Cajas</th>
                 {verDinero && <th className="px-6 py-2.5 font-medium text-right">Costo prom.</th>}
                 {verDinero && <th className="px-6 py-2.5 font-medium text-right">Valor</th>}
@@ -127,6 +131,11 @@ export function TablaStock({
                     </Link>
                   </td>
                   <td className="px-6 py-3 text-right font-semibold text-zinc-900">{r.stockActual}</td>
+                  {fullPorSku && (
+                    <td className="px-6 py-3 text-right text-[#2D3277]">
+                      {fullPorSku[r.sku] !== undefined ? fullPorSku[r.sku].toLocaleString("es-MX") : <span className="text-zinc-300">—</span>}
+                    </td>
+                  )}
                   <td className="px-6 py-3 text-right text-xs text-zinc-400">
                     {r.cajas > 0 ? formatoCajas(r.cajas) : "—"}
                   </td>

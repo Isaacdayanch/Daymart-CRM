@@ -62,3 +62,48 @@ export async function porcentajeComisionMl(precio: number, categoriaId: string, 
     return { error: e instanceof Error ? e.message : "No se pudo consultar la comisión.", porcentaje: null };
   }
 }
+
+export async function sincronizarStock() {
+  if (!(await soloDueno())) return { error: "Solo el dueño puede hacer esto.", renglones: 0 };
+  try {
+    const { sincronizarPublicaciones } = await import("@/lib/mercadolibre-stock");
+    const renglones = await sincronizarPublicaciones();
+    revalidatePath("/mercadolibre/stock");
+    revalidatePath("/stock");
+    revalidatePath("/");
+    return { error: null, renglones };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Falló la sincronización.", renglones: 0 };
+  }
+}
+
+/** Liga (o cambia la liga de) una publicación de ML con un SKU del CRM. */
+export async function vincularPublicacion(itemId: string, variationId: number | null, skuCrm: string) {
+  if (!(await soloDueno())) return { error: "Solo el dueño puede hacer esto." };
+  if (!skuCrm) return { error: "Elige el producto del CRM." };
+  const { createServiceClient } = await import("@/lib/supabase/servicio");
+  const supabase = createServiceClient();
+  let consulta = supabase.from("mercadolibre_vinculos").delete().eq("item_id", itemId);
+  consulta = variationId === null ? consulta.is("variation_id", null) : consulta.eq("variation_id", variationId);
+  await consulta;
+  const { error } = await supabase.from("mercadolibre_vinculos").insert({ item_id: itemId, variation_id: variationId, sku_crm: skuCrm });
+  if (error) return { error: error.message };
+  revalidatePath("/mercadolibre/stock");
+  revalidatePath("/stock");
+  revalidatePath("/");
+  return { error: null };
+}
+
+export async function desvincularPublicacion(itemId: string, variationId: number | null) {
+  if (!(await soloDueno())) return { error: "Solo el dueño puede hacer esto." };
+  const { createServiceClient } = await import("@/lib/supabase/servicio");
+  const supabase = createServiceClient();
+  let consulta = supabase.from("mercadolibre_vinculos").delete().eq("item_id", itemId);
+  consulta = variationId === null ? consulta.is("variation_id", null) : consulta.eq("variation_id", variationId);
+  const { error } = await consulta;
+  if (error) return { error: error.message };
+  revalidatePath("/mercadolibre/stock");
+  revalidatePath("/stock");
+  revalidatePath("/");
+  return { error: null };
+}

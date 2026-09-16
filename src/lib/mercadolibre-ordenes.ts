@@ -51,6 +51,9 @@ export interface EstadoSync {
   ultima_sync: string | null;
   ultimo_error: string | null;
   ordenes_total: number;
+  /** Publicaciones/stock (migración 0032). */
+  ultima_sync_stock?: string | null;
+  ultimo_error_stock?: string | null;
 }
 
 // ---- Forma de los datos que regresa Mercado Libre (solo lo que usamos) ----

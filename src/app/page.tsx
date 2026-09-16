@@ -7,6 +7,7 @@ import { saldosPorCuenta } from "@/lib/calculos-financieras";
 import { formatoPesos, formatoDolares } from "@/lib/formato";
 import type { ConfiguracionStock, CuentaFinanciera, MovimientoFinanciero, MovimientoStock } from "@/lib/tipos";
 import { MenuMas } from "./menu-mas";
+import { obtenerResumenFull } from "@/lib/mercadolibre-stock";
 import { Logo } from "@/components/logo";
 
 const ACCESOS = [
@@ -92,6 +93,8 @@ export default async function Dashboard() {
   const resumenes = resumenPorSku(movimientosStock ?? [], configuracion?.dias_espera ?? 60, piezasPorCajaPorSku);
   const productosPorReordenar = resumenes.filter((r) => r.necesitaReorden).length;
   const valorInventario = resumenes.reduce((s, r) => s + r.valorInventario, 0);
+  const piezasBodega = resumenes.reduce((s, r) => s + r.stockActual, 0);
+  const full = verDinero ? await obtenerResumenFull(resumenes) : null;
 
   const saldos = verDinero ? saldosPorCuenta(cuentas ?? [], movimientosFinancieros ?? []) : [];
   const saldosReales = saldos.filter((s) => !s.cuenta.cuenta_transito);
@@ -125,7 +128,13 @@ export default async function Dashboard() {
             </p>
             {verDinero ? (
               <>
-                <p className="mt-2 text-3xl font-semibold text-zinc-900">{formatoPesos(valorInventario)}</p>
+                <p className="mt-2 text-3xl font-semibold text-zinc-900">{formatoPesos(valorInventario + (full?.valor ?? 0))}</p>
+                {full && (
+                  <p className="mt-1 text-xs text-zinc-500">
+                    Bodega {formatoPesos(valorInventario)} · {piezasBodega.toLocaleString("es-MX")} pzas &nbsp;|&nbsp; Full{" "}
+                    {formatoPesos(full.valor)} · {full.piezas.toLocaleString("es-MX")} pzas
+                  </p>
+                )}
                 <p className="mt-1 text-xs text-zinc-400">
                   {productosPorReordenar} {productosPorReordenar === 1 ? "producto sugerido" : "productos sugeridos"}{" "}
                   para reordenar
