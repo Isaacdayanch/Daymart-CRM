@@ -58,13 +58,26 @@ const ENCABEZADOS_NAVEGADOR = {
   Accept: "application/json",
 };
 
-async function pedirJson<T>(url: string, headers: Record<string, string>): Promise<{ ok: boolean; status: number; json: T | null }> {
+async function pedirJson<T>(
+  url: string,
+  headers: Record<string, string>,
+): Promise<{ ok: boolean; status: number; json: T | null; detalle: string }> {
   try {
     const r = await fetch(url, { headers, cache: "no-store" });
-    const json = r.ok ? ((await r.json()) as T) : null;
-    return { ok: r.ok, status: r.status, json };
-  } catch {
-    return { ok: false, status: 0, json: null };
+    if (r.ok) return { ok: true, status: r.status, json: (await r.json()) as T, detalle: "ok" };
+    // Mercado Libre explica el rechazo en el cuerpo ("message"/"error"):
+    // se guarda para poder diagnosticar sin adivinar.
+    let detalle = String(r.status);
+    try {
+      const cuerpo = (await r.json()) as { message?: string; error?: string };
+      const texto = cuerpo.message ?? cuerpo.error;
+      if (texto) detalle += ` ${String(texto).slice(0, 80)}`;
+    } catch {
+      // sin cuerpo legible
+    }
+    return { ok: false, status: r.status, json: null, detalle };
+  } catch (e) {
+    return { ok: false, status: 0, json: null, detalle: `sin respuesta (${e instanceof Error ? e.message : "?"})` };
   }
 }
 
@@ -73,15 +86,35 @@ async function pedirJson<T>(url: string, headers: Record<string, string>): Promi
  * un bloque estándar (JSON-LD: nombre, foto, precio) y, escondido en el
  * código, el ID de categoría. Sirve cuando la API le niega a la app ver
  * publicaciones de otros vendedores. */
-async function leerPaginaPublica(link: string): Promise<Partial<DatosMercadoLibre> | null> {
+async function leerPaginaPublica(
+  link: string,
+  intentos: string[],
+): Promise<Partial<DatosMercadoLibre> | null> {
+  let html: string | null = null;
   try {
     const r = await fetch(link, {
-      headers: { ...ENCABEZADOS_NAVEGADOR, Accept: "text/html,application/xhtml+xml", "Accept-Language": "es-MX,es;q=0.9" },
+      headers: {
+        "User-Agent": ENCABEZADOS_NAVEGADOR["User-Agent"],
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "es-MX,es;q=0.9,en;q=0.8",
+        "Upgrade-Insecure-Requests": "1",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+      },
       cache: "no-store",
       redirect: "follow",
     });
-    if (!r.ok) return null;
-    const html = await r.text();
+    if (!r.ok) {
+      intentos.push(`página ${link.replace(/^https?:\/\//, "").slice(0, 40)}…: ${r.status}`);
+      return null;
+    }
+    html = await r.text();
+  } catch (e) {
+    intentos.push(`página: sin respuesta (${e instanceof Error ? e.message : "?"})`);
+    return null;
+  }
+  try {
     const resultado: Partial<DatosMercadoLibre> = {};
 
     for (const m of html.matchAll(/<script[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gi)) {
@@ -114,8 +147,10 @@ async function leerPaginaPublica(link: string): Promise<Partial<DatosMercadoLibr
     if (categoria) resultado.categoriaId = categoria[1];
     const tipo = html.match(/"listing_type_id"\s*:\s*"(gold_[a-z_]+)"/i);
     if (tipo) resultado.tipoPublicacion = tipo[1];
+    if (!resultado.nombre) intentos.push(`página: llegó pero sin datos de producto (${html.length} caracteres)`);
     return resultado.nombre ? resultado : null;
   } catch {
+    intentos.push("página: no se pudo leer");
     return null;
   }
 }
@@ -163,7 +198,7 @@ export async function obtenerDatosMercadoLibre(
         parcial.tipoPublicacion = ganador.listing_type_id ?? undefined;
       }
     } else {
-      intentos.push(`catálogo ${identificado.id}: ${rp.status || "sin respuesta"}`);
+      intentos.push(`catálogo ${identificado.id}: ${rp.detalle}`);
     }
   }
 
@@ -179,31 +214,35 @@ export async function obtenerDatosMercadoLibre(
       parcial.tipoPublicacion = item.listing_type_id ?? parcial.tipoPublicacion;
       if (typeof item.sold_quantity === "number") parcial.ventas = item.sold_quantity;
     } else {
-      intentos.push(`publicación ${itemId}: ${ri.status || "sin respuesta"}`);
+      intentos.push(`publicación ${itemId}: ${ri.detalle}`);
     }
   }
 
-  // 3) Página pública, si todavía falta lo básico.
+  // 3) Página pública, si todavía falta lo básico. Se prueba el link tal
+  // cual y, si no, las direcciones "canónicas" de Mercado Libre.
   if (!parcial.nombre || !parcial.precio) {
-    const pagina = await leerPaginaPublica(link);
-    if (pagina) {
+    const candidatas = [link];
+    if (itemId) candidatas.push(`https://articulo.mercadolibre.com.mx/${itemId.replace(/^MLM/, "MLM-")}-_JM`);
+    if (identificado.tipo === "producto") candidatas.push(`https://www.mercadolibre.com.mx/p/${identificado.id}`);
+    for (const url of Array.from(new Set(candidatas))) {
+      const pagina = await leerPaginaPublica(url, intentos);
+      if (!pagina) continue;
       parcial.nombre = parcial.nombre ?? pagina.nombre;
       parcial.imagenUrl = parcial.imagenUrl ?? pagina.imagenUrl ?? undefined;
       parcial.precio = parcial.precio ?? pagina.precio;
       parcial.categoriaId = parcial.categoriaId ?? pagina.categoriaId ?? undefined;
       parcial.tipoPublicacion = parcial.tipoPublicacion ?? pagina.tipoPublicacion ?? undefined;
-    } else {
-      intentos.push("página pública: sin datos");
+      if (parcial.nombre && parcial.precio) break;
     }
   }
 
   if (!parcial.nombre) {
-    const detalle = intentos.length ? ` (${intentos.join("; ")})` : "";
+    const detalle = intentos.length ? ` Detalle: ${intentos.join(" · ")}.` : "";
     return {
       datos: null,
       error: conToken
-        ? `Mercado Libre no dejó leer ese anuncio${detalle}. Llena los datos a mano.`
-        : `Mercado Libre bloqueó la consulta${detalle}. Conecta tu cuenta en Mercado Libre → Conexión y vuelve a intentar.`,
+        ? `Mercado Libre no dejó leer ese anuncio. Llena los datos a mano.${detalle}`
+        : `Sin cuenta conectada, Mercado Libre bloqueó la consulta. Conecta tu cuenta en Mercado Libre → Conexión.${detalle}`,
     };
   }
 

@@ -328,19 +328,28 @@ export async function sincronizarPaginaOrdenes(opciones: { diasAtras?: number; o
     const pagina = await mercadolibreGet<{ results: OrdenApi[]; paging?: { total?: number } }>(`/orders/search?${params}`);
     const resultados = pagina.results ?? [];
 
-    // Qué órdenes de esta página ya tienen datos de envío (no se vuelven a pedir).
+    // Qué órdenes de esta página ya están guardadas: si no cambiaron en ML
+    // desde entonces (misma "última actualización") y ya tienen su costo de
+    // envío, se saltan por completo — así repetir una descarga es rápido.
     const ids = resultados.map((o) => o.id);
     const { data: existentes } = ids.length
       ? await supabase
           .from("mercadolibre_ordenes")
-          .select("id, costo_envio_vendedor, logistica")
+          .select("id, costo_envio_vendedor, logistica, ultima_actualizacion, comision")
           .in("id", ids)
-          .returns<{ id: number; costo_envio_vendedor: number | null; logistica: string | null }[]>()
+          .returns<{ id: number; costo_envio_vendedor: number | null; logistica: string | null; ultima_actualizacion: string | null; comision: number }[]>()
       : { data: [] };
+    const existentePorId = new Map((existentes ?? []).map((o) => [o.id, o]));
     const conEnvioListo = new Set((existentes ?? []).filter((o) => o.costo_envio_vendedor !== null && o.logistica).map((o) => o.id));
+    const sinCambios = (orden: OrdenApi) => {
+      const e = existentePorId.get(orden.id);
+      if (!e || !conEnvioListo.has(orden.id) || !orden.last_updated || !e.ultima_actualizacion) return false;
+      return new Date(e.ultima_actualizacion).getTime() === new Date(orden.last_updated).getTime();
+    };
+    const pendientes = resultados.filter((o) => !sinCambios(o));
 
     // Varias órdenes a la vez (cada una hace 2-3 llamadas a ML).
-    await enGrupos(resultados, 8, (orden) => guardarOrden(orden, !conEnvioListo.has(orden.id)));
+    await enGrupos(pendientes, 8, (orden) => guardarOrden(orden, !conEnvioListo.has(orden.id)));
 
     const total = pagina.paging?.total ?? null;
     const hayMas = resultados.length === 50 && (total === null || offset + 50 < total);
