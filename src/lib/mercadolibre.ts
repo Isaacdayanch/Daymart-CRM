@@ -35,10 +35,96 @@ export interface DatosMercadoLibre {
   tipoPublicacion: string | null;
 }
 
-/** Trae lo que se pueda del anuncio. Si algo falla (link raro, producto ya
- * no existe, Mercado Libre no responde), regresa un error claro en vez de
- * aventar una excepción — la pantalla deja llenar todo a mano si esto no
- * funciona. */
+interface ItemApi {
+  id?: string;
+  title?: string;
+  price?: number;
+  pictures?: { url?: string; secure_url?: string }[];
+  thumbnail?: string;
+  category_id?: string;
+  sold_quantity?: number;
+  listing_type_id?: string;
+}
+
+interface ProductoApi {
+  id?: string;
+  name?: string;
+  pictures?: { url?: string; secure_url?: string }[];
+  buy_box_winner?: { item_id?: string; price?: number; category_id?: string; listing_type_id?: string } | null;
+}
+
+const ENCABEZADOS_NAVEGADOR = {
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  Accept: "application/json",
+};
+
+async function pedirJson<T>(url: string, headers: Record<string, string>): Promise<{ ok: boolean; status: number; json: T | null }> {
+  try {
+    const r = await fetch(url, { headers, cache: "no-store" });
+    const json = r.ok ? ((await r.json()) as T) : null;
+    return { ok: r.ok, status: r.status, json };
+  } catch {
+    return { ok: false, status: 0, json: null };
+  }
+}
+
+/** Último recurso: leer la página pública del anuncio como la vería un
+ * navegador. Las páginas de Mercado Libre traen los datos del producto en
+ * un bloque estándar (JSON-LD: nombre, foto, precio) y, escondido en el
+ * código, el ID de categoría. Sirve cuando la API le niega a la app ver
+ * publicaciones de otros vendedores. */
+async function leerPaginaPublica(link: string): Promise<Partial<DatosMercadoLibre> | null> {
+  try {
+    const r = await fetch(link, {
+      headers: { ...ENCABEZADOS_NAVEGADOR, Accept: "text/html,application/xhtml+xml", "Accept-Language": "es-MX,es;q=0.9" },
+      cache: "no-store",
+      redirect: "follow",
+    });
+    if (!r.ok) return null;
+    const html = await r.text();
+    const resultado: Partial<DatosMercadoLibre> = {};
+
+    for (const m of html.matchAll(/<script[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gi)) {
+      try {
+        const bloque = JSON.parse(m[1]) as Record<string, unknown> | Record<string, unknown>[];
+        const lista = Array.isArray(bloque) ? bloque : [bloque];
+        for (const b of lista) {
+          if (b["@type"] !== "Product") continue;
+          if (typeof b.name === "string") resultado.nombre = b.name;
+          const imagen = Array.isArray(b.image) ? b.image[0] : b.image;
+          if (typeof imagen === "string") resultado.imagenUrl = imagen;
+          const ofertas = b.offers as { price?: number | string } | { price?: number | string }[] | undefined;
+          const oferta = Array.isArray(ofertas) ? ofertas[0] : ofertas;
+          const precio = Number(oferta?.price);
+          if (Number.isFinite(precio) && precio > 0) resultado.precio = precio;
+        }
+      } catch {
+        // bloque que no es JSON válido: se ignora
+      }
+    }
+    if (!resultado.nombre) {
+      const og = html.match(/<meta property="og:title" content="([^"]+)"/i);
+      if (og) resultado.nombre = og[1].replace(/\s*\|.*$/, "");
+    }
+    if (!resultado.imagenUrl) {
+      const og = html.match(/<meta property="og:image" content="([^"]+)"/i);
+      if (og) resultado.imagenUrl = og[1];
+    }
+    const categoria = html.match(/"category_id"\s*:\s*"(MLM\d+)"/i);
+    if (categoria) resultado.categoriaId = categoria[1];
+    const tipo = html.match(/"listing_type_id"\s*:\s*"(gold_[a-z_]+)"/i);
+    if (tipo) resultado.tipoPublicacion = tipo[1];
+    return resultado.nombre ? resultado : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Trae lo que se pueda del anuncio, por tres caminos en orden:
+ *  1. API de catálogo (`/products/{id}`) si el link es de catálogo.
+ *  2. API de publicaciones (`/items/{id}`) con la cuenta conectada.
+ *  3. La página pública del anuncio (JSON-LD), si la API niega el acceso.
+ * Si todo falla, regresa un error claro y la pantalla deja llenar a mano. */
 export async function obtenerDatosMercadoLibre(
   link: string,
 ): Promise<{ datos: DatosMercadoLibre | null; error: string | null }> {
@@ -47,109 +133,95 @@ export async function obtenerDatosMercadoLibre(
     return { datos: null, error: "No se pudo reconocer el link de Mercado Libre." };
   }
 
-  let item: {
-    title: string;
-    price: number;
-    pictures?: { url: string }[];
-    category_id?: string;
-    sold_quantity?: number;
-    listing_type_id?: string;
-  };
-  // Mercado Libre bloquea (403) las peticiones que no traen señales de
-  // navegador real — sin esto, las llamadas desde un servidor (como
-  // Vercel) se ven como tráfico de robot y las rechaza.
-  const encabezadosNavegador = {
-    "User-Agent":
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    Accept: "application/json",
-  };
-
-  // Con la cuenta de Isaac conectada (Módulo 5) se usa su token: Mercado
-  // Libre ya no bloquea la consulta. Si no hay conexión, se intenta la
-  // llamada pública como antes.
-  let encabezados: Record<string, string> = encabezadosNavegador;
+  // Con la cuenta de Isaac conectada (Módulo 5) se usa su token.
+  let encabezados: Record<string, string> = ENCABEZADOS_NAVEGADOR;
+  let conToken = false;
   try {
     const { obtenerAccessToken } = await import("@/lib/mercadolibre-auth");
     const token = await obtenerAccessToken();
     encabezados = { Authorization: `Bearer ${token}`, Accept: "application/json" };
+    conToken = true;
   } catch {
-    // sin conexión: se sigue con la pública
+    // sin conexión: se sigue con la llamada pública
   }
 
-  // Link de catálogo: primero se pregunta al catálogo cuál es la
-  // publicación ganadora (buy_box_winner) y se sigue con esa.
-  let itemId = identificado.id;
+  const parcial: Partial<DatosMercadoLibre> = {};
+  const intentos: string[] = [];
+  let itemId = identificado.tipo === "item" ? identificado.id : null;
+
+  // 1) Catálogo: nombre, foto y datos de la publicación ganadora.
   if (identificado.tipo === "producto") {
-    try {
-      const rp = await fetch(`https://api.mercadolibre.com/products/${identificado.id}`, { headers: encabezados, cache: "no-store" });
-      if (!rp.ok) {
-        return {
-          datos: null,
-          error:
-            rp.status === 403 || rp.status === 401
-              ? "Mercado Libre bloqueó la consulta del catálogo. Conecta tu cuenta en Mercado Libre → Conexión."
-              : `Mercado Libre no encontró ese producto de catálogo (${rp.status}).`,
-        };
+    const rp = await pedirJson<ProductoApi>(`https://api.mercadolibre.com/products/${identificado.id}`, encabezados);
+    if (rp.ok && rp.json) {
+      parcial.nombre = rp.json.name ?? undefined;
+      parcial.imagenUrl = rp.json.pictures?.[0]?.secure_url ?? rp.json.pictures?.[0]?.url ?? undefined;
+      const ganador = rp.json.buy_box_winner;
+      if (ganador) {
+        itemId = ganador.item_id ?? null;
+        if (typeof ganador.price === "number") parcial.precio = ganador.price;
+        parcial.categoriaId = ganador.category_id ?? undefined;
+        parcial.tipoPublicacion = ganador.listing_type_id ?? undefined;
       }
-      const producto = (await rp.json()) as { buy_box_winner?: { item_id?: string } | null; name?: string };
-      const ganador = producto.buy_box_winner?.item_id;
-      if (!ganador) {
-        return {
-          datos: null,
-          error: `Es una página de catálogo ("${producto.name ?? identificado.id}") sin publicación ganadora. Abre una publicación concreta y pega ese link.`,
-        };
-      }
-      itemId = ganador;
-    } catch {
-      return { datos: null, error: "No se pudo conectar con Mercado Libre. Llena los datos a mano." };
+    } else {
+      intentos.push(`catálogo ${identificado.id}: ${rp.status || "sin respuesta"}`);
     }
   }
 
-  try {
-    const respuesta = await fetch(`https://api.mercadolibre.com/items/${itemId}`, {
-      headers: encabezados,
-      cache: "no-store",
-    });
-    if (!respuesta.ok) {
-      return {
-        datos: null,
-        error:
-          respuesta.status === 403 || respuesta.status === 401
-            ? "Mercado Libre bloqueó la consulta. Conecta tu cuenta en Mercado Libre → Conexión y vuelve a intentar."
-            : `Mercado Libre no encontró ese producto (${respuesta.status}).`,
-      };
+  // 2) Publicación: completa/afina lo anterior (ventas, categoría, precio).
+  if (itemId) {
+    const ri = await pedirJson<ItemApi>(`https://api.mercadolibre.com/items/${itemId}`, encabezados);
+    if (ri.ok && ri.json) {
+      const item = ri.json;
+      parcial.nombre = parcial.nombre ?? item.title ?? undefined;
+      parcial.imagenUrl = parcial.imagenUrl ?? item.pictures?.[0]?.secure_url ?? item.pictures?.[0]?.url ?? item.thumbnail ?? undefined;
+      if (typeof item.price === "number") parcial.precio = item.price;
+      parcial.categoriaId = item.category_id ?? parcial.categoriaId;
+      parcial.tipoPublicacion = item.listing_type_id ?? parcial.tipoPublicacion;
+      if (typeof item.sold_quantity === "number") parcial.ventas = item.sold_quantity;
+    } else {
+      intentos.push(`publicación ${itemId}: ${ri.status || "sin respuesta"}`);
     }
-    item = await respuesta.json();
-  } catch {
-    return { datos: null, error: "No se pudo conectar con Mercado Libre. Llena los datos a mano." };
+  }
+
+  // 3) Página pública, si todavía falta lo básico.
+  if (!parcial.nombre || !parcial.precio) {
+    const pagina = await leerPaginaPublica(link);
+    if (pagina) {
+      parcial.nombre = parcial.nombre ?? pagina.nombre;
+      parcial.imagenUrl = parcial.imagenUrl ?? pagina.imagenUrl ?? undefined;
+      parcial.precio = parcial.precio ?? pagina.precio;
+      parcial.categoriaId = parcial.categoriaId ?? pagina.categoriaId ?? undefined;
+      parcial.tipoPublicacion = parcial.tipoPublicacion ?? pagina.tipoPublicacion ?? undefined;
+    } else {
+      intentos.push("página pública: sin datos");
+    }
+  }
+
+  if (!parcial.nombre) {
+    const detalle = intentos.length ? ` (${intentos.join("; ")})` : "";
+    return {
+      datos: null,
+      error: conToken
+        ? `Mercado Libre no dejó leer ese anuncio${detalle}. Llena los datos a mano.`
+        : `Mercado Libre bloqueó la consulta${detalle}. Conecta tu cuenta en Mercado Libre → Conexión y vuelve a intentar.`,
+    };
   }
 
   let categoriaNombre: string | null = null;
-  if (item.category_id) {
-    try {
-      const respuestaCategoria = await fetch(`https://api.mercadolibre.com/categories/${item.category_id}`, {
-        headers: encabezados,
-        cache: "no-store",
-      });
-      if (respuestaCategoria.ok) {
-        const categoria = await respuestaCategoria.json();
-        categoriaNombre = categoria?.name ?? null;
-      }
-    } catch {
-      // Sin categoría legible no es grave — se deja en null y el nombre
-      // técnico (category_id) sigue disponible para la comisión.
-    }
+  if (parcial.categoriaId) {
+    const rc = await pedirJson<{ name?: string }>(`https://api.mercadolibre.com/categories/${parcial.categoriaId}`, encabezados);
+    categoriaNombre = rc.json?.name ?? null;
   }
 
   return {
     datos: {
-      nombre: item.title,
-      imagenUrl: item.pictures?.[0]?.url ?? null,
-      categoriaId: item.category_id ?? null,
+      nombre: parcial.nombre,
+      imagenUrl: parcial.imagenUrl ?? null,
+      categoriaId: parcial.categoriaId ?? null,
       categoriaNombre,
-      precio: item.price ?? 0,
-      ventas: item.sold_quantity ?? null,
-      tipoPublicacion: item.listing_type_id ?? null,
+      precio: parcial.precio ?? 0,
+      ventas: parcial.ventas ?? null,
+      tipoPublicacion: parcial.tipoPublicacion ?? null,
     },
     error: null,
   };
