@@ -47,6 +47,7 @@ export function FormularioInvestigacion() {
 
   const [comisionMlPct, setComisionMlPct] = useState("");
   const [consultandoComision, setConsultandoComision] = useState(false);
+  const [tipoPublicacion, setTipoPublicacion] = useState<"gold_special" | "gold_pro">("gold_special");
   const [errorComision, setErrorComision] = useState<string | null>(null);
 
   // Comisión real de Mercado Libre (vía API, con la cuenta conectada) para
@@ -56,6 +57,7 @@ export function FormularioInvestigacion() {
       setErrorComision("Primero trae los datos del link (categoría) y pon el precio de venta.");
       return;
     }
+    setTipoPublicacion(tipo);
     setConsultandoComision(true);
     setErrorComision(null);
     const r = await porcentajeComisionMl(num(precioVenta), categoriaMlId, tipo);
@@ -102,7 +104,22 @@ export function FormularioInvestigacion() {
     setCategoriaMlNombre(datos.categoriaNombre);
     setPrecioReferenciaMl(datos.precio);
     setVentasMl(datos.ventas);
+    const precioParaComision = num(precioVenta) || datos.precio;
     if (!precioVenta) setPrecioVenta(String(datos.precio));
+
+    // Con la categoría y el precio ya se puede pedir la comisión real a
+    // Mercado Libre (con la cuenta conectada) — mismo tipo de publicación
+    // que el anuncio de referencia (Premium si el anuncio es Premium).
+    if (datos.categoriaId && precioParaComision > 0) {
+      const tipo = datos.tipoPublicacion === "gold_pro" ? "gold_pro" : "gold_special";
+      setTipoPublicacion(tipo);
+      setConsultandoComision(true);
+      setErrorComision(null);
+      const r = await porcentajeComisionMl(precioParaComision, datos.categoriaId, tipo);
+      setConsultandoComision(false);
+      if (r.error || r.porcentaje === null) setErrorComision(r.error ?? "No se pudo consultar la comisión.");
+      else setComisionMlPct(String(r.porcentaje));
+    }
   }
 
   const costoEnvioSugerido = costoEnvioMercadoLibre({
@@ -310,23 +327,20 @@ export function FormularioInvestigacion() {
               className={claseCampo}
             />
             <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px]">
-              <span className="text-zinc-400">Consultar a Mercado Libre:</span>
-              <button
-                type="button"
-                disabled={consultandoComision}
-                onClick={() => alConsultarComision("gold_special")}
-                className="rounded-md border border-zinc-300 px-2 py-0.5 text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
-              >
-                Clásica
-              </button>
-              <button
-                type="button"
-                disabled={consultandoComision}
-                onClick={() => alConsultarComision("gold_pro")}
-                className="rounded-md border border-zinc-300 px-2 py-0.5 text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
-              >
-                Premium
-              </button>
+              <span className="text-zinc-400">Se llena sola al traer datos. Publicación:</span>
+              {(["gold_special", "gold_pro"] as const).map((tipo) => (
+                <button
+                  key={tipo}
+                  type="button"
+                  disabled={consultandoComision}
+                  onClick={() => alConsultarComision(tipo)}
+                  className={`rounded-md border px-2 py-0.5 disabled:opacity-50 ${
+                    tipoPublicacion === tipo ? "border-zinc-900 bg-zinc-900 text-white" : "border-zinc-300 text-zinc-700 hover:bg-zinc-50"
+                  }`}
+                >
+                  {tipo === "gold_special" ? "Clásica" : "Premium"}
+                </button>
+              ))}
               {consultandoComision && <span className="text-zinc-400">consultando…</span>}
             </div>
             {errorComision && <p className="mt-1 text-[11px] text-red-600">{errorComision}</p>}

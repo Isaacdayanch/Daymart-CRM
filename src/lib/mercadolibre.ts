@@ -18,6 +18,8 @@ export interface DatosMercadoLibre {
   categoriaNombre: string | null;
   precio: number;
   ventas: number | null;
+  /** gold_special = Clásica, gold_pro = Premium (tipo del anuncio de referencia). */
+  tipoPublicacion: string | null;
 }
 
 /** Trae lo que se pueda del anuncio. Si algo falla (link raro, producto ya
@@ -38,6 +40,7 @@ export async function obtenerDatosMercadoLibre(
     pictures?: { url: string }[];
     category_id?: string;
     sold_quantity?: number;
+    listing_type_id?: string;
   };
   // Mercado Libre bloquea (403) las peticiones que no traen señales de
   // navegador real — sin esto, las llamadas desde un servidor (como
@@ -84,6 +87,7 @@ export async function obtenerDatosMercadoLibre(
       categoriaNombre,
       precio: item.price ?? 0,
       ventas: item.sold_quantity ?? null,
+      tipoPublicacion: item.listing_type_id ?? null,
     },
     error: null,
   };
