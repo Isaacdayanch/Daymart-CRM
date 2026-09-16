@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { formatoPesos } from "@/lib/formato";
 import { obtenerPerfilActual } from "@/lib/perfil";
 import type { Bodega, Contenedor, MovimientoStock } from "@/lib/tipos";
+import { AccionesMovimiento } from "./acciones-movimiento";
 
 export default async function MovimientosStock() {
   const supabase = await createClient();
@@ -37,7 +38,10 @@ export default async function MovimientosStock() {
       <div className="rounded-2xl border border-zinc-200 bg-white shadow-sm">
         <div className="border-b border-zinc-100 p-6">
           <h2 className="text-sm font-semibold text-zinc-900">Libro de movimientos</h2>
-          <p className="mt-1 text-xs text-zinc-500">Entradas, salidas y ajustes, más recientes primero.</p>
+          <p className="mt-1 text-xs text-zinc-500">
+            Entradas, salidas y ajustes, más recientes primero.
+            {verDinero && " Los movimientos capturados a mano se pueden editar o quitar; los que vienen de un contenedor o de una venta se corrigen desde ahí."}
+          </p>
         </div>
         {listaMovimientos.length === 0 ? (
           <p className="p-6 text-sm text-zinc-500">Todavía no hay movimientos.</p>
@@ -105,12 +109,17 @@ export default async function MovimientosStock() {
                         <Link href={`/contenedores/${m.contenedor_id}`} className="hover:underline">
                           Contenedor {contenedoresPorId.get(m.contenedor_id)}
                         </Link>
+                      ) : m.venta_id ? (
+                        <Link href={`/ventas/${m.venta_id}`} className="hover:underline">
+                          {[m.destino, m.referencia].filter(Boolean).join(" · ")}
+                        </Link>
                       ) : (
                         [m.destino, m.referencia].filter(Boolean).join(" · ") || "—"
                       )}
                       {verDinero && m.tipo === "ENTRADA" && m.costo_unitario_pesos > 0 && (
                         <span className="ml-1 text-zinc-400">· {formatoPesos(m.costo_unitario_pesos)}/pza</span>
                       )}
+                      {verDinero && !m.contenedor_id && !m.venta_id && <AccionesMovimiento movimiento={m} />}
                     </td>
                   </tr>
                 ))}

@@ -143,6 +143,8 @@ export interface MovimientoStock {
   costo_unitario_pesos: number;
   contenedor_id: string | null;
   producto_id: string | null;
+  /** Venta directa que generó esta salida (Módulo Ventas). */
+  venta_id: string | null;
   destino: string | null;
   referencia: string | null;
   creado_en: string;

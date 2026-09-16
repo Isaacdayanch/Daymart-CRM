@@ -470,3 +470,79 @@ export async function cancelarPendiente(pendienteId: string) {
     .eq("id", pendienteId);
   revalidatePath("/stock/pendientes");
 }
+
+/** Un movimiento "suelto" es el que Isaac capturó a mano (salida, ajuste o
+ * entrada manual): no viene de un contenedor ni de una venta. Solo esos se
+ * pueden corregir/quitar aquí — los otros se corrigen desde su origen para
+ * no desincronizar los dos registros del mismo dato. */
+async function movimientoSuelto(supabase: Awaited<ReturnType<typeof createClient>>, movimientoId: string) {
+  const { data } = await supabase
+    .from("movimientos_stock")
+    .select("*")
+    .eq("id", movimientoId)
+    .maybeSingle<MovimientoStock>();
+  if (!data) return { movimiento: null, error: "No se encontró el movimiento." };
+  if (data.contenedor_id) {
+    return { movimiento: null, error: "Este movimiento viene de un contenedor — corrígelo desde el contenedor (Editar recepción)." };
+  }
+  if (data.venta_id) {
+    return { movimiento: null, error: "Este movimiento viene de una venta — corrígelo o cancélalo desde Ventas." };
+  }
+  return { movimiento: data, error: null };
+}
+
+function refrescarStock(sku: string) {
+  revalidatePath("/stock");
+  revalidatePath("/stock/movimientos");
+  revalidatePath(`/stock/producto/${encodeURIComponent(sku)}`);
+  revalidatePath("/");
+}
+
+/** Corrige cantidad, fecha y nota de un movimiento suelto. */
+export async function actualizarMovimientoStock(movimientoId: string, formData: FormData) {
+  const supabase = await createClient();
+  const { movimiento, error: errorSuelto } = await movimientoSuelto(supabase, movimientoId);
+  if (!movimiento) return { error: errorSuelto };
+
+  const cantidad = Number(formData.get("cantidad"));
+  if (!Number.isFinite(cantidad) || cantidad === 0) return { error: "La cantidad no es válida." };
+  if (movimiento.tipo !== "AJUSTE" && cantidad < 0) return { error: "La cantidad debe ser mayor a cero." };
+
+  const fechaCampo = formData.get("fecha");
+  const creadoEn =
+    typeof fechaCampo === "string" && fechaCampo ? new Date(`${fechaCampo}T12:00:00`).toISOString() : movimiento.creado_en;
+
+  const { error } = await supabase
+    .from("movimientos_stock")
+    .update({ cantidad, creado_en: creadoEn, referencia: texto(formData, "referencia") })
+    .eq("id", movimientoId);
+  if (error) return { error: error.message };
+
+  refrescarStock(movimiento.sku);
+  return { error: null };
+}
+
+/** Quita un movimiento suelto (ej. una salida que se capturó por error o que
+ * después se registró como venta). No se permite si el stock del producto
+ * quedaría en negativo. */
+export async function eliminarMovimientoStock(movimientoId: string) {
+  const supabase = await createClient();
+  const { movimiento, error: errorSuelto } = await movimientoSuelto(supabase, movimientoId);
+  if (!movimiento) return { error: errorSuelto };
+
+  const { data: delSku } = await supabase
+    .from("movimientos_stock")
+    .select("*")
+    .eq("sku", movimiento.sku)
+    .returns<MovimientoStock[]>();
+  const stockSinEste = stockActual((delSku ?? []).filter((m) => m.id !== movimientoId));
+  if (stockSinEste < 0) {
+    return { error: `Si quitas este movimiento, "${movimiento.nombre}" quedaría en ${stockSinEste} piezas (negativo).` };
+  }
+
+  const { error } = await supabase.from("movimientos_stock").delete().eq("id", movimientoId);
+  if (error) return { error: error.message };
+
+  refrescarStock(movimiento.sku);
+  return { error: null };
+}
