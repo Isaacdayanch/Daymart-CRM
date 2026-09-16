@@ -29,17 +29,18 @@ export function BotonSincronizar({ conectado, primeraVez }: { conectado: boolean
         >
           {cargando ? "Sincronizando..." : primeraVez ? "Traer mis ventas (últimos 60 días)" : "Sincronizar"}
         </button>
-        {!primeraVez && (
-          <button
-            type="button"
-            disabled={!conectado || cargando}
-            onClick={() => correr(365)}
-            className="text-xs text-zinc-500 hover:text-zinc-900 disabled:opacity-50"
-            title="Vuelve a traer todo el último año (tarda más)"
-          >
-            traer último año
-          </button>
-        )}
+        <button
+          type="button"
+          disabled={!conectado || cargando}
+          onClick={() => {
+            if (!window.confirm("Se vuelven a traer todas las ventas del último año desde Mercado Libre. Puede tardar unos minutos. ¿Continuar?")) return;
+            correr(365);
+          }}
+          className="rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+          title="Vuelve a traer todo el último año (tarda más)"
+        >
+          Traer último año
+        </button>
       </div>
       {mensaje && <p className={`text-xs ${mensaje.startsWith("Error") ? "text-red-600" : "text-emerald-700"}`}>{mensaje}</p>}
     </div>
