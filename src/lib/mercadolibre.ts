@@ -3,12 +3,25 @@
 // el anuncio. Se usa para llenar solo foto/precio/categoría/ventas al
 // investigar un producto nuevo.
 
-/** Saca el ID del producto (ej. "MLM4518836592") de cualquier link de
- * artículo de Mercado Libre México. Los links traen el patrón "MLM-123..."
- * en la ruta, con guion; la API pública lo pide sin guion. */
+/** Identifica qué trae un link de Mercado Libre México:
+ *  - `articulo.mercadolibre.com.mx/MLM-123...`  → una publicación (item).
+ *  - `mercadolibre.com.mx/nombre/p/MLM123...`     → una página de CATÁLOGO:
+ *    ese ID es del producto genérico, no de una publicación. Si el link
+ *    trae `wid=MLM...` (la publicación ganadora que se estaba viendo), se
+ *    usa esa; si no, hay que pedirle a la API del catálogo cuál es la
+ *    publicación ganadora. */
+export function identificarLinkMercadoLibre(link: string): { tipo: "item" | "producto"; id: string } | null {
+  const wid = link.match(/[?&#]wid=MLM-?(\d+)/i);
+  if (wid) return { tipo: "item", id: `MLM${wid[1]}` };
+  const producto = link.match(/\/p\/MLM-?(\d+)/i);
+  if (producto) return { tipo: "producto", id: `MLM${producto[1]}` };
+  const item = link.match(/MLM-?(\d+)/i);
+  return item ? { tipo: "item", id: `MLM${item[1]}` } : null;
+}
+
+/** Compatibilidad: el ID que trae el link (item o producto de catálogo). */
 export function extraerItemIdMercadoLibre(link: string): string | null {
-  const match = link.match(/MLM-?(\d+)/i);
-  return match ? `MLM${match[1]}` : null;
+  return identificarLinkMercadoLibre(link)?.id ?? null;
 }
 
 export interface DatosMercadoLibre {
@@ -29,8 +42,8 @@ export interface DatosMercadoLibre {
 export async function obtenerDatosMercadoLibre(
   link: string,
 ): Promise<{ datos: DatosMercadoLibre | null; error: string | null }> {
-  const itemId = extraerItemIdMercadoLibre(link);
-  if (!itemId) {
+  const identificado = identificarLinkMercadoLibre(link);
+  if (!identificado) {
     return { datos: null, error: "No se pudo reconocer el link de Mercado Libre." };
   }
 
@@ -61,6 +74,35 @@ export async function obtenerDatosMercadoLibre(
     encabezados = { Authorization: `Bearer ${token}`, Accept: "application/json" };
   } catch {
     // sin conexión: se sigue con la pública
+  }
+
+  // Link de catálogo: primero se pregunta al catálogo cuál es la
+  // publicación ganadora (buy_box_winner) y se sigue con esa.
+  let itemId = identificado.id;
+  if (identificado.tipo === "producto") {
+    try {
+      const rp = await fetch(`https://api.mercadolibre.com/products/${identificado.id}`, { headers: encabezados, cache: "no-store" });
+      if (!rp.ok) {
+        return {
+          datos: null,
+          error:
+            rp.status === 403 || rp.status === 401
+              ? "Mercado Libre bloqueó la consulta del catálogo. Conecta tu cuenta en Mercado Libre → Conexión."
+              : `Mercado Libre no encontró ese producto de catálogo (${rp.status}).`,
+        };
+      }
+      const producto = (await rp.json()) as { buy_box_winner?: { item_id?: string } | null; name?: string };
+      const ganador = producto.buy_box_winner?.item_id;
+      if (!ganador) {
+        return {
+          datos: null,
+          error: `Es una página de catálogo ("${producto.name ?? identificado.id}") sin publicación ganadora. Abre una publicación concreta y pega ese link.`,
+        };
+      }
+      itemId = ganador;
+    } catch {
+      return { datos: null, error: "No se pudo conectar con Mercado Libre. Llena los datos a mano." };
+    }
   }
 
   try {
