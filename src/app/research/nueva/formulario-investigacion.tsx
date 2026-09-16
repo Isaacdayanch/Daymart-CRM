@@ -7,6 +7,7 @@ import { costoEnvioMercadoLibre } from "@/lib/costos-envio-ml";
 import { costoEstimadoPorPiezaResearch, margenEstimadoResearch } from "@/lib/calculos-research";
 import { formatoPesos } from "@/lib/formato";
 import { guardarBorrador, traerDatosMercadoLibre } from "../actions";
+import { porcentajeComisionMl } from "@/app/mercadolibre/actions";
 
 const claseCampo =
   "mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500";
@@ -45,6 +46,26 @@ export function FormularioInvestigacion() {
   const [paquetePesoFisicoKg, setPaquetePesoFisicoKg] = useState("");
 
   const [comisionMlPct, setComisionMlPct] = useState("");
+  const [consultandoComision, setConsultandoComision] = useState(false);
+  const [errorComision, setErrorComision] = useState<string | null>(null);
+
+  // Comisión real de Mercado Libre (vía API, con la cuenta conectada) para
+  // el precio y la categoría del anuncio — en vez de copiarla del simulador.
+  async function alConsultarComision(tipo: "gold_special" | "gold_pro") {
+    if (!categoriaMlId || !num(precioVenta)) {
+      setErrorComision("Primero trae los datos del link (categoría) y pon el precio de venta.");
+      return;
+    }
+    setConsultandoComision(true);
+    setErrorComision(null);
+    const r = await porcentajeComisionMl(num(precioVenta), categoriaMlId, tipo);
+    setConsultandoComision(false);
+    if (r.error || r.porcentaje === null) {
+      setErrorComision(r.error ?? "No se pudo consultar.");
+      return;
+    }
+    setComisionMlPct(String(r.porcentaje));
+  }
   const [envioGratis, setEnvioGratis] = useState(false);
   const [costoEnvioManual, setCostoEnvioManual] = useState<string | null>(null);
 
@@ -279,9 +300,7 @@ export function FormularioInvestigacion() {
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-zinc-500">
-              Comisión de Mercado Libre (%) — sácala del simulador
-            </label>
+            <label className="block text-xs font-medium text-zinc-500">Comisión de Mercado Libre (%)</label>
             <input
               type="number"
               step="0.01"
@@ -290,6 +309,27 @@ export function FormularioInvestigacion() {
               name="comision_ml_pct"
               className={claseCampo}
             />
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px]">
+              <span className="text-zinc-400">Consultar a Mercado Libre:</span>
+              <button
+                type="button"
+                disabled={consultandoComision}
+                onClick={() => alConsultarComision("gold_special")}
+                className="rounded-md border border-zinc-300 px-2 py-0.5 text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+              >
+                Clásica
+              </button>
+              <button
+                type="button"
+                disabled={consultandoComision}
+                onClick={() => alConsultarComision("gold_pro")}
+                className="rounded-md border border-zinc-300 px-2 py-0.5 text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+              >
+                Premium
+              </button>
+              {consultandoComision && <span className="text-zinc-400">consultando…</span>}
+            </div>
+            {errorComision && <p className="mt-1 text-[11px] text-red-600">{errorComision}</p>}
           </div>
         </div>
 

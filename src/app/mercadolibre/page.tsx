@@ -1,6 +1,7 @@
 import { configuracionCompleta, obtenerConexion, tokenVigente } from "@/lib/mercadolibre-auth";
 import { createServiceClient } from "@/lib/supabase/servicio";
 import { formatoFechaHoraMx } from "@/lib/fechas-mx";
+import { RelojMx } from "./reloj-mx";
 import { PanelConexion } from "./panel-conexion";
 
 interface Notificacion {
@@ -48,10 +49,13 @@ export default async function MercadoLibre({
 
   return (
     <div className="space-y-6">
-      <p className="text-sm text-zinc-500">
-        Aquí se conecta tu cuenta de vendedor de Mercado Libre con el CRM. Una vez conectada, el sistema se mantiene
-        conectado solo. Todas las horas se muestran en horario de la Ciudad de México.
-      </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <p className="max-w-2xl text-sm text-zinc-500">
+          Aquí se conecta tu cuenta de vendedor de Mercado Libre con el CRM. Una vez conectada, el sistema se mantiene
+          conectado solo. Todas las horas se muestran en horario de la Ciudad de México.
+        </p>
+        <RelojMx />
+      </div>
 
       {ok === "1" && (
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">

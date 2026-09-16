@@ -1,6 +1,7 @@
 import { Logo } from "@/components/logo";
 import { obtenerPerfilActual } from "@/lib/perfil";
 import { MenuMas } from "../menu-mas";
+import { NavMercadoLibre } from "./nav-mercadolibre";
 
 export default async function MercadoLibreLayout({ children }: { children: React.ReactNode }) {
   const perfil = await obtenerPerfilActual();
@@ -15,6 +16,9 @@ export default async function MercadoLibreLayout({ children }: { children: React
               <h1 className="mt-1 text-xl font-semibold tracking-tight text-zinc-900">Mercado Libre</h1>
             </div>
             <MenuMas rol={perfil?.rol} />
+          </div>
+          <div className="mt-4">
+            <NavMercadoLibre />
           </div>
         </div>
       </header>
