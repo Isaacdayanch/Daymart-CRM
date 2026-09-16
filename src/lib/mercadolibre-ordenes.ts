@@ -40,6 +40,10 @@ export interface OrdenItemMl {
   sale_fee: number;
   listing_type: string | null;
   imagen_url: string | null;
+  /** Texto de la variante ("Color: Negro · Talla: M") o null si no tiene. */
+  variacion: string | null;
+  /** Comisión verificada de este renglón (null en filas guardadas antes de la migración 0031). */
+  comision: number | null;
 }
 
 export interface EstadoSync {
@@ -66,7 +70,15 @@ interface OrdenApi {
   shipping?: { id?: number | null };
   tags?: string[];
   order_items?: {
-    item?: { id?: string; title?: string; category_id?: string; variation_id?: number | null; seller_sku?: string | null; seller_custom_field?: string | null };
+    item?: {
+      id?: string;
+      title?: string;
+      category_id?: string;
+      variation_id?: number | null;
+      seller_sku?: string | null;
+      seller_custom_field?: string | null;
+      variation_attributes?: { name?: string; value_name?: string }[];
+    };
     quantity?: number;
     unit_price?: number;
     sale_fee?: number;
@@ -94,11 +106,50 @@ export const ESTADOS_ORDEN: Record<string, string> = {
   invalid: "Inválida",
 };
 
-/** Comisión total de la orden: Mercado Libre reporta `sale_fee` por unidad
- * en cada renglón, así que se multiplica por la cantidad. (Pendiente de
- * confirmar contra el reporte de ventas de Isaac en la primera revisión.) */
-function comisionOrden(orden: OrdenApi) {
-  return (orden.order_items ?? []).reduce((s, i) => s + (i.sale_fee ?? 0) * (i.quantity ?? 0), 0);
+/** Comisión de un renglón. Mercado Libre reporta `sale_fee` por unidad, pero
+ * como Isaac no tiene forma de comprobarlo a mano, para renglones de más de
+ * una pieza se verifica contra la tarifa oficial (`listing_prices`) de ese
+ * precio/categoría: si `sale_fee` se parece a la tarifa de UNA pieza, se
+ * multiplica por la cantidad; si ya se parece a la tarifa × cantidad, se
+ * deja tal cual. Así la comisión queda bien en cualquiera de los dos casos. */
+const cacheTarifa = new Map<string, number | null>();
+
+async function tarifaUnitaria(precio: number, categoriaId: string | undefined, listingType: string | undefined) {
+  if (!categoriaId || !precio) return null;
+  const clave = `${categoriaId}|${precio}|${listingType ?? ""}`;
+  if (cacheTarifa.has(clave)) return cacheTarifa.get(clave) ?? null;
+  try {
+    const params = new URLSearchParams({ price: String(precio), category_id: categoriaId });
+    if (listingType) params.set("listing_type_id", listingType);
+    const r = await mercadolibreGet<{ sale_fee_amount?: number }[] | { sale_fee_amount?: number }>(`/sites/MLM/listing_prices?${params}`);
+    const uno = Array.isArray(r) ? r[0] : r;
+    const monto = typeof uno?.sale_fee_amount === "number" ? uno.sale_fee_amount : null;
+    cacheTarifa.set(clave, monto);
+    return monto;
+  } catch {
+    cacheTarifa.set(clave, null);
+    return null;
+  }
+}
+
+async function comisionRenglon(i: NonNullable<OrdenApi["order_items"]>[number]) {
+  const fee = i.sale_fee ?? 0;
+  const cantidad = i.quantity ?? 0;
+  if (!fee || cantidad <= 1) return fee;
+  const unitaria = await tarifaUnitaria(i.unit_price ?? 0, i.item?.category_id, i.listing_type_id);
+  if (unitaria) {
+    const cerca = (a: number, b: number) => Math.abs(a - b) <= Math.max(1, b * 0.15);
+    if (cerca(fee, unitaria * cantidad)) return fee; // ya venía por renglón
+    if (cerca(fee, unitaria)) return fee * cantidad; // venía por unidad
+  }
+  return fee * cantidad; // regla por defecto: por unidad
+}
+
+/** Comisión por renglón (en el mismo orden que `order_items`). */
+async function comisionesPorRenglon(orden: OrdenApi) {
+  const lista: number[] = [];
+  for (const i of orden.order_items ?? []) lista.push(await comisionRenglon(i));
+  return lista;
 }
 
 const cacheImagenes = new Map<string, string | null>();
@@ -148,6 +199,7 @@ export async function guardarOrden(orden: OrdenApi, conEnvio: boolean) {
   let envio = { logistica: null as string | null, estado: null as string | null, costoVendedor: null as number | null };
   if (conEnvio && orden.shipping?.id) envio = await datosEnvio(orden.shipping.id);
 
+  const comisiones = await comisionesPorRenglon(orden);
   const fila: Record<string, unknown> = {
     id: orden.id,
     pack_id: orden.pack_id ?? null,
@@ -162,7 +214,7 @@ export async function guardarOrden(orden: OrdenApi, conEnvio: boolean) {
     total: orden.total_amount ?? 0,
     monto_pagado: orden.paid_amount ?? 0,
     moneda: orden.currency_id ?? null,
-    comision: comisionOrden(orden),
+    comision: comisiones.reduce((a, b) => a + b, 0),
     envio_id: orden.shipping?.id ?? null,
     etiquetas: orden.tags ?? null,
     payload: orden,
@@ -178,8 +230,9 @@ export async function guardarOrden(orden: OrdenApi, conEnvio: boolean) {
   if (error) throw new Error(`No se pudo guardar la orden ${orden.id}: ${error.message}`);
 
   const items = [];
-  for (const i of orden.order_items ?? []) {
+  for (const [indice, i] of (orden.order_items ?? []).entries()) {
     items.push({
+      comision: comisiones[indice] ?? 0,
       orden_id: orden.id,
       item_id: i.item?.id ?? null,
       variation_id: i.item?.variation_id ?? null,
@@ -191,11 +244,29 @@ export async function guardarOrden(orden: OrdenApi, conEnvio: boolean) {
       sale_fee: i.sale_fee ?? 0,
       listing_type: i.listing_type_id ?? null,
       imagen_url: await imagenDeItem(i.item?.id),
+      variacion:
+        (i.item?.variation_attributes ?? [])
+          .map((a) => [a.name, a.value_name].filter(Boolean).join(": "))
+          .filter(Boolean)
+          .join(" · ") || null,
     });
   }
   await supabase.from("mercadolibre_orden_items").delete().eq("orden_id", orden.id);
   if (items.length) {
-    const { error: errorItems } = await supabase.from("mercadolibre_orden_items").insert(items);
+    let { error: errorItems } = await supabase.from("mercadolibre_orden_items").insert(items);
+    if (errorItems && /variacion|comision/.test(errorItems.message)) {
+      // Todavía no se corre la migración 0031: se guarda sin esas columnas.
+      ({ error: errorItems } = await supabase
+        .from("mercadolibre_orden_items")
+        .insert(
+          items.map((fila) => {
+            const copia: Record<string, unknown> = { ...fila };
+            delete copia.variacion;
+            delete copia.comision;
+            return copia;
+          }),
+        ));
+    }
     if (errorItems) throw new Error(`No se pudieron guardar los productos de la orden ${orden.id}: ${errorItems.message}`);
   }
 }

@@ -108,6 +108,45 @@ export default async function VentasMercadoLibre({
   }
 
   const itemsDe = (ordenId: number) => items.filter((i) => i.orden_id === ordenId);
+
+  // Consolidado por producto (+ variante) de las ventas PAGADAS del periodo.
+  interface ProductoConsolidado {
+    clave: string;
+    itemId: string | null;
+    titulo: string;
+    variacion: string | null;
+    sellerSku: string | null;
+    imagenUrl: string | null;
+    piezas: number;
+    facturado: number;
+    comision: number;
+    ordenes: number;
+  }
+  const consolidado = new Map<string, ProductoConsolidado>();
+  const idsPagadas = new Set(ordenes.filter((o) => o.estado === "paid").map((o) => o.id));
+  for (const i of items) {
+    if (!idsPagadas.has(i.orden_id)) continue;
+    const clave = `${i.item_id ?? "?"}|${i.variation_id ?? ""}`;
+    const actual = consolidado.get(clave) ?? {
+      clave,
+      itemId: i.item_id,
+      titulo: i.titulo ?? "Sin título",
+      variacion: i.variacion ?? null,
+      sellerSku: i.seller_sku,
+      imagenUrl: i.imagen_url,
+      piezas: 0,
+      facturado: 0,
+      comision: 0,
+      ordenes: 0,
+    };
+    actual.piezas += i.cantidad;
+    actual.facturado += i.cantidad * i.precio_unitario;
+    actual.comision += i.comision ?? i.sale_fee * i.cantidad;
+    actual.ordenes += 1;
+    if (!actual.variacion && i.variacion) actual.variacion = i.variacion;
+    consolidado.set(clave, actual);
+  }
+  const productos = Array.from(consolidado.values()).sort((a, b) => b.facturado - a.facturado);
   const pagadas = ordenes.filter((o) => o.estado === "paid");
   const canceladas = ordenes.filter((o) => o.estado === "cancelled" || o.estado === "invalid");
   const pendientes = ordenes.filter((o) => !pagadas.includes(o) && !canceladas.includes(o));
@@ -218,6 +257,64 @@ export default async function VentasMercadoLibre({
         </p>
       )}
 
+      {productos.length > 0 && (
+        <div className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white shadow-sm">
+          <div className="border-b border-zinc-100 px-5 py-3">
+            <h3 className="text-sm font-semibold text-zinc-900">Por producto</h3>
+            <p className="text-xs text-zinc-500">Ventas pagadas del periodo, consolidadas. Cada variante cuenta como producto aparte.</p>
+          </div>
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="border-b border-zinc-100 text-xs text-zinc-400">
+                <th className="px-5 py-3 font-medium">Producto</th>
+                <th className="px-3 py-3 text-right font-medium">Piezas</th>
+                <th className="px-3 py-3 text-right font-medium">Ventas</th>
+                <th className="px-3 py-3 text-right font-medium">Facturado</th>
+                <th className="px-3 py-3 text-right font-medium">Precio prom.</th>
+                <th className="px-5 py-3 text-right font-medium">Comisión ML</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-50">
+              {productos.map((p) => (
+                <tr key={p.clave}>
+                  <td className="px-5 py-2.5">
+                    <div className="flex items-center gap-3">
+                      {p.imagenUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element -- miniatura de Mercado Libre
+                        <img src={p.imagenUrl} alt="" className="h-10 w-10 shrink-0 rounded-lg object-cover" />
+                      ) : (
+                        <div className="h-10 w-10 shrink-0 rounded-lg bg-zinc-100" />
+                      )}
+                      <div className="min-w-0">
+                        <p className="truncate font-medium text-zinc-900" title={p.titulo}>{p.titulo}</p>
+                        <p className="truncate text-xs text-zinc-400">
+                          {[p.variacion, p.sellerSku ? `SKU ${p.sellerSku}` : null, p.itemId].filter(Boolean).join(" · ")}
+                        </p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-3 py-2.5 text-right font-semibold text-zinc-900">{p.piezas.toLocaleString("es-MX")}</td>
+                  <td className="px-3 py-2.5 text-right text-zinc-500">{p.ordenes}</td>
+                  <td className="px-3 py-2.5 text-right font-medium text-zinc-900">{formatoPesos(p.facturado)}</td>
+                  <td className="px-3 py-2.5 text-right text-zinc-700">{formatoPesos(p.piezas ? p.facturado / p.piezas : 0)}</td>
+                  <td className="px-5 py-2.5 text-right text-red-600">{p.comision ? `-${formatoPesos(p.comision)}` : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="border-t border-zinc-200 text-sm font-semibold">
+                <td className="px-5 py-2.5 text-zinc-900">Total</td>
+                <td className="px-3 py-2.5 text-right text-zinc-900">{piezas.toLocaleString("es-MX")}</td>
+                <td className="px-3 py-2.5 text-right text-zinc-500">{pagadas.length}</td>
+                <td className="px-3 py-2.5 text-right text-zinc-900">{formatoPesos(productos.reduce((s, p) => s + p.facturado, 0))}</td>
+                <td className="px-3 py-2.5"></td>
+                <td className="px-5 py-2.5 text-right text-red-600">-{formatoPesos(productos.reduce((s, p) => s + p.comision, 0))}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+
       {ordenes.length === 0 ? (
         <div className="rounded-xl border border-dashed border-zinc-300 bg-white p-12 text-center">
           <p className="text-base font-medium text-zinc-900">No hay ventas en este periodo</p>
@@ -226,7 +323,16 @@ export default async function VentasMercadoLibre({
           </p>
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white shadow-sm">
+        <details className="group overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
+          <summary className="flex cursor-pointer list-none items-center justify-between px-5 py-3 text-sm text-zinc-600 hover:bg-zinc-50 [&::-webkit-details-marker]:hidden">
+            <span>
+              Ver las {ordenes.length} {ordenes.length === 1 ? "venta" : "ventas"} una por una
+            </span>
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" className="text-zinc-400 transition-transform group-open:rotate-180">
+              <path d="M3.5 5.5 7 9l3.5-3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </summary>
+          <div className="overflow-x-auto border-t border-zinc-100">
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b border-zinc-100 text-xs text-zinc-400">
@@ -290,7 +396,8 @@ export default async function VentasMercadoLibre({
               ))}
             </tbody>
           </table>
-        </div>
+          </div>
+        </details>
       )}
 
       <p className="text-xs text-zinc-400">
