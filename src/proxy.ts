@@ -5,7 +5,9 @@ import { createServerClient } from "@supabase/ssr";
 // desde afuera) — se protege solo con su propia clave secreta, no con
 // login. Si algún día se agregan más rutas bajo /api que sí deban requerir
 // sesión, hay que sacarlas de esta excepción.
-const RUTAS_PUBLICAS = ["/login", "/sin-acceso", "/api/respaldo"];
+// "/api/mercadolibre/notificaciones" también es pública: la llama Mercado
+// Libre desde sus servidores (sin sesión) para avisar de ventas/cambios.
+const RUTAS_PUBLICAS = ["/login", "/sin-acceso", "/api/respaldo", "/api/mercadolibre/notificaciones"];
 
 // Una operadora ve todo lo de Stock y los contenedores (para poder hacer
 // match del inventario real) — las páginas mismas esconden los números de

@@ -73,6 +73,21 @@ const ITEMS = [
     ),
   },
   {
+    href: "/mercadolibre",
+    etiqueta: "Mercado Libre",
+    soloDueno: true,
+    // Apretón de manos simplificado: dos ganchos enlazados (conexión).
+    icono: (
+      <path
+        d="M7 11.5 4.8 13.7a2.1 2.1 0 0 1-3-3L5.3 7.2a2.1 2.1 0 0 1 3 0M11 6.5l2.2-2.2a2.1 2.1 0 0 1 3 3l-3.5 3.5a2.1 2.1 0 0 1-3 0M7.5 10.5l3-3"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    ),
+  },
+  {
     href: "/research",
     etiqueta: "Research",
     soloDueno: true,
