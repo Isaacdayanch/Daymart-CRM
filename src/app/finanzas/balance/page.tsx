@@ -3,8 +3,10 @@ import { resumenPorSku } from "@/lib/calculos-stock";
 import { obtenerPiezasPorCajaPorSku } from "@/lib/productos-stock";
 import { saldosPorCuenta } from "@/lib/calculos-financieras";
 import { proveedoresConDeuda, saldoProveedor } from "@/lib/calculos-socios-deuda";
+import { ventasConSaldo } from "@/lib/calculos-ventas";
 import { formatoPesos, formatoDolares } from "@/lib/formato";
 import type {
+  CobroVenta,
   ConfiguracionStock,
   CuentaFinanciera,
   MovimientoDeudaProveedor,
@@ -12,6 +14,8 @@ import type {
   MovimientoPrestamista,
   MovimientoStock,
   Prestamista,
+  Venta,
+  VentaLinea,
 } from "@/lib/tipos";
 
 export default async function BalanceFinanzas() {
@@ -25,6 +29,9 @@ export default async function BalanceFinanzas() {
     { data: prestamistas },
     { data: movimientosPrestamista },
     { data: movimientosDeudaProveedor },
+    { data: ventas },
+    { data: ventaLineas },
+    { data: cobrosVenta },
   ] = await Promise.all([
     supabase.from("movimientos_stock").select("*").returns<MovimientoStock[]>(),
     supabase.from("configuracion_stock").select("*").single<ConfiguracionStock>(),
@@ -34,6 +41,9 @@ export default async function BalanceFinanzas() {
     supabase.from("prestamistas").select("*").returns<Prestamista[]>(),
     supabase.from("movimientos_prestamista").select("*").returns<MovimientoPrestamista[]>(),
     supabase.from("movimientos_deuda_proveedor").select("*").returns<MovimientoDeudaProveedor[]>(),
+    supabase.from("ventas").select("*").returns<Venta[]>(),
+    supabase.from("venta_lineas").select("*").returns<VentaLinea[]>(),
+    supabase.from("cobros_venta").select("*").returns<CobroVenta[]>(),
   ]);
 
   const resumenes = resumenPorSku(movimientosStock ?? [], configuracion?.dias_espera ?? 60, piezasPorCajaPorSku);
@@ -68,14 +78,21 @@ export default async function BalanceFinanzas() {
   const deudaProveedoresUsd = proveedores.reduce((s, p) => s + saldoProveedor(listaMovDeudaProveedor, p, "USD"), 0);
   const deudaProveedoresMxn = proveedores.reduce((s, p) => s + saldoProveedor(listaMovDeudaProveedor, p, "MXN"), 0);
 
-  const activoMxn = cajaMxn + valorInventario;
+  // Lo que te deben los clientes por ventas a crédito: es dinero tuyo que
+  // todavía no entra, cuenta como activo.
+  const porCobrarVentas = ventasConSaldo(ventas ?? [], ventaLineas ?? [], cobrosVenta ?? []).reduce(
+    (s, v) => s + Math.max(v.saldo, 0),
+    0,
+  );
+
+  const activoMxn = cajaMxn + valorInventario + porCobrarVentas;
   const pasivoMxn = deudaPrestamosMxn + deudaProveedoresMxn;
   const pasivoUsd = deudaPrestamosUsd + deudaProveedoresUsd;
 
   return (
     <div className="space-y-6">
       <p className="text-sm text-zinc-500">
-        Lo que tienes (caja + inventario) contra lo que debes (préstamos + proveedores) — para saber si estás
+        Lo que tienes (caja + inventario + lo que te deben clientes) contra lo que debes (préstamos + proveedores) — para saber si estás
         protegido. Ojo: todavía no incluye la mercancía ya pagada pero pendiente en China; se puede agregar
         después.
       </p>
@@ -93,6 +110,10 @@ export default async function BalanceFinanzas() {
             <div className="flex justify-between">
               <dt className="text-emerald-800">Valor de inventario</dt>
               <dd className="font-medium text-emerald-900">{formatoPesos(valorInventario)}</dd>
+            </div>
+            <div className="flex justify-between">
+              <dt className="text-emerald-800">Te deben clientes (ventas a crédito)</dt>
+              <dd className="font-medium text-emerald-900">{formatoPesos(porCobrarVentas)}</dd>
             </div>
           </dl>
           <div className="mt-4 border-t border-emerald-200 pt-3">

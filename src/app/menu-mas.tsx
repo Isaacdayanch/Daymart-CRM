@@ -21,6 +21,21 @@ const ITEMS = [
     ),
   },
   {
+    href: "/ventas",
+    etiqueta: "Ventas",
+    soloDueno: true,
+    // Etiqueta de precio: una venta directa a un cliente.
+    icono: (
+      <path
+        d="M3 3.75A.75.75 0 0 1 3.75 3h4.7c.2 0 .39.08.53.22l6.05 6.05a.75.75 0 0 1 0 1.06l-4.7 4.7a.75.75 0 0 1-1.06 0L3.22 8.98A.75.75 0 0 1 3 8.45v-4.7ZM6.25 6.25h.01"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    ),
+  },
+  {
     href: "/contenedores",
     etiqueta: "Contenedores",
     // Contenedor de embarque: rectángulo bajo y ancho con "costillas"

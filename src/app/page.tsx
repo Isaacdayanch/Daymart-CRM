@@ -37,6 +37,20 @@ const ACCESOS = [
     ),
   },
   {
+    href: "/ventas",
+    etiqueta: "Ventas",
+    soloDueno: true,
+    icono: (
+      <path
+        d="M3 3.75A.75.75 0 0 1 3.75 3h4.7c.2 0 .39.08.53.22l6.05 6.05a.75.75 0 0 1 0 1.06l-4.7 4.7a.75.75 0 0 1-1.06 0L3.22 8.98A.75.75 0 0 1 3 8.45v-4.7ZM6.25 6.25h.01"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    ),
+  },
+  {
     href: "/finanzas",
     etiqueta: "Finanzas",
     soloDueno: true,
@@ -136,7 +150,7 @@ export default async function Dashboard() {
 
         <div className="mt-8">
           <p className="mb-3 text-xs font-medium tracking-wide text-zinc-400 uppercase">Accesos rápidos</p>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {accesos.map((a) => (
               <Link
                 key={a.href}

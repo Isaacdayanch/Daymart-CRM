@@ -173,7 +173,7 @@ export async function registrarMovimiento(formData: FormData) {
  * cualquier "Agregar/Mandar dinero" o transferencia registrada directo en
  * Movimientos). */
 async function movimientoEstaLigado(supabase: Awaited<ReturnType<typeof createClient>>, movimientoId: string) {
-  const [{ count: enMercancia }, { count: enDeudaProveedor }, { count: enFactura }] = await Promise.all([
+  const [{ count: enMercancia }, { count: enDeudaProveedor }, { count: enFactura }, { count: enCobroVenta }] = await Promise.all([
     supabase
       .from("pagos_mercancia")
       .select("id", { count: "exact", head: true })
@@ -186,12 +186,16 @@ async function movimientoEstaLigado(supabase: Awaited<ReturnType<typeof createCl
       .from("pagos_factura")
       .select("id", { count: "exact", head: true })
       .eq("movimiento_financiero_id", movimientoId),
+    supabase
+      .from("cobros_venta")
+      .select("id", { count: "exact", head: true })
+      .eq("movimiento_financiero_id", movimientoId),
   ]);
-  return Boolean(enMercancia || enDeudaProveedor || enFactura);
+  return Boolean(enMercancia || enDeudaProveedor || enFactura || enCobroVenta);
 }
 
 const MENSAJE_MOVIMIENTO_LIGADO =
-  "Este movimiento viene de un abono de contenedor, de proveedores o de una factura — edítalo desde esa pantalla para no desincronizar los datos.";
+  "Este movimiento viene de un abono de contenedor, de proveedores, de una factura o de un cobro de venta — edítalo desde esa pantalla para no desincronizar los datos.";
 
 /** Edita un movimiento "suelto" (sin dueño en otra pantalla) — ej. cuando
  * Isaac saca un sueldo y luego quiere sumarle un complemento del mismo

@@ -356,3 +356,63 @@ export interface ResearchProducto {
   creado_en: string;
   actualizado_en: string;
 }
+
+// ---------- Ventas directas (a clientes, fuera de Mercado Libre) ----------
+
+export interface Cliente {
+  id: string;
+  nombre: string;
+  telefono: string | null;
+  notas: string | null;
+  /** Días de crédito habituales: se proponen al hacerle una venta a crédito. */
+  dias_credito: number | null;
+  eliminado_en: string | null;
+  creado_en: string;
+}
+
+export type FormaPagoVenta = "CONTADO" | "CREDITO";
+
+export const FORMAS_PAGO_VENTA: { valor: FormaPagoVenta; etiqueta: string }[] = [
+  { valor: "CONTADO", etiqueta: "De contado" },
+  { valor: "CREDITO", etiqueta: "A crédito" },
+];
+
+export const IVA_PCT = 16;
+
+export interface Venta {
+  id: string;
+  numero: number;
+  cliente_id: string;
+  bodega_id: string;
+  fecha: string;
+  forma_pago: FormaPagoVenta;
+  /** true = al subtotal se le suma el IVA (los precios se capturan sin IVA). */
+  con_iva: boolean;
+  fecha_limite: string | null;
+  notas: string | null;
+  creado_en: string;
+}
+
+export interface VentaLinea {
+  id: string;
+  venta_id: string;
+  sku: string;
+  nombre: string;
+  imagen_url: string | null;
+  cantidad: number;
+  precio_unitario: number;
+  /** Costo promedio del SKU al momento de vender (para el margen). */
+  costo_unitario: number;
+  orden: number;
+}
+
+export interface CobroVenta {
+  id: string;
+  venta_id: string;
+  monto: number;
+  fecha: string;
+  cuenta_id: string;
+  notas: string | null;
+  movimiento_financiero_id: string | null;
+  creado_en: string;
+}

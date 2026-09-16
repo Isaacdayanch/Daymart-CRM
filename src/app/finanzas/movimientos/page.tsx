@@ -12,6 +12,7 @@ export default async function MovimientosFinanzas() {
     { data: pagosMercancia },
     { data: movimientosDeuda },
     { data: pagosFactura },
+    { data: cobrosVenta },
   ] = await Promise.all([
     supabase
       .from("movimientos_financieros")
@@ -27,6 +28,7 @@ export default async function MovimientosFinanzas() {
       .select("movimiento_financiero_id")
       .not("movimiento_financiero_id", "is", null),
     supabase.from("pagos_factura").select("movimiento_financiero_id").not("movimiento_financiero_id", "is", null),
+    supabase.from("cobros_venta").select("movimiento_financiero_id").not("movimiento_financiero_id", "is", null),
   ]);
 
   const listaMovimientos = movimientos ?? [];
@@ -34,10 +36,10 @@ export default async function MovimientosFinanzas() {
   const categoriasPorId = new Map((categorias ?? []).map((c) => [c.id, c.nombre]));
 
   // Un movimiento "ligado" viene de otra pantalla (abono de contenedor,
-  // abono a proveedor, pago de factura) — se edita desde ahí, no aquí, para
+  // abono a proveedor, pago de factura, cobro de venta) — se edita desde ahí, no aquí, para
   // no desincronizar los dos registros del mismo dato.
   const idsLigados = new Set(
-    [...(pagosMercancia ?? []), ...(movimientosDeuda ?? []), ...(pagosFactura ?? [])]
+    [...(pagosMercancia ?? []), ...(movimientosDeuda ?? []), ...(pagosFactura ?? []), ...(cobrosVenta ?? [])]
       .map((r) => r.movimiento_financiero_id)
       .filter((id): id is string => Boolean(id)),
   );
