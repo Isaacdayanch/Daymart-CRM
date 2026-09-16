@@ -11,6 +11,7 @@ Isaac, dueño de Daymart. **No sabe programar.** Reglas de trabajo obligatorias:
 - Mostrar los cambios y pedir aprobación conforme se avanza. Ir paso a paso, sin adelantarse.
 - Dar recomendaciones activamente, no solo ejecutar lo que pide. Si hay una mejor forma de hacer algo, decírselo.
 - Si necesita instalar algo o correr comandos, guiarlo clic por clic. No asumir que sabe hacerlo.
+- **Cada vez que se le pida correr un SQL, darle el link directo al editor SQL de Supabase** para que solo le pique: `https://supabase.com/dashboard/project/_/sql/new` (el `_` abre su último proyecto; si algún día comparte el ID de su proyecto, guardarlo aquí y usar el link exacto `https://supabase.com/dashboard/project/<ID>/sql/new`). Pasos: link → pegar el SQL → botón "Run".
 - Le importa mucho la **portabilidad**: no quiere quedar atado a una tecnología. Por eso el stack elegido usa piezas estándar (ver abajo) — sus datos y su código deben ser exportables/movibles en cualquier momento, sin proveedor que lo tenga "secuestrado". Nada del sistema es definitivo: campos, pantallas y cálculos se pueden agregar/editar/quitar cuando Isaac lo pida, con el mismo proceso (mostrar el cambio, esperar su aprobación).
 
 ## El negocio
