@@ -36,8 +36,8 @@ export async function probarConexion() {
 
 /** Una página de ventas (50 órdenes). La pantalla la llama en tandas hasta
  * que `siguiente` sea null — así nunca se pasa del tiempo máximo de Vercel. */
-export async function sincronizarVentasPagina(opciones: { diasAtras?: number; offset?: number; desdeIso?: string }) {
-  if (!(await soloDueno())) return { error: "Solo el dueño puede hacer esto.", guardadas: 0, siguiente: null, total: null, desdeIso: "" };
+export async function sincronizarVentasPagina(opciones: { diasAtras?: number; offset?: number; desdeIso?: string; hastaIso?: string }) {
+  if (!(await soloDueno())) return { error: "Solo el dueño puede hacer esto.", guardadas: 0, siguiente: null, total: null, desdeIso: "", hastaIso: undefined };
   try {
     const { sincronizarPaginaOrdenes, procesarNotificacionesPendientes } = await import("@/lib/mercadolibre-ordenes");
     if (!opciones.offset) await procesarNotificacionesPendientes();
@@ -45,7 +45,7 @@ export async function sincronizarVentasPagina(opciones: { diasAtras?: number; of
     if (r.siguiente === null) revalidatePath("/mercadolibre");
     return { error: null, ...r };
   } catch (e) {
-    return { error: e instanceof Error ? e.message : "Falló la sincronización.", guardadas: 0, siguiente: null, total: null, desdeIso: "" };
+    return { error: e instanceof Error ? e.message : "Falló la sincronización.", guardadas: 0, siguiente: null, total: null, desdeIso: "", hastaIso: undefined };
   }
 }
 

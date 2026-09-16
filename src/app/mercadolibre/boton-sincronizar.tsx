@@ -12,6 +12,8 @@ interface Progreso {
   diasAtras?: number;
   offset: number;
   desdeIso?: string;
+  /** Tope de fecha de la ventana actual (Mercado Libre no deja pasar de la orden 10,000). */
+  hastaIso?: string;
   guardadas: number;
   total: number | null;
 }
@@ -42,7 +44,13 @@ export function BotonSincronizar({ conectado, primeraVez }: { conectado: boolean
   const [pendiente, setPendiente] = useState<Progreso | null>(null);
 
   useEffect(() => {
-    setPendiente(leerProgreso());
+    // Se lee el avance guardado en el navegador al montar (fuera del render,
+    // porque en el servidor no existe localStorage).
+    const guardado = leerProgreso();
+    if (guardado) {
+      const id = window.setTimeout(() => setPendiente(guardado), 0);
+      return () => window.clearTimeout(id);
+    }
   }, []);
 
   /** Va página por página (50 órdenes cada una) hasta terminar; si se
@@ -54,7 +62,7 @@ export function BotonSincronizar({ conectado, primeraVez }: { conectado: boolean
     let progreso: Progreso = { ...inicio };
     let offset: number | undefined = progreso.offset;
     while (offset !== undefined) {
-      const r = await sincronizarVentasPagina({ diasAtras: progreso.diasAtras, offset, desdeIso: progreso.desdeIso });
+      const r = await sincronizarVentasPagina({ diasAtras: progreso.diasAtras, offset, desdeIso: progreso.desdeIso, hastaIso: progreso.hastaIso });
       if (r.error) {
         guardarProgreso(progreso);
         setPendiente(progreso);
@@ -67,8 +75,10 @@ export function BotonSincronizar({ conectado, primeraVez }: { conectado: boolean
       progreso = {
         ...progreso,
         desdeIso: r.desdeIso,
+        hastaIso: r.hastaIso,
         guardadas: progreso.guardadas + r.guardadas,
-        total: r.total,
+        // El total general solo lo da la primera ventana; después se conserva.
+        total: progreso.total ?? r.total,
         offset: r.siguiente ?? progreso.offset,
       };
       if (r.siguiente === null) {

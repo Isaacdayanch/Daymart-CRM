@@ -287,8 +287,23 @@ export interface ResultadoPaginaOrdenes {
   guardadas: number;
   /** Offset de la siguiente página, o null si ya no hay más. */
   siguiente: number | null;
+  /** Total de órdenes del rango completo (solo se conoce en la primera ventana). */
   total: number | null;
   desdeIso: string;
+  /** Tope de fecha de la ventana actual (ver LIMITE_OFFSET_ML). */
+  hastaIso?: string;
+}
+
+/** Mercado Libre no deja pedir más allá de la orden 10,000 de una búsqueda
+ * ("Limit must be a lower or equal than 10000"). Cuando una descarga larga
+ * llega ahí, se cierra la ventana de fechas por arriba (tope = fecha de la
+ * orden más vieja que ya se trajo) y se vuelve a empezar desde offset 0 —
+ * así se puede bajar cualquier cantidad de ventas en ventanas de 10,000. */
+const LIMITE_OFFSET_ML = 10000;
+const TAMANO_PAGINA = 50;
+
+function unSegundoDespues(iso: string) {
+  return new Date(new Date(iso).getTime() + 1000).toISOString();
 }
 
 async function enGrupos<T>(lista: T[], tamano: number, fn: (x: T) => Promise<void>) {
@@ -301,11 +316,17 @@ async function enGrupos<T>(lista: T[], tamano: number, fn: (x: T) => Promise<voi
  * tandas desde la pantalla para que ninguna llamada dure más de lo que
  * Vercel permite. `desdeIso` fija el rango en la primera llamada y se
  * reutiliza en las siguientes para que la paginación sea consistente. */
-export async function sincronizarPaginaOrdenes(opciones: { diasAtras?: number; offset?: number; desdeIso?: string }): Promise<ResultadoPaginaOrdenes> {
+export async function sincronizarPaginaOrdenes(opciones: {
+  diasAtras?: number;
+  offset?: number;
+  desdeIso?: string;
+  hastaIso?: string;
+}): Promise<ResultadoPaginaOrdenes> {
   const conexion = await obtenerConexion();
   if (!conexion) throw new Error("Mercado Libre no está conectado.");
   const supabase = createServiceClient();
-  const offset = opciones.offset ?? 0;
+  let offset = opciones.offset ?? 0;
+  let hastaIso = opciones.hastaIso;
 
   let desdeIso = opciones.desdeIso;
   if (!desdeIso) {
@@ -317,14 +338,31 @@ export async function sincronizarPaginaOrdenes(opciones: { diasAtras?: number; o
     desdeIso = desde.toISOString();
   }
 
+  // Un avance guardado de antes de este arreglo puede traer offset 10,000 sin
+  // tope de fecha: se recupera el tope de lo que ya está en la base (la orden
+  // más vieja guardada dentro del rango) para no volver a tronar.
+  if (!hastaIso && offset + TAMANO_PAGINA > LIMITE_OFFSET_ML) {
+    const { data: masVieja } = await supabase
+      .from("mercadolibre_ordenes")
+      .select("fecha_creacion")
+      .gte("fecha_creacion", desdeIso)
+      .order("fecha_creacion", { ascending: true })
+      .limit(1)
+      .maybeSingle<{ fecha_creacion: string }>();
+    if (!masVieja) throw new Error("No se pudo continuar la descarga; vuelve a empezarla con 'Traer último año'.");
+    hastaIso = unSegundoDespues(masVieja.fecha_creacion);
+    offset = 0;
+  }
+
   try {
     const params = new URLSearchParams({
       seller: String(conexion.ml_user_id),
       "order.date_created.from": desdeIso,
       sort: "date_desc",
-      limit: "50",
+      limit: String(TAMANO_PAGINA),
       offset: String(offset),
     });
+    if (hastaIso) params.set("order.date_created.to", hastaIso);
     const pagina = await mercadolibreGet<{ results: OrdenApi[]; paging?: { total?: number } }>(`/orders/search?${params}`);
     const resultados = pagina.results ?? [];
 
@@ -351,8 +389,21 @@ export async function sincronizarPaginaOrdenes(opciones: { diasAtras?: number; o
     // Varias órdenes a la vez (cada una hace 2-3 llamadas a ML).
     await enGrupos(pendientes, 8, (orden) => guardarOrden(orden, !conEnvioListo.has(orden.id)));
 
-    const total = pagina.paging?.total ?? null;
-    const hayMas = resultados.length === 50 && (total === null || offset + 50 < total);
+    // El total general solo lo dice la primera ventana (sin tope de fecha);
+    // en las siguientes, el total de ML es solo el de esa ventana.
+    const totalVentana = pagina.paging?.total ?? null;
+    const total = hastaIso ? null : totalVentana;
+    const hayMas = resultados.length === TAMANO_PAGINA && (totalVentana === null || offset + TAMANO_PAGINA < totalVentana);
+    let siguiente: number | null = hayMas ? offset + TAMANO_PAGINA : null;
+    if (siguiente !== null && siguiente + TAMANO_PAGINA > LIMITE_OFFSET_ML) {
+      // Se cierra la ventana: la próxima página empieza de cero, pero solo
+      // con órdenes de la fecha más vieja de esta página hacia atrás.
+      const masVieja = resultados[resultados.length - 1]?.date_created;
+      if (masVieja) {
+        hastaIso = unSegundoDespues(masVieja);
+        siguiente = 0;
+      }
+    }
     if (!hayMas) {
       const { count } = await supabase.from("mercadolibre_ordenes").select("id", { count: "exact", head: true });
       await supabase.from("mercadolibre_sync").upsert({
@@ -362,7 +413,7 @@ export async function sincronizarPaginaOrdenes(opciones: { diasAtras?: number; o
         ordenes_total: count ?? 0,
       });
     }
-    return { guardadas: resultados.length, siguiente: hayMas ? offset + 50 : null, total, desdeIso };
+    return { guardadas: resultados.length, siguiente, total, desdeIso, hastaIso };
   } catch (e) {
     const mensaje = e instanceof Error ? e.message : "Error desconocido";
     await supabase.from("mercadolibre_sync").upsert({ id: 1, ultimo_error: mensaje });
@@ -376,11 +427,13 @@ export async function sincronizarOrdenes(opciones: { diasAtras?: number } = {}) 
   let guardadas = 0;
   let offset: number | null = 0;
   let desdeIso: string | undefined;
+  let hastaIso: string | undefined;
   while (offset !== null) {
-    const r: ResultadoPaginaOrdenes = await sincronizarPaginaOrdenes({ ...opciones, offset, desdeIso });
+    const r: ResultadoPaginaOrdenes = await sincronizarPaginaOrdenes({ ...opciones, offset, desdeIso, hastaIso });
     guardadas += r.guardadas;
     offset = r.siguiente;
     desdeIso = r.desdeIso;
+    hastaIso = r.hastaIso;
   }
   return guardadas;
 }
