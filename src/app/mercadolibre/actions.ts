@@ -16,7 +16,7 @@ export async function desconectar() {
   } catch (e) {
     return { error: e instanceof Error ? e.message : "No se pudo desconectar." };
   }
-  revalidatePath("/mercadolibre");
+  revalidatePath("/mercadolibre/conexion");
   return { error: null };
 }
 
@@ -27,7 +27,7 @@ export async function probarConexion() {
   if (!(await soloDueno())) return { error: "Solo el dueño puede hacer esto.", resultado: null };
   try {
     const yo = await mercadolibreGet<{ id: number; nickname: string; email?: string; site_id: string }>("/users/me");
-    revalidatePath("/mercadolibre");
+    revalidatePath("/mercadolibre/conexion");
     return { error: null, resultado: { id: yo.id, nickname: yo.nickname, sitio: yo.site_id } };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Falló la prueba.", resultado: null };
@@ -40,7 +40,7 @@ export async function sincronizarVentas(diasAtras?: number) {
     const { sincronizarOrdenes, procesarNotificacionesPendientes } = await import("@/lib/mercadolibre-ordenes");
     await procesarNotificacionesPendientes();
     const guardadas = await sincronizarOrdenes(diasAtras ? { diasAtras } : {});
-    revalidatePath("/mercadolibre/ventas");
+    revalidatePath("/mercadolibre");
     return { error: null, guardadas };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Falló la sincronización.", guardadas: 0 };

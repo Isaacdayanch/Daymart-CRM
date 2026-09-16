@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { sincronizarVentas } from "../actions";
+import { sincronizarVentas } from "./actions";
 
 export function BotonSincronizar({ conectado, primeraVez }: { conectado: boolean; primeraVez: boolean }) {
   const router = useRouter();

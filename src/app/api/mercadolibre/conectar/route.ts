@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL("/", request.url));
   }
   if (!configuracionCompleta()) {
-    return NextResponse.redirect(new URL("/mercadolibre?error=config", request.url));
+    return NextResponse.redirect(new URL("/mercadolibre/conexion?error=config", request.url));
   }
 
   const state = crypto.randomUUID();

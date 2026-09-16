@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
   const errorMl = request.nextUrl.searchParams.get("error");
 
   const destino = (query: string) => {
-    const r = NextResponse.redirect(new URL(`/mercadolibre?${query}`, request.url));
+    const r = NextResponse.redirect(new URL(`/mercadolibre/conexion?${query}`, request.url));
     r.cookies.delete("ml_oauth_state");
     return r;
   };

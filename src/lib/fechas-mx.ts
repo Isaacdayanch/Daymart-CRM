@@ -63,3 +63,30 @@ export function inicioDelMesMx(instante: Date) {
 export function formatoHoraMx(fechaIso: string) {
   return new Date(fechaIso).toLocaleTimeString("es-MX", { timeZone: ZONA_MX, hour: "2-digit", minute: "2-digit" });
 }
+
+/** "AAAA-MM-DD" del instante dado, según el calendario de Ciudad de México. */
+export function fechaTextoMx(instante: Date) {
+  const partes = new Intl.DateTimeFormat("en-CA", { timeZone: ZONA_MX, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(instante);
+  const v = (t: string) => partes.find((p) => p.type === t)?.value ?? "";
+  return `${v("year")}-${v("month")}-${v("day")}`;
+}
+
+/** Las 00:00 (de Ciudad de México) de la fecha "AAAA-MM-DD" dada. */
+export function instanteDesdeFechaMx(fechaTexto: string) {
+  const [a, m, d] = fechaTexto.split("-").map(Number);
+  // Primera aproximación con el desfase de ese día a mediodía UTC, luego se
+  // corrige con el desfase real del instante obtenido.
+  const aproximado = new Date(Date.UTC(a, m - 1, d, 12));
+  const desfase = desfaseMxMs(aproximado);
+  const candidato = new Date(Date.UTC(a, m - 1, d) - desfase);
+  return new Date(Date.UTC(a, m - 1, d) - desfaseMxMs(candidato));
+}
+
+/** El lunes a las 00:00 (de Ciudad de México) de la semana del instante dado. */
+export function inicioDeSemanaMx(instante: Date) {
+  const inicioDia = inicioDelDiaMx(instante);
+  const diaSemana = new Intl.DateTimeFormat("en-US", { timeZone: ZONA_MX, weekday: "short" }).format(instante);
+  const indice = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].indexOf(diaSemana);
+  const atras = indice < 0 ? 0 : indice;
+  return new Date(inicioDia.getTime() - atras * 86400000);
+}

@@ -4,8 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const PESTANAS = [
-  { href: "/mercadolibre", etiqueta: "Conexión" },
-  { href: "/mercadolibre/ventas", etiqueta: "Ventas" },
+  { href: "/mercadolibre", etiqueta: "Ventas" },
+  { href: "/mercadolibre/conexion", etiqueta: "Conexión" },
 ];
 
 export function NavMercadoLibre() {
