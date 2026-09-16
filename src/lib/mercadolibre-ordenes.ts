@@ -283,58 +283,95 @@ export async function obtenerEstadoSync(): Promise<EstadoSync | null> {
 /** Trae de Mercado Libre todas las órdenes creadas desde `desde` (o desde
  * la última sincronización menos 3 días, o 60 días si es la primera vez)
  * y las guarda. Regresa cuántas se guardaron. */
-export async function sincronizarOrdenes(opciones: { diasAtras?: number } = {}) {
+export interface ResultadoPaginaOrdenes {
+  guardadas: number;
+  /** Offset de la siguiente página, o null si ya no hay más. */
+  siguiente: number | null;
+  total: number | null;
+  desdeIso: string;
+}
+
+async function enGrupos<T>(lista: T[], tamano: number, fn: (x: T) => Promise<void>) {
+  for (let i = 0; i < lista.length; i += tamano) {
+    await Promise.all(lista.slice(i, i + tamano).map(fn));
+  }
+}
+
+/** Sincroniza UNA página (50 órdenes) a partir de `offset`. Se llama en
+ * tandas desde la pantalla para que ninguna llamada dure más de lo que
+ * Vercel permite. `desdeIso` fija el rango en la primera llamada y se
+ * reutiliza en las siguientes para que la paginación sea consistente. */
+export async function sincronizarPaginaOrdenes(opciones: { diasAtras?: number; offset?: number; desdeIso?: string }): Promise<ResultadoPaginaOrdenes> {
   const conexion = await obtenerConexion();
   if (!conexion) throw new Error("Mercado Libre no está conectado.");
   const supabase = createServiceClient();
-  const estado = await obtenerEstadoSync();
+  const offset = opciones.offset ?? 0;
 
-  let desde: Date;
-  if (opciones.diasAtras) desde = new Date(Date.now() - opciones.diasAtras * 86400000);
-  else if (estado?.ultima_sync) desde = new Date(new Date(estado.ultima_sync).getTime() - 3 * 86400000);
-  else desde = new Date(Date.now() - 60 * 86400000);
+  let desdeIso = opciones.desdeIso;
+  if (!desdeIso) {
+    const estado = await obtenerEstadoSync();
+    let desde: Date;
+    if (opciones.diasAtras) desde = new Date(Date.now() - opciones.diasAtras * 86400000);
+    else if (estado?.ultima_sync) desde = new Date(new Date(estado.ultima_sync).getTime() - 3 * 86400000);
+    else desde = new Date(Date.now() - 60 * 86400000);
+    desdeIso = desde.toISOString();
+  }
 
-  // Qué órdenes ya tienen datos de envío (para no volver a pedirlos).
-  const { data: existentes } = await supabase
-    .from("mercadolibre_ordenes")
-    .select("id, costo_envio_vendedor, logistica")
-    .returns<{ id: number; costo_envio_vendedor: number | null; logistica: string | null }[]>();
-  const conEnvioListo = new Set((existentes ?? []).filter((o) => o.costo_envio_vendedor !== null && o.logistica).map((o) => o.id));
-
-  let guardadas = 0;
-  let consultasEnvio = 0;
-  const LIMITE_ENVIOS_POR_SYNC = 120;
   try {
-    for (let offset = 0; offset < 5000; offset += 50) {
-      const params = new URLSearchParams({
-        seller: String(conexion.ml_user_id),
-        "order.date_created.from": desde.toISOString(),
-        sort: "date_desc",
-        limit: "50",
-        offset: String(offset),
-      });
-      const pagina = await mercadolibreGet<{ results: OrdenApi[]; paging?: { total?: number } }>(`/orders/search?${params}`);
-      const resultados = pagina.results ?? [];
-      for (const orden of resultados) {
-        const pedirEnvio = !conEnvioListo.has(orden.id) && consultasEnvio < LIMITE_ENVIOS_POR_SYNC;
-        if (pedirEnvio) consultasEnvio++;
-        await guardarOrden(orden, pedirEnvio);
-        guardadas++;
-      }
-      if (resultados.length < 50) break;
-      if (pagina.paging?.total !== undefined && offset + 50 >= pagina.paging.total) break;
-    }
-    const { count } = await supabase.from("mercadolibre_ordenes").select("id", { count: "exact", head: true });
-    await supabase.from("mercadolibre_sync").upsert({
-      id: 1,
-      ultima_sync: new Date().toISOString(),
-      ultimo_error: null,
-      ordenes_total: count ?? 0,
+    const params = new URLSearchParams({
+      seller: String(conexion.ml_user_id),
+      "order.date_created.from": desdeIso,
+      sort: "date_desc",
+      limit: "50",
+      offset: String(offset),
     });
+    const pagina = await mercadolibreGet<{ results: OrdenApi[]; paging?: { total?: number } }>(`/orders/search?${params}`);
+    const resultados = pagina.results ?? [];
+
+    // Qué órdenes de esta página ya tienen datos de envío (no se vuelven a pedir).
+    const ids = resultados.map((o) => o.id);
+    const { data: existentes } = ids.length
+      ? await supabase
+          .from("mercadolibre_ordenes")
+          .select("id, costo_envio_vendedor, logistica")
+          .in("id", ids)
+          .returns<{ id: number; costo_envio_vendedor: number | null; logistica: string | null }[]>()
+      : { data: [] };
+    const conEnvioListo = new Set((existentes ?? []).filter((o) => o.costo_envio_vendedor !== null && o.logistica).map((o) => o.id));
+
+    // Varias órdenes a la vez (cada una hace 2-3 llamadas a ML).
+    await enGrupos(resultados, 8, (orden) => guardarOrden(orden, !conEnvioListo.has(orden.id)));
+
+    const total = pagina.paging?.total ?? null;
+    const hayMas = resultados.length === 50 && (total === null || offset + 50 < total);
+    if (!hayMas) {
+      const { count } = await supabase.from("mercadolibre_ordenes").select("id", { count: "exact", head: true });
+      await supabase.from("mercadolibre_sync").upsert({
+        id: 1,
+        ultima_sync: new Date().toISOString(),
+        ultimo_error: null,
+        ordenes_total: count ?? 0,
+      });
+    }
+    return { guardadas: resultados.length, siguiente: hayMas ? offset + 50 : null, total, desdeIso };
   } catch (e) {
     const mensaje = e instanceof Error ? e.message : "Error desconocido";
     await supabase.from("mercadolibre_sync").upsert({ id: 1, ultimo_error: mensaje });
     throw e;
+  }
+}
+
+/** Sincronización completa en una sola llamada (para el refresco
+ * automático corto de 2 días al abrir la pantalla). */
+export async function sincronizarOrdenes(opciones: { diasAtras?: number } = {}) {
+  let guardadas = 0;
+  let offset: number | null = 0;
+  let desdeIso: string | undefined;
+  while (offset !== null) {
+    const r: ResultadoPaginaOrdenes = await sincronizarPaginaOrdenes({ ...opciones, offset, desdeIso });
+    guardadas += r.guardadas;
+    offset = r.siguiente;
+    desdeIso = r.desdeIso;
   }
   return guardadas;
 }

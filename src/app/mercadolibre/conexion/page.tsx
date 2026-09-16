@@ -4,6 +4,9 @@ import { formatoFechaHoraMx } from "@/lib/fechas-mx";
 import { RelojMx } from "../reloj-mx";
 import { PanelConexion } from "../panel-conexion";
 
+// Las llamadas a Mercado Libre pueden tardar: se sube el tope de tiempo de Vercel (máx. 60 s en plan Hobby).
+export const maxDuration = 60;
+
 interface Notificacion {
   id: string;
   topic: string | null;

@@ -34,16 +34,18 @@ export async function probarConexion() {
   }
 }
 
-export async function sincronizarVentas(diasAtras?: number) {
-  if (!(await soloDueno())) return { error: "Solo el dueño puede hacer esto.", guardadas: 0 };
+/** Una página de ventas (50 órdenes). La pantalla la llama en tandas hasta
+ * que `siguiente` sea null — así nunca se pasa del tiempo máximo de Vercel. */
+export async function sincronizarVentasPagina(opciones: { diasAtras?: number; offset?: number; desdeIso?: string }) {
+  if (!(await soloDueno())) return { error: "Solo el dueño puede hacer esto.", guardadas: 0, siguiente: null, total: null, desdeIso: "" };
   try {
-    const { sincronizarOrdenes, procesarNotificacionesPendientes } = await import("@/lib/mercadolibre-ordenes");
-    await procesarNotificacionesPendientes();
-    const guardadas = await sincronizarOrdenes(diasAtras ? { diasAtras } : {});
-    revalidatePath("/mercadolibre");
-    return { error: null, guardadas };
+    const { sincronizarPaginaOrdenes, procesarNotificacionesPendientes } = await import("@/lib/mercadolibre-ordenes");
+    if (!opciones.offset) await procesarNotificacionesPendientes();
+    const r = await sincronizarPaginaOrdenes(opciones);
+    if (r.siguiente === null) revalidatePath("/mercadolibre");
+    return { error: null, ...r };
   } catch (e) {
-    return { error: e instanceof Error ? e.message : "Falló la sincronización.", guardadas: 0 };
+    return { error: e instanceof Error ? e.message : "Falló la sincronización.", guardadas: 0, siguiente: null, total: null, desdeIso: "" };
   }
 }
 
@@ -63,18 +65,34 @@ export async function porcentajeComisionMl(precio: number, categoriaId: string, 
   }
 }
 
-export async function sincronizarStock() {
+export async function iniciarSyncStock() {
+  if (!(await soloDueno())) return { error: "Solo el dueño puede hacer esto.", ids: [] as string[] };
+  try {
+    const { listarIdsPublicaciones } = await import("@/lib/mercadolibre-stock");
+    return { error: null, ids: await listarIdsPublicaciones() };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "No se pudieron listar las publicaciones.", ids: [] as string[] };
+  }
+}
+
+export async function sincronizarLoteStock(ids: string[], primero: boolean) {
   if (!(await soloDueno())) return { error: "Solo el dueño puede hacer esto.", renglones: 0 };
   try {
-    const { sincronizarPublicaciones } = await import("@/lib/mercadolibre-stock");
-    const renglones = await sincronizarPublicaciones();
-    revalidatePath("/mercadolibre/stock");
-    revalidatePath("/stock");
-    revalidatePath("/");
-    return { error: null, renglones };
+    const { sincronizarLotePublicaciones } = await import("@/lib/mercadolibre-stock");
+    return { error: null, renglones: await sincronizarLotePublicaciones(ids, primero) };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Falló la sincronización.", renglones: 0 };
   }
+}
+
+export async function terminarSyncStock() {
+  if (!(await soloDueno())) return { error: "Solo el dueño puede hacer esto." };
+  const { terminarSyncPublicaciones } = await import("@/lib/mercadolibre-stock");
+  await terminarSyncPublicaciones();
+  revalidatePath("/mercadolibre/stock");
+  revalidatePath("/stock");
+  revalidatePath("/");
+  return { error: null };
 }
 
 /** Liga (o cambia la liga de) una publicación de ML con un SKU del CRM. */

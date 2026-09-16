@@ -19,6 +19,9 @@ import type { ConfiguracionStock, MovimientoStock } from "@/lib/tipos";
 import { BotonSincronizarStock } from "./boton-sincronizar-stock";
 import { LigaProducto } from "./liga-producto";
 
+// Las llamadas a Mercado Libre pueden tardar: se sube el tope de tiempo de Vercel (máx. 60 s en plan Hobby).
+export const maxDuration = 60;
+
 export default async function StockMercadoLibre({
   searchParams,
 }: {

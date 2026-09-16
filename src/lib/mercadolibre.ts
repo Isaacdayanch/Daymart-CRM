@@ -51,12 +51,31 @@ export async function obtenerDatosMercadoLibre(
     Accept: "application/json",
   };
 
+  // Con la cuenta de Isaac conectada (Módulo 5) se usa su token: Mercado
+  // Libre ya no bloquea la consulta. Si no hay conexión, se intenta la
+  // llamada pública como antes.
+  let encabezados: Record<string, string> = encabezadosNavegador;
+  try {
+    const { obtenerAccessToken } = await import("@/lib/mercadolibre-auth");
+    const token = await obtenerAccessToken();
+    encabezados = { Authorization: `Bearer ${token}`, Accept: "application/json" };
+  } catch {
+    // sin conexión: se sigue con la pública
+  }
+
   try {
     const respuesta = await fetch(`https://api.mercadolibre.com/items/${itemId}`, {
-      headers: encabezadosNavegador,
+      headers: encabezados,
+      cache: "no-store",
     });
     if (!respuesta.ok) {
-      return { datos: null, error: `Mercado Libre no encontró ese producto (${respuesta.status}).` };
+      return {
+        datos: null,
+        error:
+          respuesta.status === 403 || respuesta.status === 401
+            ? "Mercado Libre bloqueó la consulta. Conecta tu cuenta en Mercado Libre → Conexión y vuelve a intentar."
+            : `Mercado Libre no encontró ese producto (${respuesta.status}).`,
+      };
     }
     item = await respuesta.json();
   } catch {
@@ -67,7 +86,8 @@ export async function obtenerDatosMercadoLibre(
   if (item.category_id) {
     try {
       const respuestaCategoria = await fetch(`https://api.mercadolibre.com/categories/${item.category_id}`, {
-        headers: encabezadosNavegador,
+        headers: encabezados,
+        cache: "no-store",
       });
       if (respuestaCategoria.ok) {
         const categoria = await respuestaCategoria.json();

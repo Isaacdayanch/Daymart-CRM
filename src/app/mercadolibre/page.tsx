@@ -23,6 +23,9 @@ import { formatoPesos } from "@/lib/formato";
 import { BotonSincronizar } from "./boton-sincronizar";
 import { FiltroFechas } from "./filtro-fechas";
 
+// Las llamadas a Mercado Libre pueden tardar: se sube el tope de tiempo de Vercel (máx. 60 s en plan Hobby).
+export const maxDuration = 60;
+
 const DIA_MS = 86400000;
 // Si la última sincronización tiene más de 10 minutos, se refrescan las
 // ventas de los últimos 2 días al abrir la pantalla (rápido) — así las
