@@ -66,29 +66,32 @@ export async function porcentajeComisionMl(precio: number, categoriaId: string, 
 }
 
 export async function iniciarSyncStock() {
-  if (!(await soloDueno())) return { error: "Solo el dueño puede hacer esto.", ids: [] as string[] };
+  if (!(await soloDueno())) return { error: "Solo el dueño puede hacer esto.", ids: [] as string[], inicioIso: "" };
   try {
     const { listarIdsPublicaciones } = await import("@/lib/mercadolibre-stock");
-    return { error: null, ids: await listarIdsPublicaciones() };
+    // La hora la pone el servidor (no el navegador) para que coincida con
+    // `actualizado_en` de las filas y se puedan borrar las que ya no existen.
+    const inicioIso = new Date().toISOString();
+    return { error: null, ids: await listarIdsPublicaciones(), inicioIso };
   } catch (e) {
-    return { error: e instanceof Error ? e.message : "No se pudieron listar las publicaciones.", ids: [] as string[] };
+    return { error: e instanceof Error ? e.message : "No se pudieron listar las publicaciones.", ids: [] as string[], inicioIso: "" };
   }
 }
 
-export async function sincronizarLoteStock(ids: string[], primero: boolean) {
+export async function sincronizarLoteStock(ids: string[]) {
   if (!(await soloDueno())) return { error: "Solo el dueño puede hacer esto.", renglones: 0 };
   try {
     const { sincronizarLotePublicaciones } = await import("@/lib/mercadolibre-stock");
-    return { error: null, renglones: await sincronizarLotePublicaciones(ids, primero) };
+    return { error: null, renglones: await sincronizarLotePublicaciones(ids) };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Falló la sincronización.", renglones: 0 };
   }
 }
 
-export async function terminarSyncStock() {
+export async function terminarSyncStock(inicioIso?: string) {
   if (!(await soloDueno())) return { error: "Solo el dueño puede hacer esto." };
   const { terminarSyncPublicaciones } = await import("@/lib/mercadolibre-stock");
-  await terminarSyncPublicaciones();
+  await terminarSyncPublicaciones(inicioIso);
   revalidatePath("/mercadolibre/stock");
   revalidatePath("/stock");
   revalidatePath("/");

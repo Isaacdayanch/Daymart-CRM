@@ -7,7 +7,7 @@ import { createServerClient } from "@supabase/ssr";
 // sesión, hay que sacarlas de esta excepción.
 // "/api/mercadolibre/notificaciones" también es pública: la llama Mercado
 // Libre desde sus servidores (sin sesión) para avisar de ventas/cambios.
-const RUTAS_PUBLICAS = ["/login", "/sin-acceso", "/api/respaldo", "/api/mercadolibre/notificaciones"];
+const RUTAS_PUBLICAS = ["/login", "/sin-acceso", "/api/respaldo", "/api/mercadolibre/notificaciones", "/api/mercadolibre/cron"];
 
 // Una operadora ve todo lo de Stock y los contenedores (para poder hacer
 // match del inventario real) — las páginas mismas esconden los números de

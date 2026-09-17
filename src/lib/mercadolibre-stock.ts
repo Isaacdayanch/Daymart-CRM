@@ -127,10 +127,13 @@ export async function listarIdsPublicaciones() {
 }
 
 /** Paso 2 (se repite): trae un lote de publicaciones con su stock en Full y
- * lo guarda. `primero` = true borra la copia anterior antes de insertar
- * (las ligas viven en otra tabla, no se pierden). */
-export async function sincronizarLotePublicaciones(ids: string[], primero: boolean) {
+ * lo guarda. Cada lote reemplaza SOLO sus propias publicaciones (por
+ * item_id), así la tabla nunca se queda vacía a media sincronización — al
+ * final, `terminarSyncPublicaciones(inicio)` borra las que ML ya no tiene.
+ * Las ligas viven en otra tabla, no se pierden. */
+export async function sincronizarLotePublicaciones(ids: string[]) {
   const supabase = createServiceClient();
+  if (!ids.length) return 0;
   try {
     const cacheFull = new Map<string, StockFullApi | null>();
     const atributos =
@@ -210,10 +213,8 @@ export async function sincronizarLotePublicaciones(ids: string[], primero: boole
       }
     }
 
-    if (primero) {
-      const { error: errorBorrar } = await supabase.from("mercadolibre_publicaciones").delete().neq("item_id", "");
-      if (errorBorrar) throw new Error(errorBorrar.message);
-    }
+    const { error: errorBorrar } = await supabase.from("mercadolibre_publicaciones").delete().in("item_id", ids);
+    if (errorBorrar) throw new Error(errorBorrar.message);
     if (filas.length) {
       const { error } = await supabase.from("mercadolibre_publicaciones").insert(filas);
       if (error) throw new Error(error.message);
@@ -226,10 +227,69 @@ export async function sincronizarLotePublicaciones(ids: string[], primero: boole
   }
 }
 
-/** Paso 3: marca la sincronización como terminada. */
-export async function terminarSyncPublicaciones() {
+/** Paso 3: borra las publicaciones que no se volvieron a ver en esta pasada
+ * (ML ya no las tiene) y marca la sincronización como terminada. */
+export async function terminarSyncPublicaciones(inicioIso?: string) {
   const supabase = createServiceClient();
+  if (inicioIso) await supabase.from("mercadolibre_publicaciones").delete().lt("actualizado_en", inicioIso);
   await supabase.from("mercadolibre_sync").upsert({ id: 1, ultima_sync_stock: new Date().toISOString(), ultimo_error_stock: null });
+}
+
+// --- Actualización automática (sin que Isaac haga nada) -------------------
+// La llama /api/mercadolibre/cron cada pocos minutos (desde pg_cron de
+// Supabase o el cron de Vercel). Cada llamada trabaja un rato acotado
+// (presupuesto) y guarda por dónde va en `mercadolibre_sync.stock_cursor`;
+// la siguiente llamada continúa. Solo empieza una pasada nueva cuando la
+// última terminó hace más de `cadaMinutos`.
+
+interface CursorStock {
+  ids: string[];
+  indice: number;
+  inicio: string;
+}
+
+const TAMANO_LOTE_AUTO = 40;
+/** Si una pasada lleva más de esto sin terminar (errores repetidos), se reinicia. */
+const CURSOR_CADUCA_MS = 2 * 60 * 60 * 1000;
+
+export async function avanzarSyncPublicaciones(opciones: { presupuestoMs?: number; cadaMinutos?: number } = {}) {
+  const presupuestoMs = opciones.presupuestoMs ?? 40000;
+  const cadaMinutos = opciones.cadaMinutos ?? 55;
+  const supabase = createServiceClient();
+  const inicioLlamada = Date.now();
+
+  const { data: sync } = await supabase
+    .from("mercadolibre_sync")
+    .select("ultima_sync_stock, stock_cursor")
+    .eq("id", 1)
+    .maybeSingle<{ ultima_sync_stock: string | null; stock_cursor: CursorStock | null }>();
+  const guardarCursor = async (cursor: CursorStock | null) => {
+    const { error } = await supabase.from("mercadolibre_sync").upsert({ id: 1, stock_cursor: cursor });
+    if (error) throw new Error(`No se pudo guardar el avance (¿falta el SQL 0033?): ${error.message}`);
+  };
+
+  let cursor = sync?.stock_cursor ?? null;
+  if (cursor && Date.now() - new Date(cursor.inicio).getTime() > CURSOR_CADUCA_MS) cursor = null;
+  if (!cursor) {
+    const ultima = sync?.ultima_sync_stock ? new Date(sync.ultima_sync_stock).getTime() : 0;
+    if (Date.now() - ultima < cadaMinutos * 60000) return { estado: "al_dia" as const, procesadas: 0, total: 0 };
+    const ids = await listarIdsPublicaciones();
+    cursor = { ids, indice: 0, inicio: new Date().toISOString() };
+    await guardarCursor(cursor);
+  }
+
+  while (cursor.indice < cursor.ids.length && Date.now() - inicioLlamada < presupuestoMs) {
+    await sincronizarLotePublicaciones(cursor.ids.slice(cursor.indice, cursor.indice + TAMANO_LOTE_AUTO));
+    cursor = { ...cursor, indice: cursor.indice + TAMANO_LOTE_AUTO };
+    await guardarCursor(cursor);
+  }
+
+  if (cursor.indice >= cursor.ids.length) {
+    await terminarSyncPublicaciones(cursor.inicio);
+    await guardarCursor(null);
+    return { estado: "termino" as const, procesadas: cursor.ids.length, total: cursor.ids.length };
+  }
+  return { estado: "avanzo" as const, procesadas: Math.min(cursor.indice, cursor.ids.length), total: cursor.ids.length };
 }
 
 export async function obtenerPublicaciones(): Promise<PublicacionMl[]> {

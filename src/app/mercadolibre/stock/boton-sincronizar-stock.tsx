@@ -28,7 +28,7 @@ export function BotonSincronizarStock({ conectado }: { conectado: boolean }) {
     let renglones = 0;
     for (let i = 0; i < ids.length; i += TAMANO_LOTE) {
       setAvance(`Publicaciones ${Math.min(i + TAMANO_LOTE, ids.length)} de ${ids.length}…`);
-      const r = await sincronizarLoteStock(ids.slice(i, i + TAMANO_LOTE), i === 0);
+      const r = await sincronizarLoteStock(ids.slice(i, i + TAMANO_LOTE));
       if (r.error) {
         setMensaje(`Error: ${r.error}`);
         setCargando(false);
@@ -38,8 +38,7 @@ export function BotonSincronizarStock({ conectado }: { conectado: boolean }) {
       }
       renglones += r.renglones;
     }
-    if (ids.length === 0) await sincronizarLoteStock([], true);
-    await terminarSyncStock();
+    await terminarSyncStock(inicio.inicioIso);
     setCargando(false);
     setAvance(null);
     setMensaje(`Listo: ${ids.length} publicaciones, ${renglones} renglones (con variantes).`);

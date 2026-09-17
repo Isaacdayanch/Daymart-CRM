@@ -22,6 +22,15 @@ import { LigaProducto } from "./liga-producto";
 // Las llamadas a Mercado Libre pueden tardar: se sube el tope de tiempo de Vercel (máx. 60 s en plan Hobby).
 export const maxDuration = 60;
 
+/** Valor de lo que hay en esa publicación a precio de venta: precio × piezas
+ * (las que tiene Full si está en Full; si no, las publicadas). Es lo que
+ * decide el orden de la lista — así mil piezas de algo barato no le ganan a
+ * pocas piezas de algo caro que en total vale más. */
+function valorPublicacion(p: PublicacionMl) {
+  const piezas = p.full_disponible ?? p.cantidad_publicada ?? 0;
+  return (p.precio ?? 0) * piezas;
+}
+
 export default async function StockMercadoLibre({
   searchParams,
 }: {
@@ -67,19 +76,126 @@ export default async function StockMercadoLibre({
   }
 
   const texto = q.trim().toLowerCase();
-  const visibles = publicaciones
-    .filter((p) => (filtro === "full" ? p.logistica === "Full" : filtro === "activas" ? p.estado === "active" : filtro === "sinligar" ? !skuCrmDe(p, vinculos, skusCrm).sku : true))
+  const coincide = publicaciones
+    .filter((p) => (filtro === "full" ? p.logistica === "Full" : filtro === "sinligar" ? !skuCrmDe(p, vinculos, skusCrm).sku : true))
     .filter((p) => !texto || [p.titulo, p.variacion, p.seller_sku, p.item_id].some((t) => t?.toLowerCase().includes(texto)))
-    .sort((a, b) => (b.full_disponible ?? -1) - (a.full_disponible ?? -1) || (a.titulo ?? "").localeCompare(b.titulo ?? ""));
+    // Lo más valioso hasta arriba: valor a precio de venta (precio × piezas).
+    .sort((a, b) => valorPublicacion(b) - valorPublicacion(a) || (b.full_disponible ?? -1) - (a.full_disponible ?? -1) || (a.titulo ?? "").localeCompare(b.titulo ?? ""));
+  // Pausadas y finalizadas van escondidas hasta abajo — salvo que Isaac esté
+  // buscando algo: entonces se muestra todo lo que coincida, en una sola lista.
+  const activas = texto ? coincide : coincide.filter((p) => p.estado === "active");
+  const inactivas = texto ? [] : coincide.filter((p) => p.estado !== "active");
 
   const opcionesProducto = resumenes.map((r) => ({ sku: r.sku, nombre: r.nombre, stockActual: r.stockActual, imagenUrl: r.imagenUrl }));
 
   const FILTROS = [
     { valor: "todas", etiqueta: "Todas" },
     { valor: "full", etiqueta: "Solo Full" },
-    { valor: "activas", etiqueta: "Activas" },
     { valor: "sinligar", etiqueta: `Sin ligar${sinLigar ? ` (${sinLigar})` : ""}` },
   ];
+
+  const tabla = (lista: PublicacionMl[]) => (
+    <div className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white shadow-sm">
+      <table className="w-full text-left text-sm">
+        <thead>
+          <tr className="border-b border-zinc-100 text-xs text-zinc-400">
+            <th className="px-5 py-3 font-medium">Publicación</th>
+            <th className="px-3 py-3 text-right font-medium" title="Precio × piezas (en Full si está en Full; si no, lo publicado)">
+              Valor
+            </th>
+            <th className="px-3 py-3 text-right font-medium">Precio</th>
+            <th className="px-3 py-3 text-right font-medium">En Full</th>
+            <th className="px-3 py-3 text-right font-medium">Publicado</th>
+            <th className="px-3 py-3 font-medium">Tipo</th>
+            <th className="px-3 py-3 font-medium">Producto del CRM</th>
+            <th className="px-5 py-3 font-medium">Estado</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-zinc-50">
+          {lista.map((p) => {
+            const liga = skuCrmDe(p, vinculos, skusCrm);
+            const compartidas = p.inventory_id ? (porInventario.get(p.inventory_id) ?? []).filter((o) => o.id !== p.id) : [];
+            const noDisponibles = p.full_no_disponible ?? 0;
+            const valor = valorPublicacion(p);
+            return (
+              <tr key={p.id} className="align-top">
+                <td className="px-5 py-2.5">
+                  <div className="flex items-center gap-3">
+                    {p.imagen_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element -- miniatura de Mercado Libre
+                      <img src={p.imagen_url} alt="" className="h-10 w-10 shrink-0 rounded-lg object-cover" />
+                    ) : (
+                      <div className="h-10 w-10 shrink-0 rounded-lg bg-zinc-100" />
+                    )}
+                    <div className="min-w-0 max-w-xs">
+                      <p className="truncate font-medium text-zinc-900" title={p.titulo ?? ""}>
+                        {p.titulo}
+                        {p.catalogo && <span className="ml-1.5 rounded-full bg-violet-50 px-1.5 py-0.5 text-[10px] font-medium text-violet-700 ring-1 ring-inset ring-violet-600/20">catálogo</span>}
+                      </p>
+                      <p className="truncate text-xs text-zinc-400">
+                        {[p.variacion, p.seller_sku ? `SKU ${p.seller_sku}` : null, p.item_id].filter(Boolean).join(" · ")}
+                      </p>
+                      {compartidas.length > 0 && (
+                        <p className="text-[11px] text-violet-700">
+                          mismo inventario que {compartidas.map((o) => `${o.item_id}${o.catalogo ? " (catálogo)" : ""}`).join(", ")}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </td>
+                <td className="px-3 py-2.5 text-right">
+                  {valor > 0 ? <span className="font-semibold text-zinc-900">{formatoPesos(valor)}</span> : <span className="text-zinc-300">—</span>}
+                </td>
+                <td className="px-3 py-2.5 text-right text-zinc-700">{p.precio !== null ? formatoPesos(p.precio) : "—"}</td>
+                <td className="px-3 py-2.5 text-right">
+                  {p.full_disponible !== null ? (
+                    <>
+                      <span className="font-semibold text-zinc-900">{p.full_disponible.toLocaleString("es-MX")}</span>
+                      {noDisponibles > 0 && (
+                        <p className="text-[11px] text-amber-700" title={(p.full_detalle ?? []).map((d) => `${d.status}: ${d.quantity}`).join(", ")}>
+                          +{noDisponibles} no disp.
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    <span className="text-zinc-300">—</span>
+                  )}
+                </td>
+                <td className="px-3 py-2.5 text-right text-zinc-500">{p.cantidad_publicada ?? "—"}</td>
+                <td className="px-3 py-2.5 text-xs text-zinc-600">{p.logistica ?? "—"}</td>
+                <td className="px-3 py-2.5">
+                  <LigaProducto
+                    itemId={p.item_id}
+                    variationId={p.variation_id}
+                    sku={liga.sku}
+                    origen={liga.origen}
+                    nombre={liga.sku ? (nombrePorSku.get(liga.sku) ?? null) : null}
+                    opciones={opcionesProducto}
+                  />
+                </td>
+                <td className="px-5 py-2.5">
+                  <span
+                    className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset ${
+                      p.estado === "active" ? "bg-emerald-50 text-emerald-700 ring-emerald-600/20" : "bg-zinc-100 text-zinc-600 ring-zinc-500/20"
+                    }`}
+                  >
+                    {ESTADOS_PUBLICACION[p.estado ?? ""] ?? p.estado ?? "?"}
+                  </span>
+                </td>
+              </tr>
+            );
+          })}
+          {lista.length === 0 && (
+            <tr>
+              <td colSpan={8} className="px-5 py-8 text-center text-sm text-zinc-400">
+                Nada que mostrar con ese filtro.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
 
   return (
     <div className="space-y-6">
@@ -90,7 +206,7 @@ export default async function StockMercadoLibre({
         </div>
         <div className="flex flex-col items-end gap-1.5">
           <BotonSincronizarStock conectado={Boolean(conexion)} />
-          {sync?.ultima_sync_stock && <p className="text-[11px] text-zinc-400">actualizado {formatoFechaHoraMx(sync.ultima_sync_stock)}</p>}
+          {sync?.ultima_sync_stock && <p className="text-[11px] text-zinc-400">actualizado {formatoFechaHoraMx(sync.ultima_sync_stock)} · se actualiza solo cada hora</p>}
         </div>
       </div>
 
@@ -148,7 +264,7 @@ export default async function StockMercadoLibre({
           name="q"
           defaultValue={q}
           placeholder="Buscar por nombre, SKU o ID…"
-          className="w-64 rounded-lg border border-zinc-300 px-3 py-1.5 text-sm focus:border-zinc-500 focus:ring-zinc-500"
+          className="w-full rounded-lg border border-zinc-300 px-3 py-1.5 text-sm focus:border-zinc-500 focus:ring-zinc-500 sm:w-72"
         />
       </form>
 
@@ -158,99 +274,26 @@ export default async function StockMercadoLibre({
           <p className="mt-1 text-sm text-zinc-500">Dale a “Actualizar desde Mercado Libre”.</p>
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white shadow-sm">
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="border-b border-zinc-100 text-xs text-zinc-400">
-                <th className="px-5 py-3 font-medium">Publicación</th>
-                <th className="px-3 py-3 font-medium">Tipo</th>
-                <th className="px-3 py-3 text-right font-medium">Precio</th>
-                <th className="px-3 py-3 text-right font-medium">En Full</th>
-                <th className="px-3 py-3 text-right font-medium">Publicado</th>
-                <th className="px-3 py-3 font-medium">Producto del CRM</th>
-                <th className="px-5 py-3 font-medium">Estado</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-50">
-              {visibles.map((p) => {
-                const liga = skuCrmDe(p, vinculos, skusCrm);
-                const compartidas = p.inventory_id ? (porInventario.get(p.inventory_id) ?? []).filter((o) => o.id !== p.id) : [];
-                const noDisponibles = p.full_no_disponible ?? 0;
-                return (
-                  <tr key={p.id} className="align-top">
-                    <td className="px-5 py-2.5">
-                      <div className="flex items-center gap-3">
-                        {p.imagen_url ? (
-                          // eslint-disable-next-line @next/next/no-img-element -- miniatura de Mercado Libre
-                          <img src={p.imagen_url} alt="" className="h-10 w-10 shrink-0 rounded-lg object-cover" />
-                        ) : (
-                          <div className="h-10 w-10 shrink-0 rounded-lg bg-zinc-100" />
-                        )}
-                        <div className="min-w-0 max-w-xs">
-                          <p className="truncate font-medium text-zinc-900" title={p.titulo ?? ""}>
-                            {p.titulo}
-                            {p.catalogo && <span className="ml-1.5 rounded-full bg-violet-50 px-1.5 py-0.5 text-[10px] font-medium text-violet-700 ring-1 ring-inset ring-violet-600/20">catálogo</span>}
-                          </p>
-                          <p className="truncate text-xs text-zinc-400">
-                            {[p.variacion, p.seller_sku ? `SKU ${p.seller_sku}` : null, p.item_id].filter(Boolean).join(" · ")}
-                          </p>
-                          {compartidas.length > 0 && (
-                            <p className="text-[11px] text-violet-700">
-                              mismo inventario que {compartidas.map((o) => `${o.item_id}${o.catalogo ? " (catálogo)" : ""}`).join(", ")}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-3 py-2.5 text-xs text-zinc-600">{p.logistica ?? "—"}</td>
-                    <td className="px-3 py-2.5 text-right text-zinc-700">{p.precio !== null ? formatoPesos(p.precio) : "—"}</td>
-                    <td className="px-3 py-2.5 text-right">
-                      {p.full_disponible !== null ? (
-                        <>
-                          <span className="font-semibold text-zinc-900">{p.full_disponible.toLocaleString("es-MX")}</span>
-                          {noDisponibles > 0 && (
-                            <p className="text-[11px] text-amber-700" title={(p.full_detalle ?? []).map((d) => `${d.status}: ${d.quantity}`).join(", ")}>
-                              +{noDisponibles} no disp.
-                            </p>
-                          )}
-                        </>
-                      ) : (
-                        <span className="text-zinc-300">—</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2.5 text-right text-zinc-500">{p.cantidad_publicada ?? "—"}</td>
-                    <td className="px-3 py-2.5">
-                      <LigaProducto
-                        itemId={p.item_id}
-                        variationId={p.variation_id}
-                        sku={liga.sku}
-                        origen={liga.origen}
-                        nombre={liga.sku ? (nombrePorSku.get(liga.sku) ?? null) : null}
-                        opciones={opcionesProducto}
-                      />
-                    </td>
-                    <td className="px-5 py-2.5">
-                      <span
-                        className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset ${
-                          p.estado === "active" ? "bg-emerald-50 text-emerald-700 ring-emerald-600/20" : "bg-zinc-100 text-zinc-600 ring-zinc-500/20"
-                        }`}
-                      >
-                        {ESTADOS_PUBLICACION[p.estado ?? ""] ?? p.estado ?? "?"}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <>
+          {tabla(activas)}
+          {inactivas.length > 0 && (
+            <details className="group rounded-2xl border border-zinc-200 bg-zinc-50/60">
+              <summary className="cursor-pointer select-none px-5 py-3 text-sm text-zinc-500 hover:text-zinc-800">
+                <span className="mr-1 inline-block transition-transform group-open:rotate-90">▸</span>
+                Pausadas y finalizadas ({inactivas.length.toLocaleString("es-MX")}) — escondidas para no estorbar; si buscas arriba, sí aparecen
+              </summary>
+              <div className="px-2 pb-2">{tabla(inactivas)}</div>
+            </details>
+          )}
+        </>
       )}
 
       <p className="text-xs text-zinc-400">
         “En Full” es lo que Mercado Libre tiene en su bodega listo para vender; “Publicado” es la cantidad que muestra
         el anuncio (para Colecta/Flex es la que tú pusiste, no un inventario real). Publicaciones que comparten
-        inventario (tradicional + catálogo) se cuentan una sola vez en los totales. El valor usa el costo promedio del
-        producto del CRM ligado.
+        inventario (tradicional + catálogo) se cuentan una sola vez en los totales. Las tarjetas de arriba usan el costo
+        promedio del producto del CRM ligado; la columna “Valor” y el orden de la lista usan el precio de venta × piezas
+        (lo que tienes en Full, o lo publicado si no está en Full) — lo más valioso queda hasta arriba.
       </p>
     </div>
   );
