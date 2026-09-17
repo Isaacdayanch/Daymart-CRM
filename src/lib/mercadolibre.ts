@@ -10,10 +10,13 @@
  *    trae `wid=MLM...` (la publicación ganadora que se estaba viendo), se
  *    usa esa; si no, hay que pedirle a la API del catálogo cuál es la
  *    publicación ganadora. */
-export function identificarLinkMercadoLibre(link: string): { tipo: "item" | "producto"; id: string } | null {
-  const wid = link.match(/[?&#]wid=MLM-?(\d+)/i);
-  if (wid) return { tipo: "item", id: `MLM${wid[1]}` };
+export function identificarLinkMercadoLibre(link: string): { tipo: "item" | "producto"; id: string; productoId?: string } | null {
   const producto = link.match(/\/p\/MLM-?(\d+)/i);
+  const wid = link.match(/[?&#]wid=MLM-?(\d+)/i);
+  // Link de catálogo que además dice qué publicación se estaba viendo: se
+  // usa esa publicación, pero se guarda el producto de catálogo como
+  // respaldo (la API sí deja leer el catálogo aunque niegue la publicación).
+  if (wid) return { tipo: "item", id: `MLM${wid[1]}`, productoId: producto ? `MLM${producto[1]}` : undefined };
   if (producto) return { tipo: "producto", id: `MLM${producto[1]}` };
   const item = link.match(/MLM-?(\d+)/i);
   return item ? { tipo: "item", id: `MLM${item[1]}` } : null;
@@ -44,6 +47,7 @@ interface ItemApi {
   category_id?: string;
   sold_quantity?: number;
   listing_type_id?: string;
+  catalog_product_id?: string | null;
 }
 
 interface ProductoApi {
@@ -184,38 +188,56 @@ export async function obtenerDatosMercadoLibre(
   const intentos: string[] = [];
   let itemId = identificado.tipo === "item" ? identificado.id : null;
 
-  // 1) Catálogo: nombre, foto y datos de la publicación ganadora.
-  if (identificado.tipo === "producto") {
-    const rp = await pedirJson<ProductoApi>(`https://api.mercadolibre.com/products/${identificado.id}`, encabezados);
-    if (rp.ok && rp.json) {
-      parcial.nombre = rp.json.name ?? undefined;
-      parcial.imagenUrl = rp.json.pictures?.[0]?.secure_url ?? rp.json.pictures?.[0]?.url ?? undefined;
-      const ganador = rp.json.buy_box_winner;
-      if (ganador) {
-        itemId = ganador.item_id ?? null;
-        if (typeof ganador.price === "number") parcial.precio = ganador.price;
-        parcial.categoriaId = ganador.category_id ?? undefined;
-        parcial.tipoPublicacion = ganador.listing_type_id ?? undefined;
-      }
-    } else {
-      intentos.push(`catálogo ${identificado.id}: ${rp.detalle}`);
+  // 1) Catálogo: nombre, foto y datos de la publicación ganadora. La API
+  // del catálogo sí responde aunque la publicación sea de otro vendedor.
+  const leerCatalogo = async (productoId: string) => {
+    const rp = await pedirJson<ProductoApi>(`https://api.mercadolibre.com/products/${productoId}`, encabezados);
+    if (!rp.ok || !rp.json) {
+      intentos.push(`catálogo ${productoId}: ${rp.detalle}`);
+      return;
     }
-  }
+    parcial.nombre = parcial.nombre ?? rp.json.name ?? undefined;
+    parcial.imagenUrl = parcial.imagenUrl ?? rp.json.pictures?.[0]?.secure_url ?? rp.json.pictures?.[0]?.url ?? undefined;
+    const ganador = rp.json.buy_box_winner;
+    if (ganador) {
+      itemId = itemId ?? ganador.item_id ?? null;
+      if (parcial.precio === undefined && typeof ganador.price === "number") parcial.precio = ganador.price;
+      parcial.categoriaId = parcial.categoriaId ?? ganador.category_id ?? undefined;
+      parcial.tipoPublicacion = parcial.tipoPublicacion ?? ganador.listing_type_id ?? undefined;
+    }
+  };
+  const productoId = identificado.tipo === "producto" ? identificado.id : (identificado.productoId ?? null);
+  if (productoId) await leerCatalogo(productoId);
 
   // 2) Publicación: completa/afina lo anterior (ventas, categoría, precio).
+  // Desde 2024 Mercado Libre niega (403) las publicaciones de OTROS
+  // vendedores; se intenta de todos modos y, si falla, también la consulta
+  // en lote (`/items?ids=`), que a veces sí contesta.
   if (itemId) {
-    const ri = await pedirJson<ItemApi>(`https://api.mercadolibre.com/items/${itemId}`, encabezados);
-    if (ri.ok && ri.json) {
-      const item = ri.json;
+    const aplicarItem = (item: ItemApi) => {
       parcial.nombre = parcial.nombre ?? item.title ?? undefined;
       parcial.imagenUrl = parcial.imagenUrl ?? item.pictures?.[0]?.secure_url ?? item.pictures?.[0]?.url ?? item.thumbnail ?? undefined;
       if (typeof item.price === "number") parcial.precio = item.price;
       parcial.categoriaId = item.category_id ?? parcial.categoriaId;
       parcial.tipoPublicacion = item.listing_type_id ?? parcial.tipoPublicacion;
       if (typeof item.sold_quantity === "number") parcial.ventas = item.sold_quantity;
+      return item.catalog_product_id ?? null;
+    };
+    const ri = await pedirJson<ItemApi>(`https://api.mercadolibre.com/items/${itemId}`, encabezados);
+    let catalogoDelItem: string | null = null;
+    if (ri.ok && ri.json) {
+      catalogoDelItem = aplicarItem(ri.json);
     } else {
       intentos.push(`publicación ${itemId}: ${ri.detalle}`);
+      const atributos = "id,title,price,pictures,thumbnail,category_id,sold_quantity,listing_type_id,catalog_product_id";
+      const rl = await pedirJson<{ code: number; body?: ItemApi }[]>(`https://api.mercadolibre.com/items?ids=${itemId}&attributes=${atributos}`, encabezados);
+      const cuerpo = rl.ok ? rl.json?.[0] : null;
+      if (cuerpo?.code === 200 && cuerpo.body) catalogoDelItem = aplicarItem(cuerpo.body);
+      else intentos.push(`lote ${itemId}: ${rl.ok ? `código ${cuerpo?.code ?? "?"}` : rl.detalle}`);
     }
+    // Si la publicación pertenece a un producto de catálogo que no
+    // conocíamos, el catálogo completa lo que falte.
+    if (catalogoDelItem && catalogoDelItem !== productoId && (!parcial.nombre || !parcial.imagenUrl)) await leerCatalogo(catalogoDelItem);
   }
 
   // 3) Página pública, si todavía falta lo básico. Se prueba el link tal
@@ -238,11 +260,14 @@ export async function obtenerDatosMercadoLibre(
 
   if (!parcial.nombre) {
     const detalle = intentos.length ? ` Detalle: ${intentos.join(" · ")}.` : "";
+    const ajeno = intentos.some((i) => i.includes("403"));
     return {
       datos: null,
-      error: conToken
-        ? `Mercado Libre no dejó leer ese anuncio. Llena los datos a mano.${detalle}`
-        : `Sin cuenta conectada, Mercado Libre bloqueó la consulta. Conecta tu cuenta en Mercado Libre → Conexión.${detalle}`,
+      error: !conToken
+        ? `Sin cuenta conectada, Mercado Libre bloqueó la consulta. Conecta tu cuenta en Mercado Libre → Conexión.${detalle}`
+        : ajeno
+          ? `Mercado Libre no deja que un programa lea anuncios de otros vendedores (solo los tuyos y los de catálogo). Copia el nombre y el precio del anuncio aquí abajo y dale a “Detectar categoría por el nombre” para que la comisión salga sola.${detalle}`
+          : `Mercado Libre no dejó leer ese anuncio. Llena los datos a mano.${detalle}`,
     };
   }
 
@@ -264,4 +289,18 @@ export async function obtenerDatosMercadoLibre(
     },
     error: null,
   };
+}
+
+/** Categoría más probable de Mercado Libre para un nombre de producto
+ * (predictor oficial `domain_discovery`). Sirve cuando el anuncio no se
+ * pudo leer (vendedor ajeno): con el nombre escrito a mano ya se puede
+ * calcular la comisión real. */
+export async function predecirCategoriaMercadoLibre(titulo: string): Promise<{ categoriaId: string; categoriaNombre: string } | null> {
+  const { mercadolibreGet } = await import("@/lib/mercadolibre-auth");
+  const r = await mercadolibreGet<{ category_id?: string; category_name?: string }[]>(
+    `/sites/MLM/domain_discovery/search?limit=1&q=${encodeURIComponent(titulo.trim())}`,
+  );
+  const mejor = r?.[0];
+  if (!mejor?.category_id) return null;
+  return { categoriaId: mejor.category_id, categoriaNombre: mejor.category_name ?? mejor.category_id };
 }

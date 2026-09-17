@@ -65,6 +65,21 @@ export async function porcentajeComisionMl(precio: number, categoriaId: string, 
   }
 }
 
+/** Para Research: categoría probable a partir del nombre (cuando el anuncio
+ * es de otro vendedor y Mercado Libre no deja leerlo). */
+export async function categoriaPorNombreMl(titulo: string) {
+  if (!(await soloDueno())) return { error: "Solo el dueño puede hacer esto.", categoria: null };
+  if (!titulo.trim()) return { error: "Escribe primero el nombre del producto.", categoria: null };
+  try {
+    const { predecirCategoriaMercadoLibre } = await import("@/lib/mercadolibre");
+    const categoria = await predecirCategoriaMercadoLibre(titulo);
+    if (!categoria) return { error: "Mercado Libre no encontró una categoría para ese nombre.", categoria: null };
+    return { error: null, categoria };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "No se pudo consultar la categoría.", categoria: null };
+  }
+}
+
 export async function iniciarSyncStock() {
   if (!(await soloDueno())) return { error: "Solo el dueño puede hacer esto.", ids: [] as string[], inicioIso: "" };
   try {

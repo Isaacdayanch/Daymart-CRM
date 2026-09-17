@@ -7,7 +7,7 @@ import { costoEnvioMercadoLibre } from "@/lib/costos-envio-ml";
 import { costoEstimadoPorPiezaResearch, margenEstimadoResearch } from "@/lib/calculos-research";
 import { formatoPesos } from "@/lib/formato";
 import { guardarBorrador, traerDatosMercadoLibre } from "../actions";
-import { porcentajeComisionMl } from "@/app/mercadolibre/actions";
+import { categoriaPorNombreMl, porcentajeComisionMl } from "@/app/mercadolibre/actions";
 
 const claseCampo =
   "mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500";
@@ -49,6 +49,32 @@ export function FormularioInvestigacion() {
   const [consultandoComision, setConsultandoComision] = useState(false);
   const [tipoPublicacion, setTipoPublicacion] = useState<"gold_special" | "gold_pro">("gold_special");
   const [errorComision, setErrorComision] = useState<string | null>(null);
+  const [detectandoCategoria, setDetectandoCategoria] = useState(false);
+  const [errorCategoria, setErrorCategoria] = useState<string | null>(null);
+
+  // Cuando el anuncio no se pudo leer (vendedor ajeno), la categoría se
+  // adivina con el nombre escrito a mano — y con ella ya sale la comisión.
+  async function alDetectarCategoria() {
+    setDetectandoCategoria(true);
+    setErrorCategoria(null);
+    const r = await categoriaPorNombreMl(nombre);
+    setDetectandoCategoria(false);
+    if (r.error || !r.categoria) {
+      setErrorCategoria(r.error ?? "No se pudo detectar la categoría.");
+      return;
+    }
+    setCategoriaMlId(r.categoria.categoriaId);
+    setCategoriaMlNombre(r.categoria.categoriaNombre);
+    const precio = num(precioVenta);
+    if (precio > 0) {
+      setConsultandoComision(true);
+      setErrorComision(null);
+      const c = await porcentajeComisionMl(precio, r.categoria.categoriaId, tipoPublicacion);
+      setConsultandoComision(false);
+      if (c.error || c.porcentaje === null) setErrorComision(c.error ?? "No se pudo consultar la comisión.");
+      else setComisionMlPct(String(c.porcentaje));
+    }
+  }
 
   // Comisión real de Mercado Libre (vía API, con la cuenta conectada) para
   // el precio y la categoría del anuncio — en vez de copiarla del simulador.
@@ -226,6 +252,20 @@ export function FormularioInvestigacion() {
             onChange={(e) => setNombre(e.target.value)}
             className={claseCampo}
           />
+          {nombre.trim() && (
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+              <button
+                type="button"
+                onClick={alDetectarCategoria}
+                disabled={detectandoCategoria}
+                className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+              >
+                {detectandoCategoria ? "Detectando…" : categoriaMlId ? "Volver a detectar categoría por el nombre" : "Detectar categoría por el nombre"}
+              </button>
+              {categoriaMlNombre && <span className="text-zinc-500">Categoría: {categoriaMlNombre}</span>}
+              {errorCategoria && <span className="text-red-600">{errorCategoria}</span>}
+            </div>
+          )}
         </div>
       </div>
 
