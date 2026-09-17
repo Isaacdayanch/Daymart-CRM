@@ -3,19 +3,19 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-// Se van a ir agregando pestañas conforme se construya el resto del módulo
-// (Movimientos, Préstamos, Deudas...) — por ahora solo lo que ya existe.
+// Orden pedido por Isaac (17 sep): lo que usa a diario primero. "Balance"
+// no lo mencionó, se dejó al final.
 const PESTANAS = [
   { href: "/finanzas", etiqueta: "Resumen" },
   { href: "/finanzas/movimientos", etiqueta: "Movimientos" },
-  { href: "/finanzas/facturas", etiqueta: "Facturas" },
-  { href: "/finanzas/socios", etiqueta: "Socios" },
-  { href: "/finanzas/prestamistas", etiqueta: "Prestamistas" },
-  { href: "/finanzas/proveedores", etiqueta: "Proveedores" },
-  { href: "/finanzas/balance", etiqueta: "Balance" },
-  { href: "/finanzas/maaser", etiqueta: "Maaser" },
   { href: "/finanzas/cuentas", etiqueta: "Cuentas" },
+  { href: "/finanzas/proveedores", etiqueta: "Proveedores" },
+  { href: "/finanzas/maaser", etiqueta: "Maaser" },
+  { href: "/finanzas/facturas", etiqueta: "Facturas" },
+  { href: "/finanzas/prestamistas", etiqueta: "Prestamistas" },
+  { href: "/finanzas/socios", etiqueta: "Socios" },
   { href: "/finanzas/categorias", etiqueta: "Categorías" },
+  { href: "/finanzas/balance", etiqueta: "Balance" },
 ];
 
 export function NavFinanzas() {
