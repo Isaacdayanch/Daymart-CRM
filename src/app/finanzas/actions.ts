@@ -3,7 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { texto } from "@/lib/form-helpers";
-import type { Moneda, TipoCuentaFinanciera, TipoMovimientoFinanciero } from "@/lib/tipos";
+import type { Moneda, MovimientoFinanciero, TipoCuentaFinanciera, TipoMovimientoFinanciero } from "@/lib/tipos";
+import { saldoCuenta } from "@/lib/calculos-financieras";
+import { CATEGORIA_AJUSTE } from "@/lib/estado-cuenta";
 import { recalcularCostoEntradasContenedor } from "@/app/contenedores/[id]/actions";
 
 export async function agregarCuenta(formData: FormData) {
@@ -24,11 +26,103 @@ export async function agregarCuenta(formData: FormData) {
   return { error: null };
 }
 
-export async function eliminarCuenta(cuentaId: string) {
+/** Quitar una cuenta NO es un clic: Isaac tiene que escribir el nombre
+ * exacto (tiene historial importante). Es un soft delete — sus movimientos
+ * se quedan en el libro y siguen contando donde ya contaban. */
+export async function eliminarCuenta(cuentaId: string, formData: FormData) {
   const supabase = await createClient();
-  await supabase.from("cuentas_financieras").update({ eliminado_en: new Date().toISOString() }).eq("id", cuentaId);
+  const { data: cuenta } = await supabase
+    .from("cuentas_financieras")
+    .select("nombre")
+    .eq("id", cuentaId)
+    .maybeSingle<{ nombre: string }>();
+  if (!cuenta) return { error: "No se encontró la cuenta." };
+  const confirmacion = texto(formData, "confirmacion") ?? "";
+  if (confirmacion.trim().toLowerCase() !== cuenta.nombre.trim().toLowerCase()) {
+    return { error: `Para quitarla escribe exactamente el nombre: ${cuenta.nombre}` };
+  }
+  const { error } = await supabase
+    .from("cuentas_financieras")
+    .update({ eliminado_en: new Date().toISOString() })
+    .eq("id", cuentaId);
+  if (error) return { error: error.message };
   revalidatePath("/finanzas");
   revalidatePath("/finanzas/cuentas");
+  revalidatePath("/finanzas/balance");
+  return { error: null };
+}
+
+/** Id de la categoría fija "Ajuste de saldo"; si falta (SQL 0034 sin
+ * correr), se crea aquí mismo para que no truene. */
+async function categoriaAjusteId(supabase: Awaited<ReturnType<typeof createClient>>) {
+  const { data } = await supabase
+    .from("categorias_financieras")
+    .select("id")
+    .eq("nombre", CATEGORIA_AJUSTE)
+    .maybeSingle<{ id: string }>();
+  if (data?.id) return data.id;
+  const { data: nueva, error } = await supabase
+    .from("categorias_financieras")
+    .insert({ nombre: CATEGORIA_AJUSTE, fija: true, orden: 99 })
+    .select("id")
+    .single<{ id: string }>();
+  if (error || !nueva) throw new Error(error?.message ?? "No se pudo crear la categoría de ajuste.");
+  return nueva.id;
+}
+
+/** "Ajustar saldo al del banco": Isaac escribe el saldo real que ve en el
+ * banco (o en su caja) y el sistema registra la diferencia como un
+ * movimiento en la categoría "Ajuste de saldo" — así el estado de cuenta
+ * cuadra sin inventar un gasto ni una entrada falsa. */
+export async function ajustarSaldoCuenta(cuentaId: string, formData: FormData) {
+  const supabase = await createClient();
+  const saldoReal = Number(formData.get("saldo_real"));
+  const moneda = (formData.get("moneda") as Moneda) || "MXN";
+  const notas = texto(formData, "notas");
+  if (!Number.isFinite(saldoReal)) return { error: "Escribe el saldo real." };
+
+  const { data: movimientos } = await supabase
+    .from("movimientos_financieros")
+    .select("*")
+    .or(`cuenta_id.eq.${cuentaId},cuenta_destino_id.eq.${cuentaId}`)
+    .returns<MovimientoFinanciero[]>();
+  const saldoSistema = saldoCuenta(movimientos ?? [], cuentaId, moneda);
+  const diferencia = Math.round((saldoReal - saldoSistema) * 100) / 100;
+  if (Math.abs(diferencia) < 0.005) return { error: "El saldo ya cuadra, no hace falta ajustar." };
+
+  const fechaCampo = formData.get("fecha");
+  const fecha =
+    typeof fechaCampo === "string" && fechaCampo ? new Date(`${fechaCampo}T12:00:00`).toISOString() : new Date().toISOString();
+
+  let categoriaId: string;
+  try {
+    categoriaId = await categoriaAjusteId(supabase);
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "No se pudo preparar el ajuste." };
+  }
+  const { error } = await supabase.from("movimientos_financieros").insert({
+    tipo: diferencia > 0 ? "ENTRADA" : "SALIDA",
+    cuenta_id: cuentaId,
+    cuenta_destino_id: null,
+    categoria_id: categoriaId,
+    monto: Math.abs(diferencia),
+    moneda,
+    fecha,
+    contraparte: null,
+    notas: notas ?? `Ajuste para cuadrar con el saldo real (${saldoReal.toLocaleString("es-MX", { minimumFractionDigits: 2 })})`,
+  });
+  if (error) return { error: error.message };
+  revalidarFinanzas();
+  return { error: null, diferencia };
+}
+
+function revalidarFinanzas() {
+  revalidatePath("/finanzas");
+  revalidatePath("/finanzas/movimientos");
+  revalidatePath("/finanzas/cuentas");
+  revalidatePath("/finanzas/balance");
+  revalidatePath("/finanzas/maaser");
+  revalidatePath("/");
 }
 
 export async function agregarCategoria(formData: FormData) {
@@ -216,7 +310,7 @@ export async function actualizarMovimiento(movimientoId: string, formData: FormD
 
   const cuentaId = formData.get("cuenta_id") as string;
   const cuentaDestinoId = texto(formData, "cuenta_destino_id");
-  const categoriaId = texto(formData, "categoria_id");
+  let categoriaId = texto(formData, "categoria_id");
   const monto = Number(formData.get("monto"));
   const contraparte = texto(formData, "contraparte");
   const notas = texto(formData, "notas");
@@ -228,6 +322,23 @@ export async function actualizarMovimiento(movimientoId: string, formData: FormD
     return { error: "Elige una cuenta destino distinta a la de origen." };
   }
 
+  // Al editar, Isaac puede decir qué es: Entrada, Salida (gasto) o Ajuste
+  // (para cuadrar con el banco; suma o resta según lo elija). Una
+  // transferencia se queda como transferencia.
+  let tipoNuevo: TipoMovimientoFinanciero = actual.tipo;
+  if (actual.tipo !== "TRANSFERENCIA") {
+    const eleccion = texto(formData, "tipo_edicion");
+    if (eleccion === "ENTRADA" || eleccion === "SALIDA") tipoNuevo = eleccion;
+    else if (eleccion === "AJUSTE") {
+      tipoNuevo = texto(formData, "ajuste_signo") === "RESTA" ? "SALIDA" : "ENTRADA";
+      try {
+        categoriaId = await categoriaAjusteId(supabase);
+      } catch (e) {
+        return { error: e instanceof Error ? e.message : "No se pudo preparar el ajuste." };
+      }
+    }
+  }
+
   const fechaCampo = formData.get("fecha");
   const fecha =
     typeof fechaCampo === "string" && fechaCampo
@@ -237,6 +348,7 @@ export async function actualizarMovimiento(movimientoId: string, formData: FormD
   const { error } = await supabase
     .from("movimientos_financieros")
     .update({
+      tipo: tipoNuevo,
       cuenta_id: cuentaId,
       cuenta_destino_id: actual.tipo === "TRANSFERENCIA" ? cuentaDestinoId : null,
       categoria_id: actual.tipo === "TRANSFERENCIA" ? null : categoriaId,
@@ -248,11 +360,7 @@ export async function actualizarMovimiento(movimientoId: string, formData: FormD
     .eq("id", movimientoId);
   if (error) return { error: error.message };
 
-  revalidatePath("/finanzas");
-  revalidatePath("/finanzas/movimientos");
-  revalidatePath("/finanzas/balance");
-  revalidatePath("/finanzas/maaser");
-  revalidatePath("/");
+  revalidarFinanzas();
   return { error: null };
 }
 
@@ -266,11 +374,7 @@ export async function eliminarMovimiento(movimientoId: string) {
   const { error } = await supabase.from("movimientos_financieros").delete().eq("id", movimientoId);
   if (error) return { error: error.message };
 
-  revalidatePath("/finanzas");
-  revalidatePath("/finanzas/movimientos");
-  revalidatePath("/finanzas/balance");
-  revalidatePath("/finanzas/maaser");
-  revalidatePath("/");
+  revalidarFinanzas();
   return { error: null };
 }
 

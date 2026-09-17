@@ -20,9 +20,12 @@ const TIPOS: { valor: TipoMovimientoFinanciero; etiqueta: string }[] = [
 export function FormularioMovimiento({
   cuentas,
   categorias,
+  cuentaInicial,
 }: {
   cuentas: CuentaFinanciera[];
   categorias: CategoriaFinanciera[];
+  /** Viene de "+ Movimiento en esta cuenta" (estado de cuenta): la cuenta ya elegida. */
+  cuentaInicial?: string;
 }) {
   const router = useRouter();
   const [tipo, setTipo] = useState<TipoMovimientoFinanciero>("ENTRADA");
@@ -31,6 +34,7 @@ export function FormularioMovimiento({
   const [enviando, setEnviando] = useState(false);
 
   const opcionesCuentas = cuentas.map((c) => ({ value: c.id, label: c.nombre }));
+  const cuentaPorDefecto = cuentas.some((c) => c.id === cuentaInicial) ? cuentaInicial : opcionesCuentas[0]?.value;
   const opcionesCategorias = [
     { value: "", label: "Sin categoría" },
     ...categorias.map((c) => ({ value: c.id, label: c.nombre })),
@@ -83,7 +87,7 @@ export function FormularioMovimiento({
               {tipo === "ENTRADA" ? "Cuenta destino" : tipo === "SALIDA" ? "Cuenta de origen" : "Cuenta origen"}
             </label>
             <div className="mt-1">
-              <Selector name="cuenta_id" defaultValue={opcionesCuentas[0]?.value} opciones={opcionesCuentas} />
+              <Selector key={cuentaPorDefecto} name="cuenta_id" defaultValue={cuentaPorDefecto} opciones={opcionesCuentas} />
             </div>
           </div>
           {tipo === "TRANSFERENCIA" ? (

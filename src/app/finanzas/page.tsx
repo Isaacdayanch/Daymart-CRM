@@ -11,7 +11,8 @@ const ETIQUETA_TIPO: Record<string, string> = {
   TRANSFERENCIA: "Transferencia",
 };
 
-export default async function ResumenFinanzas() {
+export default async function ResumenFinanzas({ searchParams }: { searchParams: Promise<{ cuenta?: string }> }) {
+  const { cuenta: cuentaInicial } = await searchParams;
   const supabase = await createClient();
   const [{ data: cuentas }, { data: movimientos }, { data: categorias }] = await Promise.all([
     supabase
@@ -45,7 +46,7 @@ export default async function ResumenFinanzas() {
 
   return (
     <div className="space-y-6">
-      <FormularioMovimiento cuentas={listaCuentas} categorias={categorias ?? []} />
+      <FormularioMovimiento cuentas={listaCuentas} categorias={categorias ?? []} cuentaInicial={cuentaInicial} />
 
       <div className="grid grid-cols-2 gap-3">
         <div className="rounded-xl border border-zinc-200 bg-white p-4">
