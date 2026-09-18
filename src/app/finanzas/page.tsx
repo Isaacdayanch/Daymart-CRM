@@ -2,7 +2,8 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { saldosPorCuenta } from "@/lib/calculos-financieras";
 import { formatoPesos, formatoDolares, formatoFecha } from "@/lib/formato";
-import type { CategoriaFinanciera, CuentaFinanciera, MovimientoFinanciero } from "@/lib/tipos";
+import type { CategoriaFinanciera, CuentaFinanciera, FacturaPendiente, MovimientoFinanciero, PagoFactura } from "@/lib/tipos";
+import { saldoFactura } from "@/lib/calculos-facturas";
 import { FormularioMovimiento } from "./formulario-movimiento";
 
 const ETIQUETA_TIPO: Record<string, string> = {
@@ -14,7 +15,7 @@ const ETIQUETA_TIPO: Record<string, string> = {
 export default async function ResumenFinanzas({ searchParams }: { searchParams: Promise<{ cuenta?: string }> }) {
   const { cuenta: cuentaInicial } = await searchParams;
   const supabase = await createClient();
-  const [{ data: cuentas }, { data: movimientos }, { data: categorias }] = await Promise.all([
+  const [{ data: cuentas }, { data: movimientos }, { data: categorias }, { data: facturas }, { data: pagosFactura }] = await Promise.all([
     supabase
       .from("cuentas_financieras")
       .select("*")
@@ -32,7 +33,14 @@ export default async function ResumenFinanzas({ searchParams }: { searchParams: 
       .is("eliminado_en", null)
       .order("orden", { ascending: true })
       .returns<CategoriaFinanciera[]>(),
+    supabase.from("facturas_pendientes").select("*").order("fecha_emision", { ascending: false }).returns<FacturaPendiente[]>(),
+    supabase.from("pagos_factura").select("*").returns<PagoFactura[]>(),
   ]);
+  // Facturas con saldo: para poder marcar un pago "a cuenta de una factura"
+  // desde el mismo registro de movimientos (sin ir a la pestaña Facturas).
+  const facturasAbiertas = (facturas ?? [])
+    .map((f) => ({ id: f.id, etiqueta: `${f.proveedor}${f.folio ? ` · ${f.folio}` : ""}${f.concepto ? ` · ${f.concepto}` : ""}`, saldo: saldoFactura(f, (pagosFactura ?? []).filter((p) => p.factura_id === f.id)).saldo, moneda: f.moneda }))
+    .filter((f) => f.saldo > 0.01);
 
   const listaCuentas = cuentas ?? [];
   const listaMovimientos = movimientos ?? [];
@@ -46,7 +54,7 @@ export default async function ResumenFinanzas({ searchParams }: { searchParams: 
 
   return (
     <div className="space-y-6">
-      <FormularioMovimiento cuentas={listaCuentas} categorias={categorias ?? []} cuentaInicial={cuentaInicial} />
+      <FormularioMovimiento cuentas={listaCuentas} categorias={categorias ?? []} cuentaInicial={cuentaInicial} facturas={facturasAbiertas} />
 
       <div className="grid grid-cols-2 gap-3">
         <div className="rounded-xl border border-zinc-200 bg-white p-4">

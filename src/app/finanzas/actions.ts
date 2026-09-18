@@ -439,8 +439,13 @@ export async function registrarPagoFactura(formData: FormData) {
   const categoriaId = texto(formData, "categoria_id");
   const monto = Number(formData.get("monto"));
   const notas = texto(formData, "notas");
-  const tieneComision = formData.get("tiene_comision") === "true" && !!cuentaDestinoId;
+  const tieneComision = formData.get("tiene_comision") === "true";
   const montoNeto = Number(formData.get("monto_neto"));
+  // Cuánto se descuenta de la factura: por defecto el monto completo que
+  // se debitó; desde el registro de movimientos Isaac puede poner otro (ej.
+  // solo el neto que le llegó al proveedor).
+  const montoFacturaCampo = Number(formData.get("monto_factura"));
+  const montoFactura = Number.isFinite(montoFacturaCampo) && montoFacturaCampo > 0 ? montoFacturaCampo : monto;
 
   if (!facturaId) return { error: "Elige qué factura vas a pagar." };
   if (!cuentaId) return { error: "Elige de qué cuenta sale el pago." };
@@ -511,7 +516,7 @@ export async function registrarPagoFactura(formData: FormData) {
 
   const { error: errorPago } = await supabase.from("pagos_factura").insert({
     factura_id: facturaId,
-    monto,
+    monto: montoFactura,
     fecha,
     cuenta_id: cuentaId,
     categoria_id: categoriaId,
