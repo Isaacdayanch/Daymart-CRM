@@ -233,6 +233,15 @@ export async function terminarSyncPublicaciones(inicioIso?: string) {
   const supabase = createServiceClient();
   if (inicioIso) await supabase.from("mercadolibre_publicaciones").delete().lt("actualizado_en", inicioIso);
   await supabase.from("mercadolibre_sync").upsert({ id: 1, ultima_sync_stock: new Date().toISOString(), ultimo_error_stock: null });
+  // Con la copia fresca, se anota el historial de Full y se detectan
+  // recepciones (el total de un inventario subió). Si la tabla no existe
+  // todavía (SQL 0035 sin correr), no debe tumbar la sincronización.
+  try {
+    const { registrarHistorialFull } = await import("@/lib/salidas-ml");
+    await registrarHistorialFull();
+  } catch {
+    // se reintenta en la siguiente sincronización
+  }
 }
 
 // --- Actualización automática (sin que Isaac haga nada) -------------------

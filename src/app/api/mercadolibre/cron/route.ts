@@ -62,5 +62,19 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  // Salidas automáticas por ventas de ML que ya salieron de la bodega
+  // (solo si Isaac activó el interruptor con su fecha de arranque).
+  try {
+    const { procesarVentasMl } = await import("@/lib/salidas-ml");
+    const r = await procesarVentasMl();
+    resultado.salidas = { generadas: r.generadas, pendientesPorLigar: r.pendientes.length, devolucionesNuevas: r.devolucionesNuevas, activo: Boolean(r.desde) };
+    if (r.generadas || r.devolucionesNuevas) {
+      revalidatePath("/stock");
+      revalidatePath("/stock/full");
+    }
+  } catch (e) {
+    resultado.salidas = { error: e instanceof Error ? e.message : "Fallaron las salidas automáticas." };
+  }
+
   return NextResponse.json({ ok: true, segundos: Math.round((Date.now() - inicio) / 1000), ...resultado });
 }

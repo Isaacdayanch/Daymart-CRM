@@ -109,6 +109,10 @@ export default async function MovimientosStock() {
                         <Link href={`/contenedores/${m.contenedor_id}`} className="hover:underline">
                           Contenedor {contenedoresPorId.get(m.contenedor_id)}
                         </Link>
+                      ) : m.orden_ml_id || m.envio_full_id || m.recepcion_full_id ? (
+                        <Link href="/stock/full" className="hover:underline">
+                          {m.orden_ml_id ? `Venta ML #${m.orden_ml_id}` : "Full (Mercado Libre)"}
+                        </Link>
                       ) : m.venta_id ? (
                         <Link href={`/ventas/${m.venta_id}`} className="hover:underline">
                           {[m.destino, m.referencia].filter(Boolean).join(" · ")}
@@ -119,7 +123,7 @@ export default async function MovimientosStock() {
                       {verDinero && m.tipo === "ENTRADA" && m.costo_unitario_pesos > 0 && (
                         <span className="ml-1 text-zinc-400">· {formatoPesos(m.costo_unitario_pesos)}/pza</span>
                       )}
-                      {verDinero && !m.contenedor_id && !m.venta_id && <AccionesMovimiento movimiento={m} />}
+                      {verDinero && !m.contenedor_id && !m.venta_id && !m.orden_ml_id && !m.envio_full_id && !m.recepcion_full_id && <AccionesMovimiento movimiento={m} />}
                     </td>
                   </tr>
                 ))}

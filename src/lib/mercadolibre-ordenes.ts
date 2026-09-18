@@ -25,6 +25,9 @@ export interface OrdenMl {
   costo_envio_vendedor: number | null;
   etiquetas: string[] | null;
   sincronizado_en: string;
+  /** Salidas automáticas de stock (migración 0035). */
+  salida_generada_en?: string | null;
+  devolucion_estado?: "POR_CONFIRMAR" | "REINGRESADA" | "MERMA" | null;
 }
 
 export interface OrdenItemMl {

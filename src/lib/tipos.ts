@@ -145,6 +145,11 @@ export interface MovimientoStock {
   producto_id: string | null;
   /** Venta directa que generó esta salida (Módulo Ventas). */
   venta_id: string | null;
+  /** Orden de Mercado Libre que generó esta salida (migración 0035). */
+  orden_ml_id?: number | null;
+  /** Envío a Full que generó esta salida (migración 0035). */
+  envio_full_id?: string | null;
+  recepcion_full_id?: string | null;
   destino: string | null;
   referencia: string | null;
   creado_en: string;
@@ -181,6 +186,53 @@ export interface PendienteChina {
 export interface ConfiguracionStock {
   id: number;
   dias_espera: number;
+  /** Desde qué fecha se generan salidas automáticas por ventas de ML (null = apagado). */
+  salidas_ml_desde?: string | null;
+}
+
+export type EstadoEnvioFull = "PREPARADO" | "RECIBIDO" | "CANCELADO";
+
+export interface EnvioFull {
+  id: string;
+  numero: number;
+  fecha: string;
+  bodega_id: string | null;
+  color_etiqueta: string | null;
+  notas: string | null;
+  estado: EstadoEnvioFull;
+  creado_en: string;
+  cerrado_en: string | null;
+}
+
+export interface EnvioFullLinea {
+  id: string;
+  envio_id: string;
+  sku: string;
+  nombre: string;
+  imagen_url: string | null;
+  piezas_por_caja: number;
+  cantidad_enviada: number;
+  cantidad_recibida: number;
+  merma: number;
+  resuelta: boolean;
+  creado_en: string;
+}
+
+export interface RecepcionFull {
+  id: string;
+  inventory_id: string;
+  item_id: string | null;
+  variation_id: number | null;
+  titulo: string | null;
+  sku_crm: string | null;
+  cantidad: number;
+  total_antes: number;
+  total_despues: number;
+  detectado_en: string;
+  atendido_en: string | null;
+  decision: "SALIDA" | "IGNORADA" | null;
+  envio_id: string | null;
+  movimiento_stock_id: string | null;
 }
 
 export type TipoCuentaFinanciera = "EFECTIVO" | "BANCO" | "OTRO";
