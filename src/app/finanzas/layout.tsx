@@ -12,14 +12,17 @@ import { MenuMas } from "../menu-mas";
 export default async function FinanzasLayout({ children }: { children: React.ReactNode }) {
   const perfil = await obtenerPerfilActual();
   const supabase = await createClient();
-  const [{ data: movimientosDeuda }, { data: ventas }, { data: ventaLineas }, { data: cobrosVenta }, { data: clientes }] =
+  const [{ data: movimientosDeuda }, { data: ventas }, { data: ventaLineas }, { data: cobrosVenta }, { data: clientes }, { count: enviosChinaPendientes }, { count: comisionesPendientes }] =
     await Promise.all([
       supabase.from("movimientos_deuda_proveedor").select("*").returns<MovimientoDeudaProveedor[]>(),
       supabase.from("ventas").select("*").eq("forma_pago", "CREDITO").returns<Venta[]>(),
       supabase.from("venta_lineas").select("*").returns<VentaLinea[]>(),
       supabase.from("cobros_venta").select("*").returns<CobroVenta[]>(),
       supabase.from("clientes").select("*").returns<Cliente[]>(),
+      supabase.from("envios_china").select("id", { count: "exact", head: true }).eq("estado", "PENDIENTE"),
+      supabase.from("movimientos_financieros").select("id", { count: "exact", head: true }).eq("comision_pendiente", true),
     ]);
+  const pendientesComision = (enviosChinaPendientes ?? 0) + (comisionesPendientes ?? 0);
 
   const porVencer = cargosPorVencer(movimientosDeuda ?? [], 7);
   // Lo que te deben clientes y vence pronto (o ya venció) — mismo aviso,
@@ -43,6 +46,16 @@ export default async function FinanzasLayout({ children }: { children: React.Rea
           </div>
         </div>
       </header>
+
+      {pendientesComision > 0 && (
+        <div className="border-b border-amber-300 bg-amber-100">
+          <div className="mx-auto max-w-5xl px-4 py-2.5 text-sm text-amber-900 sm:px-6">
+            <Link href="/finanzas#pendientes-china" className="font-medium underline-offset-2 hover:underline">
+              Falta registrar la comisión de {pendientesComision === 1 ? "1 transacción" : `${pendientesComision} transacciones`} → ponerla ahora
+            </Link>
+          </div>
+        </div>
+      )}
 
       {porVencer.length > 0 && (
         <div className="border-b border-amber-200 bg-amber-50">

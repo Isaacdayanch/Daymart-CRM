@@ -190,6 +190,26 @@ export interface ConfiguracionStock {
   salidas_ml_desde?: string | null;
 }
 
+export interface EnvioChina {
+  id: string;
+  estado: "PENDIENTE" | "COMPLETADO" | "CANCELADO";
+  cuenta_origen_id: string | null;
+  cuenta_puente_id: string | null;
+  movimiento_transferencia_id: string | null;
+  proveedor: string;
+  moneda_proveedor: Moneda;
+  contenedor_id: string | null;
+  abono_pendiente_id: string | null;
+  monto_pesos: number;
+  comision_pesos: number | null;
+  monto_dolares: number | null;
+  fecha: string;
+  notas: string | null;
+  creado_en: string;
+  completado_en: string | null;
+  movimiento_envio_id: string | null;
+}
+
 export type EstadoEnvioFull = "PREPARADO" | "RECIBIDO" | "CANCELADO";
 
 export interface EnvioFull {
@@ -273,6 +293,8 @@ export interface MovimientoFinanciero {
   notas: string | null;
   referencia_tipo: string | null;
   referencia_id: string | null;
+  /** true = falta registrar la comisión de esta transacción (migración 0036). */
+  comision_pendiente?: boolean;
   creado_en: string;
 }
 

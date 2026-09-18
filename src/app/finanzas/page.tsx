@@ -2,9 +2,11 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { saldosPorCuenta } from "@/lib/calculos-financieras";
 import { formatoPesos, formatoDolares, formatoFecha } from "@/lib/formato";
-import type { CategoriaFinanciera, CuentaFinanciera, FacturaPendiente, MovimientoFinanciero, PagoFactura } from "@/lib/tipos";
+import type { CategoriaFinanciera, Contenedor, CuentaFinanciera, EnvioChina, FacturaPendiente, MovimientoDeudaProveedor, MovimientoFinanciero, PagoFactura } from "@/lib/tipos";
 import { saldoFactura } from "@/lib/calculos-facturas";
+import { proveedoresConDeuda } from "@/lib/calculos-socios-deuda";
 import { FormularioMovimiento } from "./formulario-movimiento";
+import { PendientesChina } from "./pendientes-china";
 
 const ETIQUETA_TIPO: Record<string, string> = {
   ENTRADA: "Entrada",
@@ -15,7 +17,7 @@ const ETIQUETA_TIPO: Record<string, string> = {
 export default async function ResumenFinanzas({ searchParams }: { searchParams: Promise<{ cuenta?: string }> }) {
   const { cuenta: cuentaInicial } = await searchParams;
   const supabase = await createClient();
-  const [{ data: cuentas }, { data: movimientos }, { data: categorias }, { data: facturas }, { data: pagosFactura }] = await Promise.all([
+  const [{ data: cuentas }, { data: movimientos }, { data: categorias }, { data: facturas }, { data: pagosFactura }, { data: deudaProveedores }, { data: contenedores }, { data: abonosPendientes }, { data: enviosChina }] = await Promise.all([
     supabase
       .from("cuentas_financieras")
       .select("*")
@@ -35,7 +37,17 @@ export default async function ResumenFinanzas({ searchParams }: { searchParams: 
       .returns<CategoriaFinanciera[]>(),
     supabase.from("facturas_pendientes").select("*").order("fecha_emision", { ascending: false }).returns<FacturaPendiente[]>(),
     supabase.from("pagos_factura").select("*").returns<PagoFactura[]>(),
+    supabase.from("movimientos_deuda_proveedor").select("*").returns<MovimientoDeudaProveedor[]>(),
+    supabase.from("contenedores").select("*").is("eliminado_en", null).order("numero", { ascending: false }).returns<Contenedor[]>(),
+    supabase.from("pagos_mercancia").select("id, contenedor_id, monto_dolares, fecha_limite").eq("pagado", false).returns<{ id: string; contenedor_id: string; monto_dolares: number; fecha_limite: string | null }[]>(),
+    supabase.from("envios_china").select("*").eq("estado", "PENDIENTE").order("fecha", { ascending: false }).returns<EnvioChina[]>(),
   ]);
+  const proveedoresSugeridos = Array.from(new Set([...proveedoresConDeuda(deudaProveedores ?? []), ...(contenedores ?? []).map((c) => c.fabrica_principal).filter((x): x is string => Boolean(x))])).sort();
+  const datosChina = {
+    proveedores: proveedoresSugeridos,
+    contenedores: (contenedores ?? []).map((c) => ({ id: c.id, numero: c.numero, proveedor: c.fabrica_principal })),
+    abonosPendientes: abonosPendientes ?? [],
+  };
   // Facturas con saldo: para poder marcar un pago "a cuenta de una factura"
   // desde el mismo registro de movimientos (sin ir a la pestaña Facturas).
   const facturasAbiertas = (facturas ?? [])
@@ -54,7 +66,8 @@ export default async function ResumenFinanzas({ searchParams }: { searchParams: 
 
   return (
     <div className="space-y-6">
-      <FormularioMovimiento cuentas={listaCuentas} categorias={categorias ?? []} cuentaInicial={cuentaInicial} facturas={facturasAbiertas} />
+      <PendientesChina envios={enviosChina ?? []} movimientos={listaMovimientos.filter((m) => m.comision_pendiente)} nombresCuentas={Object.fromEntries(cuentasPorId)} />
+      <FormularioMovimiento cuentas={listaCuentas} categorias={categorias ?? []} cuentaInicial={cuentaInicial} facturas={facturasAbiertas} china={datosChina} />
 
       <div className="grid grid-cols-2 gap-3">
         <div className="rounded-xl border border-zinc-200 bg-white p-4">

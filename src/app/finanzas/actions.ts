@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { texto } from "@/lib/form-helpers";
-import type { Moneda, MovimientoFinanciero, TipoCuentaFinanciera, TipoMovimientoFinanciero } from "@/lib/tipos";
+import type { EnvioChina, Moneda, MovimientoFinanciero, TipoCuentaFinanciera, TipoMovimientoFinanciero } from "@/lib/tipos";
 import { saldoCuenta } from "@/lib/calculos-financieras";
 import { CATEGORIA_AJUSTE } from "@/lib/estado-cuenta";
 import { recalcularCostoEntradasContenedor } from "@/app/contenedores/[id]/actions";
@@ -191,6 +191,8 @@ export async function registrarMovimiento(formData: FormData) {
   const tieneComision =
     formData.get("tiene_comision") === "true" && (tipo === "SALIDA" || tipo === "TRANSFERENCIA");
   const montoNeto = Number(formData.get("monto_neto"));
+  // "La comisión la sé después": se guarda por el monto completo y marcado.
+  const comisionDespues = !tieneComision && formData.get("comision_despues") === "true" && (tipo === "SALIDA" || tipo === "TRANSFERENCIA");
 
   const fechaCampo = formData.get("fecha");
   const fecha =
@@ -220,6 +222,7 @@ export async function registrarMovimiento(formData: FormData) {
       fecha,
       contraparte,
       notas,
+      comision_pendiente: comisionDespues,
     })
     .select("id")
     .single();
@@ -285,7 +288,14 @@ async function movimientoEstaLigado(supabase: Awaited<ReturnType<typeof createCl
       .select("id", { count: "exact", head: true })
       .eq("movimiento_financiero_id", movimientoId),
   ]);
-  return Boolean(enMercancia || enDeudaProveedor || enFactura || enCobroVenta);
+  // La transferencia a la cuenta puente de un envío a China pendiente se
+  // maneja desde el aviso ámbar (completar/anular), no desde aquí.
+  const { count: enEnvioChina } = await supabase
+    .from("envios_china")
+    .select("id", { count: "exact", head: true })
+    .eq("estado", "PENDIENTE")
+    .eq("movimiento_transferencia_id", movimientoId);
+  return Boolean(enMercancia || enDeudaProveedor || enFactura || enCobroVenta || enEnvioChina);
 }
 
 const MENSAJE_MOVIMIENTO_LIGADO =
@@ -441,6 +451,7 @@ export async function registrarPagoFactura(formData: FormData) {
   const notas = texto(formData, "notas");
   const tieneComision = formData.get("tiene_comision") === "true";
   const montoNeto = Number(formData.get("monto_neto"));
+  const comisionDespues = !tieneComision && formData.get("comision_despues") === "true";
   // Cuánto se descuenta de la factura: por defecto el monto completo que
   // se debitó; desde el registro de movimientos Isaac puede poner otro (ej.
   // solo el neto que le llegó al proveedor).
@@ -483,6 +494,7 @@ export async function registrarPagoFactura(formData: FormData) {
       notas: notasMovimiento,
       referencia_tipo: "FACTURA",
       referencia_id: facturaId,
+      comision_pendiente: comisionDespues,
     })
     .select("id")
     .single();
@@ -981,6 +993,224 @@ export async function registrarEnvioCuentaPuente(formData: FormData) {
   revalidatePath("/finanzas/proveedores");
   revalidatePath("/finanzas");
   revalidatePath("/finanzas/movimientos");
+  return { error: null, movimientoId: movimiento.id };
+}
+
+// ---------------------------------------------------------------------------
+// "Mandar dinero a China" (una sola captura, comisión ahora o después)
+// ---------------------------------------------------------------------------
+
+function comisionDe(formData: FormData, montoPesos: number): number | null {
+  const modo = texto(formData, "comision_modo");
+  const valor = Number(formData.get("comision_valor"));
+  if (modo === "PORCENTAJE") return Number.isFinite(valor) ? Math.round(montoPesos * valor) / 100 : null;
+  if (modo === "MONTO") return Number.isFinite(valor) ? valor : null;
+  if (modo === "NETO") return Number.isFinite(valor) && valor > 0 ? Math.round((montoPesos - valor) * 100) / 100 : null;
+  return null; // "DESPUES"
+}
+
+/** Registra el envío al proveedor desde la cuenta puente (o la de origen si
+ * fue directo) y cierra el pendiente. */
+async function completarEnvioChinaInterno(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  envio: EnvioChina,
+  comisionPesos: number,
+  montoDolares: number | null,
+  fechaIso?: string,
+) {
+  if (comisionPesos < 0 || comisionPesos >= envio.monto_pesos) return { error: "La comisión no es válida." };
+  const pesosNetos = Math.round((envio.monto_pesos - comisionPesos) * 100) / 100;
+  if (envio.moneda_proveedor === "USD" && !(montoDolares && montoDolares > 0)) {
+    return { error: "Pon los dólares que le llegaron al proveedor." };
+  }
+  const fd = new FormData();
+  fd.set("cuenta_id", envio.cuenta_puente_id ?? envio.cuenta_origen_id ?? "");
+  fd.set("proveedor", envio.proveedor);
+  fd.set("monto_pesos", String(pesosNetos));
+  fd.set("comision_pesos", String(comisionPesos));
+  fd.set("moneda_proveedor", envio.moneda_proveedor);
+  fd.set("monto_abono", String(envio.moneda_proveedor === "USD" ? montoDolares : pesosNetos));
+  if (montoDolares && montoDolares > 0) fd.set("monto_dolares", String(montoDolares));
+  if (envio.contenedor_id) fd.set("contenedor_id", envio.contenedor_id);
+  if (envio.abono_pendiente_id) fd.set("abono_pendiente_id", envio.abono_pendiente_id);
+  fd.set("fecha", (fechaIso ?? envio.fecha).slice(0, 10));
+  if (envio.notas) fd.set("notas", envio.notas);
+  const r = await registrarEnvioCuentaPuente(fd);
+  if (r.error) return { error: r.error };
+  const { error } = await supabase
+    .from("envios_china")
+    .update({ estado: "COMPLETADO", comision_pesos: comisionPesos, monto_dolares: montoDolares, completado_en: new Date().toISOString(), movimiento_envio_id: r.movimientoId ?? null })
+    .eq("id", envio.id);
+  if (error) return { error: error.message };
+  return { error: null };
+}
+
+/** Un solo botón para el caso más frecuente de Isaac: mandar pesos a un
+ * proveedor chino, casi siempre a través de Jaime (cuenta puente).
+ * - A través de alguien: hoy sale la TRANSFERENCIA origen → puente por el
+ *   monto completo (sin comisión: la comisión se absorbe al costo cuando se
+ *   confirma el envío). Si ya sabe la comisión, se completa al instante; si
+ *   no, queda un pendiente ámbar hasta que llegue el recibo.
+ * - Directo: se registra completo desde la cuenta de origen (necesita la comisión). */
+export async function mandarDineroChina(formData: FormData) {
+  const supabase = await createClient();
+  const cuentaOrigenId = texto(formData, "cuenta_origen_id");
+  const via = texto(formData, "via") === "DIRECTO" ? "DIRECTO" : "PUENTE";
+  const cuentaPuenteId = via === "PUENTE" ? texto(formData, "cuenta_puente_id") : null;
+  const montoPesos = Number(formData.get("monto_pesos"));
+  const proveedor = texto(formData, "proveedor");
+  const monedaProveedor = (texto(formData, "moneda_proveedor") as Moneda) || "USD";
+  const contenedorId = texto(formData, "contenedor_id");
+  const abonoPendienteId = texto(formData, "abono_pendiente_id");
+  const montoDolaresCampo = Number(formData.get("monto_dolares"));
+  const montoDolares = Number.isFinite(montoDolaresCampo) && montoDolaresCampo > 0 ? montoDolaresCampo : null;
+  const facturaId = texto(formData, "factura_id");
+  const notas = texto(formData, "notas");
+  const fechaCampo = texto(formData, "fecha");
+  const fecha = fechaCampo ? new Date(`${fechaCampo}T12:00:00`).toISOString() : new Date().toISOString();
+
+  if (!cuentaOrigenId) return { error: "Elige de qué cuenta sale el dinero." };
+  if (via === "PUENTE" && !cuentaPuenteId) return { error: "Elige a través de quién va (la cuenta puente)." };
+  if (via === "PUENTE" && cuentaPuenteId === cuentaOrigenId) return { error: "La cuenta puente debe ser distinta a la de origen." };
+  if (!Number.isFinite(montoPesos) || montoPesos <= 0) return { error: "El monto no es válido." };
+  if (!proveedor) return { error: "Escribe a qué proveedor va." };
+  const comisionPesos = comisionDe(formData, montoPesos);
+  if (comisionPesos === null && via === "DIRECTO") return { error: "Si es directo, pon la comisión (o 0). “La sé después” solo aplica cuando va a través de alguien." };
+  if (comisionPesos !== null && (comisionPesos < 0 || comisionPesos >= montoPesos)) return { error: "La comisión no es válida." };
+
+  let movimientoTransferenciaId: string | null = null;
+  if (via === "PUENTE") {
+    const { data: mov, error } = await supabase
+      .from("movimientos_financieros")
+      .insert({
+        tipo: "TRANSFERENCIA",
+        cuenta_id: cuentaOrigenId,
+        cuenta_destino_id: cuentaPuenteId,
+        categoria_id: null,
+        monto: montoPesos,
+        moneda: "MXN",
+        fecha,
+        contraparte: proveedor,
+        notas: notas ?? `Para ${proveedor} (vía cuenta puente)`,
+        referencia_tipo: facturaId ? "FACTURA" : "ENVIO_CHINA",
+        referencia_id: facturaId ?? null,
+      })
+      .select("id")
+      .single<{ id: string }>();
+    if (error || !mov) return { error: error?.message ?? "No se pudo registrar la transferencia." };
+    movimientoTransferenciaId = mov.id;
+    if (facturaId) {
+      const { error: errorPago } = await supabase.from("pagos_factura").insert({
+        factura_id: facturaId,
+        monto: comisionPesos !== null ? montoPesos - comisionPesos : montoPesos,
+        fecha,
+        cuenta_id: cuentaOrigenId,
+        categoria_id: null,
+        notas,
+        movimiento_financiero_id: mov.id,
+      });
+      if (errorPago) return { error: `Se registró la transferencia, pero no se pudo ligar a la factura: ${errorPago.message}` };
+    }
+  }
+
+  const { data: envio, error: errorEnvio } = await supabase
+    .from("envios_china")
+    .insert({
+      cuenta_origen_id: cuentaOrigenId,
+      cuenta_puente_id: cuentaPuenteId,
+      movimiento_transferencia_id: movimientoTransferenciaId,
+      proveedor,
+      moneda_proveedor: monedaProveedor,
+      contenedor_id: contenedorId,
+      abono_pendiente_id: abonoPendienteId,
+      monto_pesos: montoPesos,
+      monto_dolares: montoDolares,
+      fecha,
+      notas,
+    })
+    .select("*")
+    .single<EnvioChina>();
+  if (errorEnvio || !envio) return { error: errorEnvio?.message ?? "No se pudo guardar el envío (¿falta el SQL 0036?)." };
+
+  if (comisionPesos !== null) {
+    const r = await completarEnvioChinaInterno(supabase, envio, comisionPesos, montoDolares, fecha);
+    if (r.error) return { error: `Quedó como pendiente: ${r.error}` };
+  }
+  revalidarFinanzas();
+  revalidatePath("/finanzas/proveedores");
+  return { error: null, pendiente: comisionPesos === null };
+}
+
+/** Llegó el recibo: Isaac pone la comisión (y los dólares) y se completa. */
+export async function completarEnvioChina(envioId: string, formData: FormData) {
+  const supabase = await createClient();
+  const { data: envio } = await supabase.from("envios_china").select("*").eq("id", envioId).maybeSingle<EnvioChina>();
+  if (!envio) return { error: "No se encontró el envío." };
+  if (envio.estado !== "PENDIENTE") return { error: "Este envío ya se completó." };
+  const comisionPesos = comisionDe(formData, envio.monto_pesos);
+  if (comisionPesos === null) return { error: "Pon la comisión (puede ser 0)." };
+  const dolaresCampo = Number(formData.get("monto_dolares"));
+  const montoDolares = Number.isFinite(dolaresCampo) && dolaresCampo > 0 ? dolaresCampo : envio.monto_dolares;
+  const fechaCampo = texto(formData, "fecha");
+  const r = await completarEnvioChinaInterno(supabase, envio, comisionPesos, montoDolares, fechaCampo ? new Date(`${fechaCampo}T12:00:00`).toISOString() : undefined);
+  if (r.error) return r;
+  revalidarFinanzas();
+  revalidatePath("/finanzas/proveedores");
+  return { error: null };
+}
+
+/** Cancelar un envío pendiente: borra la transferencia a la cuenta puente
+ * (y su pago de factura ligado, si lo hubo). Solo mientras está pendiente. */
+export async function cancelarEnvioChina(envioId: string) {
+  const supabase = await createClient();
+  const { data: envio } = await supabase.from("envios_china").select("*").eq("id", envioId).maybeSingle<EnvioChina>();
+  if (!envio) return { error: "No se encontró el envío." };
+  if (envio.estado !== "PENDIENTE") return { error: "Solo se puede cancelar un envío pendiente." };
+  if (envio.movimiento_transferencia_id) {
+    await supabase.from("pagos_factura").delete().eq("movimiento_financiero_id", envio.movimiento_transferencia_id);
+    await supabase.from("movimientos_financieros").delete().eq("id", envio.movimiento_transferencia_id);
+  }
+  const { error } = await supabase.from("envios_china").update({ estado: "CANCELADO", completado_en: new Date().toISOString() }).eq("id", envioId);
+  if (error) return { error: error.message };
+  revalidarFinanzas();
+  return { error: null };
+}
+
+/** Llegó el dato de la comisión de un movimiento marcado "la sé después":
+ * el movimiento baja al neto, la comisión se separa como gasto en
+ * "Comisiones" (ligada), y si el movimiento era pago de factura, el abono a
+ * la factura también baja al neto. */
+export async function completarComisionMovimiento(movimientoId: string, formData: FormData) {
+  const supabase = await createClient();
+  const { data: m } = await supabase.from("movimientos_financieros").select("*").eq("id", movimientoId).maybeSingle<MovimientoFinanciero>();
+  if (!m) return { error: "No se encontró el movimiento." };
+  if (!m.comision_pendiente) return { error: "Este movimiento ya tiene su comisión." };
+  const comision = comisionDe(formData, m.monto);
+  if (comision === null) return { error: "Pon la comisión." };
+  if (comision < 0 || comision >= m.monto) return { error: "La comisión no es válida." };
+  const neto = Math.round((m.monto - comision) * 100) / 100;
+
+  if (comision > 0) {
+    const { data: categoriaComisiones } = await supabase.from("categorias_financieras").select("id").eq("nombre", "Comisiones").maybeSingle<{ id: string }>();
+    const { error: errorComision } = await supabase.from("movimientos_financieros").insert({
+      tipo: "SALIDA",
+      cuenta_id: m.cuenta_id,
+      categoria_id: categoriaComisiones?.id ?? null,
+      monto: comision,
+      moneda: m.moneda,
+      fecha: m.fecha,
+      contraparte: m.contraparte,
+      notas: "Comisión de la transacción",
+      referencia_tipo: "COMISION",
+      referencia_id: m.id,
+    });
+    if (errorComision) return { error: errorComision.message };
+  }
+  const { error } = await supabase.from("movimientos_financieros").update({ monto: neto, comision_pendiente: false }).eq("id", m.id);
+  if (error) return { error: error.message };
+  if (comision > 0) await supabase.from("pagos_factura").update({ monto: neto }).eq("movimiento_financiero_id", m.id);
+  revalidarFinanzas();
+  revalidatePath("/finanzas/facturas");
   return { error: null };
 }
 

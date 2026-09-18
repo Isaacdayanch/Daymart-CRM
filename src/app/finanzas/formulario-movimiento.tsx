@@ -8,6 +8,7 @@ import { Selector } from "@/components/selector";
 import { formatoPesos } from "@/lib/formato";
 import type { CategoriaFinanciera, CuentaFinanciera, TipoMovimientoFinanciero } from "@/lib/tipos";
 import { registrarMovimiento, registrarPagoFactura } from "./actions";
+import { FormularioEnvioChina, type DatosChina } from "./formulario-envio-china";
 
 export interface FacturaAbierta {
   id: string;
@@ -19,10 +20,13 @@ export interface FacturaAbierta {
 const claseCampo =
   "mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500";
 
-const TIPOS: { valor: TipoMovimientoFinanciero; etiqueta: string }[] = [
+type Pestana = TipoMovimientoFinanciero | "CHINA";
+
+const TIPOS: { valor: Pestana; etiqueta: string }[] = [
   { valor: "ENTRADA", etiqueta: "Agregar dinero" },
   { valor: "SALIDA", etiqueta: "Mandar dinero" },
   { valor: "TRANSFERENCIA", etiqueta: "Mover entre mis cuentas" },
+  { valor: "CHINA", etiqueta: "Mandar dinero a China" },
 ];
 
 export function FormularioMovimiento({
@@ -30,6 +34,7 @@ export function FormularioMovimiento({
   categorias,
   cuentaInicial,
   facturas = [],
+  china,
 }: {
   cuentas: CuentaFinanciera[];
   categorias: CategoriaFinanciera[];
@@ -37,9 +42,12 @@ export function FormularioMovimiento({
   cuentaInicial?: string;
   /** Facturas con saldo, para marcar un pago "a cuenta de una factura". */
   facturas?: FacturaAbierta[];
+  /** Proveedores, contenedores y abonos pendientes para "Mandar dinero a China". */
+  china?: DatosChina;
 }) {
   const router = useRouter();
-  const [tipo, setTipo] = useState<TipoMovimientoFinanciero>("ENTRADA");
+  const [pestana, setPestana] = useState<Pestana>("ENTRADA");
+  const tipo: TipoMovimientoFinanciero = pestana === "CHINA" ? "SALIDA" : pestana;
   const [tieneComision, setTieneComision] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
@@ -48,7 +56,7 @@ export function FormularioMovimiento({
   // La comisión se puede capturar de tres formas: el neto que llegó, un
   // porcentaje (ej. 1.75%) o el monto de la comisión. Al servidor siempre
   // viaja el neto (monto − comisión), que es lo que el sistema guarda.
-  const [modoComision, setModoComision] = useState<"NETO" | "PORCENTAJE" | "MONTO">("PORCENTAJE");
+  const [modoComision, setModoComision] = useState<"NETO" | "PORCENTAJE" | "MONTO" | "DESPUES">("PORCENTAJE");
   const [porcentaje, setPorcentaje] = useState("");
   const [comisionMonto, setComisionMonto] = useState("");
   const [netoManual, setNetoManual] = useState("");
@@ -57,7 +65,8 @@ export function FormularioMovimiento({
 
   const montoNum = Number(monto) || 0;
   const comisionCalculada =
-    modoComision === "PORCENTAJE" ? Math.round(montoNum * (Number(porcentaje) || 0)) / 100 : modoComision === "MONTO" ? Number(comisionMonto) || 0 : montoNum - (Number(netoManual) || 0);
+    modoComision === "PORCENTAJE" ? Math.round(montoNum * (Number(porcentaje) || 0)) / 100 : modoComision === "MONTO" ? Number(comisionMonto) || 0 : modoComision === "NETO" ? montoNum - (Number(netoManual) || 0) : 0;
+  const comisionDespues = tieneComision && modoComision === "DESPUES";
   const netoCalculado = Math.round((montoNum - comisionCalculada) * 100) / 100;
   const facturaElegida = facturas.find((f) => f.id === facturaId);
 
@@ -79,11 +88,11 @@ export function FormularioMovimiento({
             key={t.valor}
             type="button"
             onClick={() => {
-              setTipo(t.valor);
+              setPestana(t.valor);
               setTieneComision(false);
             }}
             className={`flex-1 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition ${
-              tipo === t.valor ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-700"
+              pestana === t.valor ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-700"
             }`}
           >
             {t.etiqueta}
@@ -91,20 +100,24 @@ export function FormularioMovimiento({
         ))}
       </div>
 
+      {pestana === "CHINA" && china ? (
+        <FormularioEnvioChina cuentas={cuentas} datos={china} facturas={facturas} cuentaInicial={cuentaInicial} />
+      ) : (
       <form
         key={tipo}
         action={async (formData) => {
           setEnviando(true);
           setError(null);
           formData.set("tipo", tipo);
-          formData.set("tiene_comision", tieneComision ? "true" : "false");
-          if (tieneComision) formData.set("monto_neto", String(netoCalculado));
+          formData.set("tiene_comision", tieneComision && !comisionDespues ? "true" : "false");
+          formData.set("comision_despues", comisionDespues ? "true" : "false");
+          if (tieneComision && !comisionDespues) formData.set("monto_neto", String(netoCalculado));
           // "A cuenta de una factura": se registra como pago de factura (una
           // sola captura: el movimiento + el abono a la factura ligados).
           let resultado: { error: string | null } | undefined;
           if (tipo !== "ENTRADA" && facturaId) {
             formData.set("factura_id", facturaId);
-            if (!montoFactura && tieneComision && netoCalculado > 0) formData.set("monto_factura", String(netoCalculado));
+            if (!montoFactura && tieneComision && !comisionDespues && netoCalculado > 0) formData.set("monto_factura", String(netoCalculado));
             if (tipo !== "TRANSFERENCIA") formData.delete("cuenta_destino_id");
             resultado = await registrarPagoFactura(formData);
           } else {
@@ -211,7 +224,7 @@ export function FormularioMovimiento({
                 <label className="block text-xs font-medium text-zinc-500">Monto que se descuenta de la factura</label>
                 <CampoMonto name="monto_factura" value={montoFactura} onChange={setMontoFactura} placeholder={String(tieneComision && netoCalculado > 0 ? netoCalculado : montoNum || "")} className={claseCampo} />
                 <p className="mt-1 text-[11px] text-zinc-400">
-                  Si lo dejas vacío se descuenta {tieneComision && netoCalculado > 0 ? `el neto que llega (${formatoPesos(netoCalculado)})` : "el monto completo"}. La factura se marca pagada sola cuando su saldo llega a cero.
+                  Si lo dejas vacío se descuenta {tieneComision && !comisionDespues && netoCalculado > 0 ? `el neto que llega (${formatoPesos(netoCalculado)})` : "el monto completo"}. La factura se marca pagada sola cuando su saldo llega a cero.
                 </p>
               </div>
             )}
@@ -237,6 +250,7 @@ export function FormularioMovimiento({
                       ["PORCENTAJE", "Porcentaje"],
                       ["MONTO", "Monto de la comisión"],
                       ["NETO", "Neto que llegó"],
+                      ["DESPUES", "La sé después"],
                     ] as const
                   ).map(([valor, etiqueta]) => (
                     <button
@@ -281,7 +295,9 @@ export function FormularioMovimiento({
                   </div>
                 )}
                 <p className="text-[11px] text-zinc-500">
-                  {montoNum > 0 && comisionCalculada > 0 && comisionCalculada < montoNum ? (
+                  {modoComision === "DESPUES" ? (
+                    <>Se registra por el monto completo y queda un aviso ámbar “falta registrar la comisión”. Cuando la sepas, la pones ahí y el sistema separa la comisión sola.</>
+                  ) : montoNum > 0 && comisionCalculada > 0 && comisionCalculada < montoNum ? (
                     <>
                       Se debitan <strong>{formatoPesos(montoNum)}</strong>: llegan <strong>{formatoPesos(netoCalculado)}</strong> y <strong>{formatoPesos(comisionCalculada)}</strong> se guardan solos como gasto en “Comisiones”.
                     </>
@@ -306,6 +322,7 @@ export function FormularioMovimiento({
           </button>
         </div>
       </form>
+      )}
     </div>
   );
 }

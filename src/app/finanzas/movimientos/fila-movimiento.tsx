@@ -65,6 +65,11 @@ export function FilaMovimiento({
         >
           {ETIQUETA_TIPO[m.tipo]}
         </span>
+        {m.comision_pendiente && (
+          <a href="/finanzas#pendientes-china" className="ml-1.5 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-800 ring-1 ring-inset ring-amber-600/20 hover:bg-amber-200">
+            falta comisión
+          </a>
+        )}
       </td>
       <td className="px-6 py-3 text-zinc-600">
         {cuentaNombre}

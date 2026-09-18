@@ -47,6 +47,11 @@ export function FilaEstadoCuenta({
           {r.concepto}
           {r.esAjuste && <span className="ml-1.5 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 ring-1 ring-inset ring-amber-600/20">ajuste</span>}
           {r.esTransferencia && <span className="ml-1.5 rounded-full bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-500">transferencia</span>}
+          {m.comision_pendiente && (
+            <a href="/finanzas#pendientes-china" className="ml-1.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800 ring-1 ring-inset ring-amber-600/20 hover:bg-amber-200">
+              falta comisión
+            </a>
+          )}
         </p>
         {r.detalle && <p className="text-xs text-zinc-400">{r.detalle}</p>}
         {origenLigado && <p className="text-[11px] text-zinc-400">viene de {origenLigado} — se corrige desde ahí</p>}

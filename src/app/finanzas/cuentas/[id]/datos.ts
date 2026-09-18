@@ -18,7 +18,7 @@ export async function cargarEstadoCuenta(cuentaId: string, params: ParamsPeriodo
   const { data: cuenta } = await supabase.from("cuentas_financieras").select("*").eq("id", cuentaId).maybeSingle<CuentaFinanciera>();
   if (!cuenta) notFound();
 
-  const [{ data: movimientos }, { data: cuentas }, { data: categorias }, { data: pagosMercancia }, { data: movimientosDeuda }, { data: pagosFactura }, { data: cobrosVenta }] =
+  const [{ data: movimientos }, { data: cuentas }, { data: categorias }, { data: pagosMercancia }, { data: movimientosDeuda }, { data: pagosFactura }, { data: cobrosVenta }, { data: enviosChina }] =
     await Promise.all([
       supabase
         .from("movimientos_financieros")
@@ -31,6 +31,7 @@ export async function cargarEstadoCuenta(cuentaId: string, params: ParamsPeriodo
       supabase.from("movimientos_deuda_proveedor").select("movimiento_financiero_id").not("movimiento_financiero_id", "is", null),
       supabase.from("pagos_factura").select("movimiento_financiero_id").not("movimiento_financiero_id", "is", null),
       supabase.from("cobros_venta").select("movimiento_financiero_id").not("movimiento_financiero_id", "is", null),
+      supabase.from("envios_china").select("movimiento_transferencia_id").eq("estado", "PENDIENTE").not("movimiento_transferencia_id", "is", null),
     ]);
 
   const hoyTexto = fechaTextoMx(new Date());
@@ -51,6 +52,7 @@ export async function cargarEstadoCuenta(cuentaId: string, params: ParamsPeriodo
   anotar(movimientosDeuda, "Proveedores");
   anotar(pagosFactura, "un pago de factura");
   anotar(cobrosVenta, "un cobro de venta");
+  anotar((enviosChina ?? []).map((e) => ({ movimiento_financiero_id: e.movimiento_transferencia_id })), "un envío a China pendiente (aviso ámbar en Resumen)");
 
   const estado = estadoDeCuenta({
     cuentaId,
