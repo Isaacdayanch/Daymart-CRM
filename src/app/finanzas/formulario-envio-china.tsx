@@ -228,7 +228,7 @@ export function FormularioEnvioChina({ cuentas, datos, facturas, cuentaInicial }
       {exito && <p className="text-sm text-emerald-700">{exito}</p>}
       <div className="flex justify-end pt-1">
         <button type="submit" disabled={enviando} className="rounded-xl bg-zinc-900 px-5 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-zinc-700 disabled:opacity-50">
-          {enviando ? "Guardando..." : modo === "DESPUES" ? "Registrar (comisión después)" : "Registrar envío completo"}
+          {enviando ? "Guardando..." : modo === "DESPUES" ? "Registrar pago (comisión después)" : "Registrar pago completo"}
         </button>
       </div>
     </form>

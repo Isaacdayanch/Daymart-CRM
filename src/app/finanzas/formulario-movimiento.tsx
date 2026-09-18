@@ -26,7 +26,7 @@ const TIPOS: { valor: Pestana; etiqueta: string }[] = [
   { valor: "ENTRADA", etiqueta: "Agregar dinero" },
   { valor: "SALIDA", etiqueta: "Mandar dinero" },
   { valor: "TRANSFERENCIA", etiqueta: "Mover entre mis cuentas" },
-  { valor: "CHINA", etiqueta: "Mandar dinero a China" },
+  { valor: "CHINA", etiqueta: "Pagar a proveedores" },
 ];
 
 export function FormularioMovimiento({
