@@ -63,13 +63,19 @@ export default async function ResumenFinanzas({ searchParams }: { searchParams: 
   const totalMxn = saldos.filter((s) => !s.cuenta.cuenta_transito).reduce((s, c) => s + c.saldoMxn, 0);
   const totalUsd = saldos.filter((s) => !s.cuenta.cuenta_transito).reduce((s, c) => s + c.saldoUsd, 0);
   const ultimosMovimientos = listaMovimientos.slice(0, 8);
+  // Reinvertido en mercancía = todo lo que ya se le PAGÓ a proveedores
+  // (abonos a la deuda con proveedores), separado por moneda. Isaac lo pidió
+  // para ver de un vistazo cuánto del dinero que entró ya está trabajando en China.
+  const abonosProveedor = (deudaProveedores ?? []).filter((m) => m.tipo === "ABONO");
+  const reinvertidoMxn = abonosProveedor.filter((m) => m.moneda === "MXN").reduce((s, m) => s + Number(m.monto), 0);
+  const reinvertidoUsd = abonosProveedor.filter((m) => m.moneda === "USD").reduce((s, m) => s + Number(m.monto), 0);
 
   return (
     <div className="space-y-6">
       <PendientesChina envios={enviosChina ?? []} movimientos={listaMovimientos.filter((m) => m.comision_pendiente)} nombresCuentas={Object.fromEntries(cuentasPorId)} />
       <FormularioMovimiento cuentas={listaCuentas} categorias={categorias ?? []} cuentaInicial={cuentaInicial} facturas={facturasAbiertas} china={datosChina} />
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         <div className="rounded-xl border border-zinc-200 bg-white p-4">
           <p className="text-xs text-zinc-500">Total en pesos</p>
           <p className="mt-1 text-lg font-semibold text-zinc-900">{formatoPesos(totalMxn)}</p>
@@ -77,6 +83,12 @@ export default async function ResumenFinanzas({ searchParams }: { searchParams: 
         <div className="rounded-xl border border-zinc-200 bg-white p-4">
           <p className="text-xs text-zinc-500">Total en dólares</p>
           <p className="mt-1 text-lg font-semibold text-zinc-900">{formatoDolares(totalUsd)}</p>
+        </div>
+        <div className="col-span-2 rounded-xl border border-emerald-200 bg-emerald-50 p-4 sm:col-span-1">
+          <p className="text-xs text-emerald-800">Reinvertido en mercancía</p>
+          <p className="mt-1 text-lg font-semibold text-emerald-900">{formatoDolares(reinvertidoUsd)}</p>
+          {reinvertidoMxn > 0 && <p className="text-xs text-emerald-700">+ {formatoPesos(reinvertidoMxn)} pagados en pesos</p>}
+          <p className="mt-1 text-[11px] text-emerald-700/80">Lo que ya les pagaste a tus proveedores (Finanzas → Proveedores)</p>
         </div>
       </div>
 
