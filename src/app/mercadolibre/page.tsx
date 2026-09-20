@@ -3,12 +3,14 @@ import { createServiceClient } from "@/lib/supabase/servicio";
 import { obtenerConexion } from "@/lib/mercadolibre-auth";
 import {
   ESTADOS_ORDEN,
+  completarMontosGuardados,
   obtenerEstadoSync,
   procesarNotificacionesPendientes,
   sincronizarOrdenes,
   type OrdenItemMl,
   type OrdenMl,
 } from "@/lib/mercadolibre-ordenes";
+import { comisionOrden, netoOrden, parteDelRenglon, totalVendidoOrden } from "@/lib/mercadolibre-montos";
 import {
   fechaTextoMx,
   formatoFechaHoraMx,
@@ -87,6 +89,9 @@ export default async function VentasMercadoLibre({
         sync = await obtenerEstadoSync();
       }
     }
+    // Órdenes guardadas antes de la migración 0037: se les completan los
+    // montos del cobro desde su payload (rápido, sin llamar a ML).
+    await completarMontosGuardados(200).catch(() => 0);
     const supabase = createServiceClient();
     const { data, error } = await supabase
       .from("mercadolibre_ordenes")
@@ -126,9 +131,13 @@ export default async function VentasMercadoLibre({
     ordenes: number;
   }
   const consolidado = new Map<string, ProductoConsolidado>();
-  const idsPagadas = new Set(ordenes.filter((o) => o.estado === "paid").map((o) => o.id));
+  const ordenPorId = new Map(ordenes.map((o) => [o.id, o]));
   for (const i of items) {
-    if (!idsPagadas.has(i.orden_id)) continue;
+    const orden = ordenPorId.get(i.orden_id);
+    if (!orden || orden.estado !== "paid") continue;
+    // Lo vendido y la comisión de la ORDEN (que ya cuadran con el cobro
+    // real) se reparten entre sus renglones en proporción a su valor.
+    const renglones = itemsDe(i.orden_id);
     const clave = `${i.item_id ?? "?"}|${i.variation_id ?? ""}`;
     const actual = consolidado.get(clave) ?? {
       clave,
@@ -143,8 +152,8 @@ export default async function VentasMercadoLibre({
       ordenes: 0,
     };
     actual.piezas += i.cantidad;
-    actual.facturado += i.cantidad * i.precio_unitario;
-    actual.comision += i.comision ?? i.sale_fee * i.cantidad;
+    actual.facturado += parteDelRenglon(totalVendidoOrden(orden), i, renglones);
+    actual.comision += parteDelRenglon(comisionOrden(orden), i, renglones);
     actual.ordenes += 1;
     if (!actual.variacion && i.variacion) actual.variacion = i.variacion;
     consolidado.set(clave, actual);
@@ -154,10 +163,10 @@ export default async function VentasMercadoLibre({
   const canceladas = ordenes.filter((o) => o.estado === "cancelled" || o.estado === "invalid");
   const pendientes = ordenes.filter((o) => !pagadas.includes(o) && !canceladas.includes(o));
   const piezas = pagadas.reduce((s, o) => s + itemsDe(o.id).reduce((a, i) => a + i.cantidad, 0), 0);
-  const totalVendido = pagadas.reduce((s, o) => s + o.total, 0);
-  const comisiones = pagadas.reduce((s, o) => s + o.comision, 0);
+  const totalVendido = pagadas.reduce((s, o) => s + totalVendidoOrden(o), 0);
+  const comisiones = pagadas.reduce((s, o) => s + comisionOrden(o), 0);
   const envios = pagadas.reduce((s, o) => s + (o.costo_envio_vendedor ?? 0), 0);
-  const neto = totalVendido - comisiones - envios;
+  const neto = pagadas.reduce((s, o) => s + netoOrden(o), 0);
   // Un carrito (varias órdenes con el mismo pack_id) Mercado Libre lo cuenta
   // como UNA venta en su panel — aquí se muestran ambas cifras.
   const paquetes = new Set(pagadas.map((o) => o.pack_id ?? o.id)).size;
@@ -357,7 +366,9 @@ export default async function VentasMercadoLibre({
                       {formatoFechaMx(o.fecha_creacion)} <span className="text-zinc-500">{formatoHoraMx(o.fecha_creacion)}</span>
                     </p>
                     <p className="text-xs text-zinc-400">
-                      #{o.id}
+                      <Link href={`/mercadolibre/ordenes/${o.id}`} className="underline decoration-zinc-300 underline-offset-2 hover:text-zinc-900">
+                        #{o.id}
+                      </Link>
                       {o.pack_id && <span title="Parte de un carrito"> · carrito</span>}
                     </p>
                   </td>
@@ -384,8 +395,8 @@ export default async function VentasMercadoLibre({
                     </ul>
                   </td>
                   <td className="px-3 py-3 text-zinc-600">{o.comprador_nickname ?? o.comprador_nombre ?? "—"}</td>
-                  <td className="px-3 py-3 text-right font-medium text-zinc-900">{formatoPesos(o.total)}</td>
-                  <td className="px-3 py-3 text-right text-red-600">{o.comision ? `-${formatoPesos(o.comision)}` : "—"}</td>
+                  <td className="px-3 py-3 text-right font-medium text-zinc-900">{formatoPesos(totalVendidoOrden(o))}</td>
+                  <td className="px-3 py-3 text-right text-red-600">{comisionOrden(o) ? `-${formatoPesos(comisionOrden(o))}` : "—"}</td>
                   <td className="px-3 py-3 text-right text-red-600">
                     {o.costo_envio_vendedor !== null ? (o.costo_envio_vendedor ? `-${formatoPesos(o.costo_envio_vendedor)}` : "$0") : <span className="text-zinc-300">…</span>}
                   </td>
@@ -404,8 +415,9 @@ export default async function VentasMercadoLibre({
       )}
 
       <p className="text-xs text-zinc-400">
-        Las comisiones y envíos son los que reporta Mercado Libre en cada orden. Los envíos aparecen con “…” hasta que
-        Mercado Libre publica su costo (normalmente al despachar). Los totales de arriba solo suman ventas pagadas.
+        Las comisiones y envíos son los que reporta Mercado Libre en cada cobro. Los envíos aparecen con “…” hasta que
+        Mercado Libre publica su costo (normalmente al despachar). Los totales de arriba solo suman ventas pagadas. Si un
+        número no cuadra con tu “Detalle de cobro”, pícale al número de la orden para ver el desglose.
         {sync?.ultima_sync && <> Última sincronización completa: {formatoFechaHoraMx(sync.ultima_sync)}.</>}
       </p>
     </div>

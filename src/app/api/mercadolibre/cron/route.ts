@@ -43,6 +43,21 @@ export async function GET(request: NextRequest) {
     resultado.stock = { error: e instanceof Error ? e.message : "Falló la actualización de stock." };
   }
 
+  // Órdenes guardadas antes de la migración 0037: se les completan los
+  // montos del cobro desde su payload, en tandas, mientras haya tiempo.
+  try {
+    const { completarMontosGuardados } = await import("@/lib/mercadolibre-ordenes");
+    let revisadas = 0;
+    while (Date.now() - inicio < 30000) {
+      const n = await completarMontosGuardados(300);
+      revisadas += n;
+      if (n < 300) break;
+    }
+    if (revisadas) resultado.montos = revisadas;
+  } catch (e) {
+    resultado.montos = { error: e instanceof Error ? e.message : "Falló completar montos." };
+  }
+
   // Ventas: solo si queda tiempo de sobra (las órdenes sin cambios se saltan, así que es rápido).
   if (Date.now() - inicio < 20000) {
     try {

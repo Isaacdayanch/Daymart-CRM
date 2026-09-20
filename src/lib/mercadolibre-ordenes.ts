@@ -25,6 +25,13 @@ export interface OrdenMl {
   costo_envio_vendedor: number | null;
   etiquetas: string[] | null;
   sincronizado_en: string;
+  /** Montos del cobro (migración 0037): lo que pagó el comprador, el envío
+   * que pagó él y la comisión que reporta Mercado Pago. Null en órdenes
+   * guardadas antes o sin datos de pago. */
+  pagado_comprador?: number | null;
+  envio_comprador?: number | null;
+  comision_mp?: number | null;
+  montos_revisado_en?: string | null;
   /** Salidas automáticas de stock (migración 0035). */
   salida_generada_en?: string | null;
   devolucion_estado?: "POR_CONFIRMAR" | "REINGRESADA" | "MERMA" | null;
@@ -75,6 +82,7 @@ interface OrdenApi {
   buyer?: { id?: number; nickname?: string; first_name?: string; last_name?: string };
   shipping?: { id?: number | null };
   tags?: string[];
+  payments?: PagoApi[];
   order_items?: {
     item?: {
       id?: string;
@@ -90,6 +98,40 @@ interface OrdenApi {
     sale_fee?: number;
     listing_type_id?: string;
   }[];
+}
+
+interface PagoApi {
+  id?: number;
+  status?: string;
+  /** Monto del cobro (productos + envío que pagó el comprador). */
+  transaction_amount?: number;
+  /** Lo que pagó el comprador en total. */
+  total_paid_amount?: number;
+  /** Envío pagado por el comprador dentro de este cobro. */
+  shipping_cost?: number;
+  /** Comisión que reporta Mercado Pago por este cobro. */
+  marketplace_fee?: number;
+  coupon_amount?: number;
+}
+
+/** Montos del cobro de una orden, sacados de `payments`. Solo para órdenes
+ * SUELTAS (sin pack_id): en un carrito, cada orden trae el mismo cobro del
+ * carrito completo y sumarlo por orden lo contaría varias veces — esas se
+ * quedan con los montos de la orden como antes. */
+export function montosDePago(orden: Pick<OrdenApi, "pack_id" | "payments" | "paid_amount">) {
+  const vacio = { pagado_comprador: null as number | null, envio_comprador: null as number | null, comision_mp: null as number | null };
+  if (orden.pack_id) return vacio;
+  const pagos = (orden.payments ?? []).filter((p) => !p.status || p.status === "approved");
+  if (!pagos.length) return vacio;
+  const suma = (f: (p: PagoApi) => number | undefined) => pagos.reduce((s, p) => s + (f(p) ?? 0), 0);
+  const pagado = suma((p) => p.total_paid_amount ?? p.transaction_amount);
+  if (!pagado) return vacio;
+  const hayFee = pagos.some((p) => typeof p.marketplace_fee === "number");
+  return {
+    pagado_comprador: pagado,
+    envio_comprador: suma((p) => p.shipping_cost),
+    comision_mp: hayFee ? suma((p) => p.marketplace_fee) : null,
+  };
 }
 
 const LOGISTICA: Record<string, string> = {
@@ -206,6 +248,10 @@ export async function guardarOrden(orden: OrdenApi, conEnvio: boolean) {
   if (conEnvio && orden.shipping?.id) envio = await datosEnvio(orden.shipping.id);
 
   const comisiones = await comisionesPorRenglon(orden);
+  const montos = montosDePago(orden);
+  // La comisión que reporta Mercado Pago es la que de verdad se descontó
+  // del cobro; si no viene, la calculada a partir de `sale_fee`.
+  const comisionOrden = montos.comision_mp && montos.comision_mp > 0 ? montos.comision_mp : comisiones.reduce((a, b) => a + b, 0);
   const fila: Record<string, unknown> = {
     id: orden.id,
     pack_id: orden.pack_id ?? null,
@@ -220,11 +266,13 @@ export async function guardarOrden(orden: OrdenApi, conEnvio: boolean) {
     total: orden.total_amount ?? 0,
     monto_pagado: orden.paid_amount ?? 0,
     moneda: orden.currency_id ?? null,
-    comision: comisiones.reduce((a, b) => a + b, 0),
+    comision: comisionOrden,
     envio_id: orden.shipping?.id ?? null,
     etiquetas: orden.tags ?? null,
     payload: orden,
     sincronizado_en: new Date().toISOString(),
+    ...montos,
+    montos_revisado_en: new Date().toISOString(),
   };
   if (conEnvio) {
     fila.logistica = envio.logistica;
@@ -439,6 +487,31 @@ export async function sincronizarOrdenes(opciones: { diasAtras?: number } = {}) 
     hastaIso = r.hastaIso;
   }
   return guardadas;
+}
+
+/** Completa los montos del cobro (migración 0037) en las órdenes que ya
+ * estaban guardadas, leyéndolos de su `payload` — sin llamar a Mercado
+ * Libre, así es rápido y se puede correr en tandas desde el reloj. Devuelve
+ * cuántas revisó; 0 cuando ya no queda ninguna. */
+export async function completarMontosGuardados(limite = 300) {
+  const supabase = createServiceClient();
+  const { data, error } = await supabase
+    .from("mercadolibre_ordenes")
+    .select("id, pack_id, comision, payload")
+    .is("montos_revisado_en", null)
+    .order("fecha_creacion", { ascending: false })
+    .limit(limite)
+    .returns<{ id: number; pack_id: number | null; comision: number; payload: OrdenApi | null }[]>();
+  if (error) throw new Error(error.message);
+  if (!data?.length) return 0;
+  const ahora = new Date().toISOString();
+  await enGrupos(data, 20, async (o) => {
+    const montos = o.payload ? montosDePago({ ...o.payload, pack_id: o.pack_id ?? o.payload.pack_id }) : { pagado_comprador: null, envio_comprador: null, comision_mp: null };
+    const cambios: Record<string, unknown> = { ...montos, montos_revisado_en: ahora };
+    if (montos.comision_mp && montos.comision_mp > 0) cambios.comision = montos.comision_mp;
+    await supabase.from("mercadolibre_ordenes").update(cambios).eq("id", o.id);
+  });
+  return data.length;
 }
 
 /** Procesa los avisos del webhook que todavía no se han atendido: por cada
