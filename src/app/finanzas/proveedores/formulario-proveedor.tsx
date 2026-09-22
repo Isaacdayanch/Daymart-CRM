@@ -81,9 +81,15 @@ export function FormularioProveedor({ proveedores, cuentas }: { proveedores: str
               <Selector
                 name="cuenta_id"
                 defaultValue={cuentas[0]?.id}
-                opciones={cuentas.map((c) => ({ value: c.id, label: c.nombre }))}
+                opciones={[
+                  ...cuentas.map((c) => ({ value: c.id, label: c.nombre })),
+                  { value: "", label: "Sin cuenta (fue antes de usar el sistema)" },
+                ]}
               />
             </div>
+            <p className="mt-1 text-xs text-zinc-400">
+              &ldquo;Sin cuenta&rdquo; solo baja la deuda del proveedor; no resta de ninguna cuenta de Finanzas.
+            </p>
           </div>
         )}
         <div>

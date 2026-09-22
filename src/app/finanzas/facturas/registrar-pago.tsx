@@ -102,7 +102,10 @@ export function RegistrarPago({
             <Selector
               name="cuenta_id"
               defaultValue={cuentas[0]?.id}
-              opciones={cuentas.map((c) => ({ value: c.id, label: c.nombre }))}
+              opciones={[
+                ...cuentas.map((c) => ({ value: c.id, label: c.nombre })),
+                ...(modo === "DIRECTO" ? [{ value: "", label: "Sin cuenta (fue antes de usar el sistema)" }] : []),
+              ]}
             />
           </div>
         </div>

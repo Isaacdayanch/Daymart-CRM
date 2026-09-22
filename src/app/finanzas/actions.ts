@@ -459,8 +459,27 @@ export async function registrarPagoFactura(formData: FormData) {
   const montoFactura = Number.isFinite(montoFacturaCampo) && montoFacturaCampo > 0 ? montoFacturaCampo : monto;
 
   if (!facturaId) return { error: "Elige qué factura vas a pagar." };
-  if (!cuentaId) return { error: "Elige de qué cuenta sale el pago." };
   if (!Number.isFinite(monto) || monto <= 0) return { error: "El monto no es válido." };
+  // Sin cuenta = pago de antes de usar el sistema: solo se abona a la
+  // factura, sin movimiento de Finanzas (no aplica vía cuenta puente ni con
+  // comisión, porque ahí sí hay dinero real moviéndose hoy).
+  if (!cuentaId) {
+    if (cuentaDestinoId || tieneComision || comisionDespues) return { error: "Elige de qué cuenta sale el pago." };
+    const fechaHist = formData.get("fecha");
+    const { error: errorHistorico } = await supabase.from("pagos_factura").insert({
+      factura_id: facturaId,
+      monto: montoFactura,
+      fecha: typeof fechaHist === "string" && fechaHist ? new Date(`${fechaHist}T12:00:00`).toISOString() : new Date().toISOString(),
+      cuenta_id: null,
+      categoria_id: categoriaId,
+      notas: notas ?? "Pago de antes de usar el sistema (sin cuenta)",
+      movimiento_financiero_id: null,
+    });
+    if (errorHistorico) return { error: errorHistorico.message };
+    revalidatePath("/finanzas/facturas");
+    revalidatePath("/finanzas");
+    return { error: null };
+  }
   if (tieneComision && (!Number.isFinite(montoNeto) || montoNeto <= 0 || montoNeto >= monto)) {
     return { error: "El monto neto debe ser mayor a cero y menor al monto que se debitó." };
   }
@@ -1220,13 +1239,17 @@ export async function registrarAbonoProveedor(formData: FormData) {
   const supabase = await createClient();
 
   const proveedor = texto(formData, "proveedor");
-  const cuentaId = formData.get("cuenta_id") as string;
+  // Cuenta vacía = "Sin cuenta (fue antes de usar el sistema)": el pago ya
+  // había salido de verdad antes de capturar saldos aquí, así que solo se
+  // baja la deuda del proveedor sin tocar ninguna cuenta de Finanzas
+  // (mismo espíritu que el pago "sin cuenta" de facturas, migración 0025).
+  const cuentaId = texto(formData, "cuenta_id");
   const monto = Number(formData.get("monto"));
   const moneda = (formData.get("moneda") as Moneda) || "USD";
   const notas = texto(formData, "notas");
 
-  if (!proveedor || !cuentaId || !Number.isFinite(monto) || monto <= 0) {
-    return { error: "Falta el proveedor, la cuenta o el monto no es válido." };
+  if (!proveedor || !Number.isFinite(monto) || monto <= 0) {
+    return { error: "Falta el proveedor o el monto no es válido." };
   }
 
   const fechaCampo = formData.get("fecha");
@@ -1234,6 +1257,23 @@ export async function registrarAbonoProveedor(formData: FormData) {
     typeof fechaCampo === "string" && fechaCampo
       ? new Date(`${fechaCampo}T12:00:00`).toISOString()
       : new Date().toISOString();
+
+  if (!cuentaId) {
+    const { error: errorHistorico } = await supabase.from("movimientos_deuda_proveedor").insert({
+      proveedor,
+      tipo: "ABONO",
+      monto,
+      moneda,
+      fecha,
+      notas: notas ?? "Pago de antes de usar el sistema (sin cuenta)",
+      cuenta_id: null,
+      movimiento_financiero_id: null,
+    });
+    if (errorHistorico) return { error: errorHistorico.message };
+    revalidatePath("/finanzas/proveedores");
+    revalidatePath("/finanzas");
+    return { error: null };
+  }
 
   const { data: categoria } = await supabase
     .from("categorias_financieras")
