@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import type { CategoriaFinanciera, CuentaFinanciera, MovimientoFinanciero } from "@/lib/tipos";
+import { fechaTextoMx } from "@/lib/fechas-mx";
 import { FilaMovimiento } from "./fila-movimiento";
 
 export default async function MovimientosFinanzas() {
@@ -39,22 +40,32 @@ export default async function MovimientosFinanzas() {
 
   // Un movimiento "ligado" viene de otra pantalla (abono de contenedor,
   // abono a proveedor, pago de factura, cobro de venta) — se edita desde ahí, no aquí, para
-  // no desincronizar los dos registros del mismo dato.
-  const idsLigados = new Set(
-    [
-      ...(pagosMercancia ?? []),
-      ...(movimientosDeuda ?? []),
-      ...(pagosFactura ?? []),
-      ...(cobrosVenta ?? []),
-      ...(enviosChina ?? []).map((e) => ({ movimiento_financiero_id: e.movimiento_transferencia_id })),
-    ]
-      .map((r) => r.movimiento_financiero_id)
-      .filter((id): id is string => Boolean(id)),
-  );
+  // no desincronizar los dos registros del mismo dato. Se guarda DE DÓNDE
+  // viene para decírselo a Isaac en el renglón.
+  const origenLigado = new Map<string, string>();
+  const anotar = (filas: { movimiento_financiero_id: string | null }[] | null, origen: string) => {
+    for (const f of filas ?? []) if (f.movimiento_financiero_id) origenLigado.set(f.movimiento_financiero_id, origen);
+  };
+  anotar(pagosMercancia, "un abono de contenedor");
+  anotar(movimientosDeuda, "Proveedores");
+  anotar(pagosFactura, "un pago de factura");
+  anotar(cobrosVenta, "un cobro de venta");
+  anotar((enviosChina ?? []).map((e) => ({ movimiento_financiero_id: e.movimiento_transferencia_id })), "un pago a proveedores pendiente");
+
+  // Agrupado por mes, para que el ojo encuentre rápido dónde va.
+  const porMes = new Map<string, MovimientoFinanciero[]>();
+  for (const m of listaMovimientos) {
+    const clave = fechaTextoMx(new Date(m.fecha)).slice(0, 7);
+    porMes.set(clave, [...(porMes.get(clave) ?? []), m]);
+  }
+  const nombreMes = (clave: string) => {
+    const [anio, mes] = clave.split("-").map(Number);
+    return new Date(anio, mes - 1, 1).toLocaleDateString("es-MX", { month: "long", year: "numeric" });
+  };
 
   return (
-    <div className="rounded-2xl border border-zinc-200 bg-white shadow-sm">
-      <div className="flex items-center justify-between border-b border-zinc-100 p-6">
+    <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
+      <div className="flex items-center justify-between border-b border-zinc-100 p-5 sm:p-6">
         <div>
           <h2 className="text-sm font-semibold text-zinc-900">Libro de movimientos</h2>
           <p className="mt-1 text-xs text-zinc-500">Entradas, salidas y transferencias, más recientes primero.</p>
@@ -66,21 +77,11 @@ export default async function MovimientosFinanzas() {
       {listaMovimientos.length === 0 ? (
         <p className="p-6 text-sm text-zinc-500">Todavía no hay movimientos.</p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="border-b border-zinc-100 text-xs text-zinc-400">
-                <th className="px-6 py-2.5 font-medium">Fecha</th>
-                <th className="px-6 py-2.5 font-medium">Tipo</th>
-                <th className="px-6 py-2.5 font-medium">Cuenta</th>
-                <th className="px-6 py-2.5 font-medium">Categoría</th>
-                <th className="px-6 py-2.5 font-medium">Contraparte / notas</th>
-                <th className="px-6 py-2.5 font-medium text-right">Monto</th>
-                <th className="px-6 py-2.5 font-medium text-right"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-50">
-              {listaMovimientos.map((m) => (
+        Array.from(porMes.entries()).map(([clave, lista]) => (
+          <section key={clave}>
+            <p className="border-b border-zinc-100 bg-zinc-50/70 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-zinc-500 sm:px-6">{nombreMes(clave)}</p>
+            <ul className="divide-y divide-zinc-100">
+              {lista.map((m) => (
                 <FilaMovimiento
                   key={m.id}
                   movimiento={m}
@@ -89,12 +90,12 @@ export default async function MovimientosFinanzas() {
                   cuentaNombre={cuentasPorId.get(m.cuenta_id) ?? "—"}
                   cuentaDestinoNombre={cuentasPorId.get(m.cuenta_destino_id ?? "") ?? "—"}
                   categoriaNombre={categoriasPorId.get(m.categoria_id ?? "") ?? "—"}
-                  bloqueado={idsLigados.has(m.id)}
+                  origenLigado={origenLigado.get(m.id) ?? null}
                 />
               ))}
-            </tbody>
-          </table>
-        </div>
+            </ul>
+          </section>
+        ))
       )}
     </div>
   );

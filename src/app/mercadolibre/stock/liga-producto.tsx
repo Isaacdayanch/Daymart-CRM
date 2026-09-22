@@ -37,7 +37,7 @@ export function LigaProducto({
 
   if (editando) {
     return (
-      <div className="w-64 space-y-1.5">
+      <div className="w-full space-y-1.5 lg:w-56">
         <SelectorProducto opciones={opciones} value={elegido} onChange={setElegido} />
         <div className="flex items-center gap-2 text-xs">
           <button

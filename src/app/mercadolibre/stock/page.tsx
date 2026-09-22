@@ -135,77 +135,106 @@ export default async function StockMercadoLibre({
     { valor: "sinligar", etiqueta: `Sin ligar${sinLigar ? ` (${sinLigar})` : ""}` },
   ];
 
+  // Lista de tarjetas en vez de tabla: foto grande, título a dos líneas,
+  // IDs de ML claros, y los números en su propia rejilla — en el celular se
+  // apila solo, sin scroll horizontal (Isaac: "se ve muy amontonado").
   const tabla = (lista: GrupoPublicacion[]) => (
-    <div className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white shadow-sm">
-      <table className="w-full text-left text-sm">
-        <thead>
-          <tr className="border-b border-zinc-100 text-xs text-zinc-400">
-            <th className="px-5 py-3 font-medium">Publicación</th>
-            <th className="px-3 py-3 text-right font-medium" title="Precio × piezas (en Full si está en Full; si no, lo publicado)">
-              Valor
-            </th>
-            <th className="px-3 py-3 text-right font-medium">Precio</th>
-            <th className="px-3 py-3 text-right font-medium">En Full</th>
-            <th className="px-3 py-3 text-right font-medium">Publicado</th>
-            <th className="px-3 py-3 font-medium">Tipo</th>
-            <th className="px-3 py-3 font-medium">Producto del CRM</th>
-            <th className="px-5 py-3 font-medium">Estado</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-zinc-50">
-          {lista.map((g) => {
-            const p = g.principal;
-            const { liga } = g;
-            const noDisponibles = p.full_no_disponible ?? 0;
-            const valor = valorPublicacion(p);
-            const estadoMostrado = g.activo ? "active" : p.estado;
-            return (
-              <tr key={p.id} className="align-top">
-                <td className="px-5 py-2.5">
-                  <div className="flex items-center gap-3">
-                    {p.imagen_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element -- miniatura de Mercado Libre
-                      <img src={p.imagen_url} alt="" className="h-10 w-10 shrink-0 rounded-lg object-cover" />
-                    ) : (
-                      <div className="h-10 w-10 shrink-0 rounded-lg bg-zinc-100" />
-                    )}
-                    <div className="min-w-0 max-w-xs">
-                      <p className="truncate font-medium text-zinc-900" title={p.titulo ?? ""}>
-                        {p.titulo}
-                        {p.catalogo && <span className="ml-1.5 rounded-full bg-violet-50 px-1.5 py-0.5 text-[10px] font-medium text-violet-700 ring-1 ring-inset ring-violet-600/20">catálogo</span>}
-                      </p>
-                      <p className="truncate text-xs text-zinc-400">
-                        {[p.variacion, p.seller_sku ? `SKU ${p.seller_sku}` : null, p.item_id].filter(Boolean).join(" · ")}
-                      </p>
-                      {g.otras.length > 0 && (
-                        <p className="text-[11px] text-violet-700" title="Comparten el mismo stock; se muestran como un solo producto">
-                          + {g.otras.map((o) => `${o.catalogo ? "catálogo " : ""}${o.item_id}${o.estado !== "active" ? ` (${(ESTADOS_PUBLICACION[o.estado ?? ""] ?? o.estado ?? "?").toLowerCase()})` : ""}`).join(", ")}
-                        </p>
+    <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
+      <ul className="divide-y divide-zinc-100">
+        {lista.map((g) => {
+          const p = g.principal;
+          const { liga } = g;
+          const noDisponibles = p.full_no_disponible ?? 0;
+          const valor = valorPublicacion(p);
+          const estadoMostrado = g.activo ? "active" : p.estado;
+          const activa = estadoMostrado === "active";
+          return (
+            <li key={p.id} className="p-4 sm:p-5">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+                {/* Foto + título + IDs */}
+                <div className="flex min-w-0 flex-1 gap-4">
+                  {p.imagen_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element -- miniatura de Mercado Libre
+                    <img src={p.imagen_url} alt="" className="h-20 w-20 shrink-0 rounded-xl border border-zinc-100 object-cover sm:h-24 sm:w-24" />
+                  ) : (
+                    <div className="h-20 w-20 shrink-0 rounded-xl bg-zinc-100 sm:h-24 sm:w-24" />
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset ${
+                          activa ? "bg-emerald-50 text-emerald-700 ring-emerald-600/20" : "bg-zinc-100 text-zinc-600 ring-zinc-500/20"
+                        }`}
+                      >
+                        {ESTADOS_PUBLICACION[estadoMostrado ?? ""] ?? estadoMostrado ?? "?"}
+                      </span>
+                      {p.logistica && (
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset ${
+                            p.logistica === "Full" ? "bg-[#2D3277]/5 text-[#2D3277] ring-[#2D3277]/20" : "bg-zinc-50 text-zinc-600 ring-zinc-500/20"
+                          }`}
+                        >
+                          {p.logistica}
+                        </span>
                       )}
+                      {p.catalogo && <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-700 ring-1 ring-inset ring-violet-600/20">catálogo</span>}
+                    </div>
+                    <p className="mt-1.5 line-clamp-2 font-medium leading-snug text-zinc-900" title={p.titulo ?? ""}>
+                      {p.titulo}
+                    </p>
+                    {p.variacion && <p className="mt-0.5 text-xs text-zinc-500">{p.variacion}</p>}
+                    <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-zinc-500">
+                      <span className="rounded-md bg-zinc-100 px-1.5 py-0.5 font-mono text-zinc-700">{p.item_id}</span>
+                      {p.seller_sku && (
+                        <span>
+                          SKU <span className="font-mono text-zinc-700">{p.seller_sku}</span>
+                        </span>
+                      )}
+                      {g.otras.map((o) => (
+                        <span key={o.id} className="rounded-md bg-violet-50 px-1.5 py-0.5 font-mono text-violet-700" title="Comparte el mismo stock; se muestran como un solo producto">
+                          + {o.catalogo ? "catálogo " : ""}
+                          {o.item_id}
+                          {o.estado !== "active" ? ` (${(ESTADOS_PUBLICACION[o.estado ?? ""] ?? o.estado ?? "?").toLowerCase()})` : ""}
+                        </span>
+                      ))}
                     </div>
                   </div>
-                </td>
-                <td className="px-3 py-2.5 text-right">
-                  {valor > 0 ? <span className="font-semibold text-zinc-900">{formatoPesos(valor)}</span> : <span className="text-zinc-300">—</span>}
-                </td>
-                <td className="px-3 py-2.5 text-right text-zinc-700">{p.precio !== null ? formatoPesos(p.precio) : "—"}</td>
-                <td className="px-3 py-2.5 text-right">
-                  {p.full_disponible !== null ? (
-                    <>
-                      <span className="font-semibold text-zinc-900">{p.full_disponible.toLocaleString("es-MX")}</span>
-                      {noDisponibles > 0 && (
-                        <p className="text-[11px] text-amber-700" title={(p.full_detalle ?? []).map((d) => `${d.status}: ${d.quantity}`).join(", ")}>
-                          +{noDisponibles} no disp.
-                        </p>
-                      )}
-                    </>
-                  ) : (
-                    <span className="text-zinc-300">—</span>
-                  )}
-                </td>
-                <td className="px-3 py-2.5 text-right text-zinc-500">{p.cantidad_publicada ?? "—"}</td>
-                <td className="px-3 py-2.5 text-xs text-zinc-600">{p.logistica ?? "—"}</td>
-                <td className="px-3 py-2.5">
+                </div>
+
+                {/* Números */}
+                <div className="grid shrink-0 grid-cols-4 gap-3 rounded-xl bg-zinc-50 px-4 py-3 text-right lg:w-[22rem]">
+                  <div>
+                    <p className="text-[11px] text-zinc-400">Valor</p>
+                    <p className="text-sm font-semibold text-zinc-900">{valor > 0 ? formatoPesos(valor) : "—"}</p>
+                  </div>
+                  <div>
+                    <p className="text-[11px] text-zinc-400">Precio</p>
+                    <p className="text-sm text-zinc-700">{p.precio !== null ? formatoPesos(p.precio) : "—"}</p>
+                  </div>
+                  <div>
+                    <p className="text-[11px] text-zinc-400">En Full</p>
+                    {p.full_disponible !== null ? (
+                      <>
+                        <p className="text-sm font-semibold text-zinc-900">{p.full_disponible.toLocaleString("es-MX")}</p>
+                        {noDisponibles > 0 && (
+                          <p className="text-[10px] text-amber-700" title={(p.full_detalle ?? []).map((d) => `${d.status}: ${d.quantity}`).join(", ")}>
+                            +{noDisponibles} no disp.
+                          </p>
+                        )}
+                      </>
+                    ) : (
+                      <p className="text-sm text-zinc-300">—</p>
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-[11px] text-zinc-400">Publicado</p>
+                    <p className="text-sm text-zinc-700">{p.cantidad_publicada ?? "—"}</p>
+                  </div>
+                </div>
+
+                {/* Liga con el CRM */}
+                <div className="shrink-0 border-t border-zinc-100 pt-3 lg:w-56 lg:border-t-0 lg:border-l lg:pl-4 lg:pt-0">
+                  <p className="mb-1 text-[11px] text-zinc-400">Producto del CRM</p>
                   <LigaProducto
                     itemId={liga.de.item_id}
                     variationId={liga.de.variation_id}
@@ -214,28 +243,13 @@ export default async function StockMercadoLibre({
                     nombre={liga.sku ? (nombrePorSku.get(liga.sku) ?? null) : null}
                     opciones={opcionesProducto}
                   />
-                </td>
-                <td className="px-5 py-2.5">
-                  <span
-                    className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset ${
-                      estadoMostrado === "active" ? "bg-emerald-50 text-emerald-700 ring-emerald-600/20" : "bg-zinc-100 text-zinc-600 ring-zinc-500/20"
-                    }`}
-                  >
-                    {ESTADOS_PUBLICACION[estadoMostrado ?? ""] ?? estadoMostrado ?? "?"}
-                  </span>
-                </td>
-              </tr>
-            );
-          })}
-          {lista.length === 0 && (
-            <tr>
-              <td colSpan={8} className="px-5 py-8 text-center text-sm text-zinc-400">
-                Nada que mostrar con ese filtro.
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+                </div>
+              </div>
+            </li>
+          );
+        })}
+        {lista.length === 0 && <li className="px-5 py-10 text-center text-sm text-zinc-400">Nada que mostrar con ese filtro.</li>}
+      </ul>
     </div>
   );
 
@@ -289,12 +303,12 @@ export default async function StockMercadoLibre({
       </div>
 
       <form className="flex flex-wrap items-center gap-2" action="/mercadolibre/stock">
-        <div className="flex overflow-hidden rounded-lg border border-zinc-300 text-xs">
+        <div className="flex overflow-hidden rounded-xl border border-zinc-300 text-xs">
           {FILTROS.map((f) => (
             <Link
               key={f.valor}
               href={`/mercadolibre/stock?filtro=${f.valor}${q ? `&q=${encodeURIComponent(q)}` : ""}${verSeparadas ? "&separadas=1" : ""}`}
-              className={`px-3 py-1.5 ${filtro === f.valor ? "bg-zinc-900 text-white" : "bg-white text-zinc-600 hover:text-zinc-900"}`}
+              className={`px-3.5 py-2 ${filtro === f.valor ? "bg-zinc-900 text-white" : "bg-white text-zinc-600 hover:text-zinc-900"}`}
             >
               {f.etiqueta}
             </Link>
@@ -307,7 +321,7 @@ export default async function StockMercadoLibre({
           name="q"
           defaultValue={q}
           placeholder="Buscar por nombre, SKU o ID…"
-          className="w-full rounded-lg border border-zinc-300 px-3 py-1.5 text-sm focus:border-zinc-500 focus:ring-zinc-500 sm:w-72"
+          className="w-full rounded-xl border border-zinc-300 px-3.5 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500 sm:w-72"
         />
         <Link
           href={`/mercadolibre/stock?filtro=${filtro}${q ? `&q=${encodeURIComponent(q)}` : ""}${verSeparadas ? "" : "&separadas=1"}`}

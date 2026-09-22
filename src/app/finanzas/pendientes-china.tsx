@@ -6,7 +6,8 @@ import { CampoFecha } from "@/components/campo-fecha";
 import { CampoMonto } from "@/components/campo-monto";
 import { formatoFecha, formatoPesos } from "@/lib/formato";
 import type { EnvioChina, MovimientoFinanciero } from "@/lib/tipos";
-import { cancelarEnvioChina, completarComisionMovimiento, completarEnvioChina } from "./actions";
+import { cancelarEnvioChina, completarEnvioChina } from "./actions";
+import { FormularioComision } from "./formulario-comision";
 
 /** Aviso ámbar: transacciones a las que les falta la comisión — envíos a
  * China (al completarlos se hace el abono al proveedor y al contenedor) y
@@ -39,14 +40,7 @@ export function PendientesChina({
 }
 
 function FilaMovimientoPendiente({ movimiento: m, nombresCuentas }: { movimiento: MovimientoFinanciero; nombresCuentas: Record<string, string> }) {
-  const router = useRouter();
   const [abierto, setAbierto] = useState(false);
-  const [modo, setModo] = useState<"PORCENTAJE" | "MONTO" | "NETO">("PORCENTAJE");
-  const [valor, setValor] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [enviando, setEnviando] = useState(false);
-  const v = Number(valor) || 0;
-  const comision = modo === "PORCENTAJE" ? Math.round(m.monto * v) / 100 : modo === "MONTO" ? v : m.monto - v;
   return (
     <li className="py-3 text-sm">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -63,56 +57,14 @@ function FilaMovimientoPendiente({ movimiento: m, nombresCuentas }: { movimiento
         </div>
         {!abierto && (
           <button type="button" onClick={() => setAbierto(true)} className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700">
-            Registrar comisión
+            Poner comisión
           </button>
         )}
       </div>
       {abierto && (
-        <form
-          action={async (formData) => {
-            setEnviando(true);
-            setError(null);
-            const r = await completarComisionMovimiento(m.id, formData);
-            setEnviando(false);
-            if (r?.error) setError(r.error);
-            else router.refresh();
-          }}
-          className="mt-3 flex flex-wrap items-end gap-3 rounded-xl border border-amber-200 bg-white p-3"
-        >
-          <input type="hidden" name="comision_modo" value={modo} />
-          <div className="flex gap-1">
-            <div className="flex overflow-hidden rounded-lg border border-zinc-300 text-xs">
-              {(
-                [
-                  ["PORCENTAJE", "%"],
-                  ["MONTO", "$"],
-                  ["NETO", "Neto"],
-                ] as const
-              ).map(([mm, t]) => (
-                <button key={mm} type="button" onClick={() => setModo(mm)} className={`px-2.5 py-1.5 ${modo === mm ? "bg-zinc-900 text-white" : "bg-white text-zinc-600"}`}>
-                  {t}
-                </button>
-              ))}
-            </div>
-            {modo === "PORCENTAJE" ? (
-              <input type="number" step="0.01" min={0} name="comision_valor" value={valor} onChange={(ev) => setValor(ev.target.value)} placeholder="1.75" className="w-24 rounded-lg border border-zinc-300 px-2 py-1.5 text-sm" />
-            ) : (
-              <CampoMonto name="comision_valor" value={valor} onChange={setValor} className="block w-36 rounded-lg border border-zinc-300 px-3 py-1.5 text-sm" />
-            )}
-          </div>
-          <button type="submit" disabled={enviando} className="rounded-lg bg-zinc-900 px-4 py-2 text-xs font-medium text-white hover:bg-zinc-700 disabled:opacity-50">
-            {enviando ? "Guardando…" : "Guardar comisión"}
-          </button>
-          <button type="button" onClick={() => setAbierto(false)} className="text-xs text-zinc-400 hover:text-zinc-700">
-            Cancelar
-          </button>
-          {valor && comision >= 0 && comision < m.monto && (
-            <p className="w-full text-[11px] text-zinc-500">
-              Comisión {formatoPesos(comision)}: el movimiento queda en {formatoPesos(m.monto - comision)} y la comisión se guarda aparte en “Comisiones”.
-            </p>
-          )}
-          {error && <p className="w-full text-xs text-red-600">{error}</p>}
-        </form>
+        <div className="mt-3">
+          <FormularioComision movimientoId={m.id} monto={m.monto} alTerminar={() => setAbierto(false)} />
+        </div>
       )}
     </li>
   );
