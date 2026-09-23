@@ -187,7 +187,7 @@ export default async function FullYMercadoLibre() {
           <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
             <p className="text-sm font-medium text-amber-900">{pendientes.length} venta(s) esperando liga: la publicación no está ligada a un producto del CRM</p>
             <p className="text-xs text-amber-800">
-              No se pierden: en cuanto ligues el producto en <Link href="/mercadolibre/stock?filtro=sinligar" className="underline">Mercado Libre → Stock</Link>, sus salidas se generan solas en la siguiente revisión.
+              No se pierden: en cuanto ligues el producto en <Link href="/mercadolibre/stock?filtro=sinligar" className="underline">Mercado Libre → Publicaciones</Link>, sus salidas se generan solas en la siguiente revisión.
             </p>
             <ul className="mt-2 space-y-1 text-xs text-amber-900">
               {pendientes.slice(0, 20).map((p) => (

@@ -257,7 +257,7 @@ export default async function StockMercadoLibre({
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h2 className="text-lg font-semibold text-zinc-900">Stock en Mercado Libre</h2>
+          <h2 className="text-lg font-semibold text-zinc-900">Publicaciones en Mercado Libre</h2>
           <p className="text-sm text-zinc-500">Tus publicaciones y lo que Mercado Libre tiene en Full. Cada variante es un renglón.</p>
         </div>
         <div className="flex flex-col items-end gap-1.5">
