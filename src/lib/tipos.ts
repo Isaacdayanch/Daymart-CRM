@@ -184,6 +184,8 @@ export interface MovimientoStock {
   destino: string | null;
   referencia: string | null;
   creado_en: string;
+  /** Movimiento "de antes del sistema" (migración 0039): no cuenta para la rotación. */
+  historico?: boolean;
 }
 
 export const CATEGORIAS_SALIDA = ["Full", "Paquetería", "Piezas", "Muestra", "Devolución", "Ajuste"] as const;

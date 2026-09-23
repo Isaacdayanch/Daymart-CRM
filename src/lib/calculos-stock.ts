@@ -56,7 +56,7 @@ export function costoPromedioPonderado(movimientos: MovimientoStock[]) {
 export function rotacionDiaria(movimientos: MovimientoStock[], ventanaDias = 90) {
   const desde = Date.now() - ventanaDias * DIA_MS;
   const salidasEnVentana = movimientos
-    .filter((m) => m.tipo === "SALIDA" && new Date(m.creado_en).getTime() >= desde)
+    .filter((m) => m.tipo === "SALIDA" && !m.historico && new Date(m.creado_en).getTime() >= desde)
     .reduce((suma, m) => suma + m.cantidad, 0);
   return salidasEnVentana / ventanaDias;
 }

@@ -8,6 +8,7 @@ import { Logo } from "@/components/logo";
 import type { Bodega, Contenedor, MovimientoStock, Producto } from "@/lib/tipos";
 import { EditarProductoGlobal } from "./editar-producto-global";
 import { AjustarCantidad } from "./ajustar-cantidad";
+import { AgregarHistorico } from "./agregar-historico";
 import { EditarCostoManual } from "./editar-costo-manual";
 
 export default async function DetalleProducto({ params }: { params: Promise<{ sku: string }> }) {
@@ -101,6 +102,14 @@ export default async function DetalleProducto({ params }: { params: Promise<{ sk
   const totalSalidas = listaMovimientos
     .filter((m) => m.tipo === "SALIDA")
     .reduce((s, m) => s + m.cantidad, 0);
+  // Cargas manuales (sin contenedor, no históricas): candidatas a ser
+  // reemplazadas por el histórico para no contar doble.
+  const manualesCargadas = listaMovimientos
+    .filter((m) => m.tipo === "ENTRADA" && !m.contenedor_id && !m.venta_id && !m.historico)
+    .reduce((s, m) => s + m.cantidad, 0);
+  const historico = listaMovimientos.filter((m) => m.historico);
+  const historicoEntradas = historico.filter((m) => m.tipo === "ENTRADA").reduce((s, m) => s + m.cantidad, 0);
+  const historicoSalidas = historico.filter((m) => m.tipo === "SALIDA").reduce((s, m) => s + m.cantidad, 0);
 
   return (
     <div className="min-h-screen bg-zinc-50">
@@ -140,8 +149,17 @@ export default async function DetalleProducto({ params }: { params: Promise<{ sk
               piezasPorCaja={piezasPorCaja}
               bodegas={bodegasConStock}
             />
+            {verDinero && historico.length === 0 && (
+              <AgregarHistorico sku={sku} stockActual={actual} manualesCargadas={manualesCargadas} bodegas={(bodegas ?? []).map((b) => ({ id: b.id, nombre: b.nombre }))} />
+            )}
           </div>
         </div>
+
+        {historico.length > 0 && (
+          <div className="rounded-xl border border-zinc-200 bg-zinc-50/70 px-4 py-3 text-xs text-zinc-600">
+            <span className="font-medium text-zinc-900">Antes del sistema:</span> entraron {historicoEntradas.toLocaleString("es-MX")} y salieron {historicoSalidas.toLocaleString("es-MX")} piezas (histórico de tu hoja, no cuenta para la rotación).
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <div className="rounded-xl border border-zinc-200 bg-white p-4">

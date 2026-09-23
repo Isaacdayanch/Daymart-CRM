@@ -176,6 +176,116 @@ export async function agregarStockManual(formData: FormData) {
   return { error: errorImagen ? `La foto no se pudo subir: ${errorImagen}` : null };
 }
 
+/** Alta de un producto en Stock (Fase B): mismos datos que un producto de
+ * contenedor (marca, categoría, nombre, variante, SKU, foto, piezas por
+ * caja, medidas) + de dónde viene el stock:
+ *  - INICIAL: "de antes del sistema": entradas y salidas totales del
+ *    histórico (de su Google Sheets) → ENTRADA + SALIDA marcadas historico,
+ *    con fecha de corte; el stock actual = entradas − salidas.
+ *  - ENTRADA: entrada suelta de hoy (compra local, etc.). */
+export async function registrarProductoStock(formData: FormData) {
+  const supabase = await createClient();
+
+  const sku = texto(formData, "sku");
+  const nombre = texto(formData, "nombre");
+  const bodegaId = formData.get("bodega_id") as string;
+  const modo = texto(formData, "modo") === "INICIAL" ? "INICIAL" : "ENTRADA";
+  const piezasPorCaja = Number(formData.get("piezas_por_caja")) || 1;
+  const costo = Number(formData.get("costo_unitario_pesos")) || 0;
+  if (!sku || !nombre || !bodegaId) return { error: "Falta el SKU, el nombre o la bodega." };
+
+  const { url: imagenSubida, error: errorImagen } = await subirImagenStock(supabase, formData);
+  const imagenUrl = imagenSubida ?? texto(formData, "imagen_url_previa");
+
+  const fechaCampo = texto(formData, "fecha");
+  const creadoEn = fechaCampo ? new Date(`${fechaCampo}T12:00:00`).toISOString() : new Date().toISOString();
+  const base = { sku, nombre, bodega_id: bodegaId, piezas_por_caja: piezasPorCaja, imagen_url: imagenUrl, costo_unitario_pesos: costo, creado_en: creadoEn };
+
+  const filas: Record<string, unknown>[] = [];
+  if (modo === "INICIAL") {
+    const entradas = Number(formData.get("entradas_total")) || 0;
+    const salidas = Number(formData.get("salidas_total")) || 0;
+    if (entradas <= 0) return { error: "Pon cuántas piezas han entrado en total." };
+    if (salidas > entradas) return { error: "Las salidas no pueden ser más que las entradas." };
+    filas.push({ ...base, tipo: "ENTRADA", cantidad: entradas, referencia: "Histórico de antes del sistema (entradas)", historico: true });
+    if (salidas > 0) filas.push({ ...base, tipo: "SALIDA", cantidad: salidas, destino: "Histórico", referencia: "Histórico de antes del sistema (salidas)", historico: true });
+  } else {
+    const cantidad = Number(formData.get("cantidad")) || 0;
+    if (cantidad <= 0) return { error: "Pon la cantidad que entra." };
+    filas.push({ ...base, tipo: "ENTRADA", cantidad, referencia: texto(formData, "referencia") ?? "Entrada manual" });
+  }
+
+  const { data: insertados, error: errorInsert, columnasOmitidas } = await insertarMovimientosStock(supabase, filas);
+  if (errorInsert) return { error: `No se pudo guardar: ${errorInsert}` };
+  if (insertados && columnasOmitidas.length) {
+    await completarColumnasOmitidas(supabase, insertados.map((i) => i.id), filas, columnasOmitidas);
+  }
+
+  await guardarEnCatalogo(supabase, {
+    sku,
+    nombre,
+    marca_id: texto(formData, "marca_id"),
+    categoria: texto(formData, "categoria"),
+    imagen_url: imagenUrl,
+    piezas_por_caja: piezasPorCaja,
+    largo_cm: Number(formData.get("largo_cm")) || 0,
+    ancho_cm: Number(formData.get("ancho_cm")) || 0,
+    alto_cm: Number(formData.get("alto_cm")) || 0,
+  });
+
+  revalidatePath("/stock");
+  revalidatePath("/stock/movimientos");
+  revalidatePath("/stock/catalogo");
+  return { error: errorImagen ? `La foto no se pudo subir: ${errorImagen}` : null, sku };
+}
+
+/** Histórico de antes del sistema para un producto que YA existe (desde su
+ * ficha). Si Isaac ya había cargado su stock inicial a mano, puede pedir
+ * que ese histórico lo reemplace: se borran las ENTRADAS manuales (sin
+ * contenedor, sin venta, no históricas) para no contar doble. */
+export async function agregarHistoricoProducto(sku: string, formData: FormData) {
+  const supabase = await createClient();
+  const entradas = Number(formData.get("entradas_total")) || 0;
+  const salidas = Number(formData.get("salidas_total")) || 0;
+  const bodegaId = formData.get("bodega_id") as string;
+  const reemplazar = formData.get("reemplazar_manuales") === "true";
+  if (entradas <= 0) return { error: "Pon cuántas piezas han entrado en total." };
+  if (salidas > entradas) return { error: "Las salidas no pueden ser más que las entradas." };
+  if (!bodegaId) return { error: "Elige la bodega." };
+
+  const { data: ultimo } = await supabase.from("movimientos_stock").select("*").eq("sku", sku).order("creado_en", { ascending: false }).limit(1).maybeSingle<MovimientoStock>();
+  if (!ultimo) return { error: "No se encontró el producto." };
+  const { data: todos } = await supabase.from("movimientos_stock").select("*").eq("sku", sku).returns<MovimientoStock[]>();
+  const costoCampo = Number(formData.get("costo_unitario_pesos"));
+  const costo = Number.isFinite(costoCampo) && costoCampo > 0 ? costoCampo : costoPromedioPonderado(todos ?? []);
+
+  const fechaCampo = texto(formData, "fecha");
+  const creadoEn = fechaCampo ? new Date(`${fechaCampo}T12:00:00`).toISOString() : new Date().toISOString();
+  const base = { sku, nombre: ultimo.nombre, bodega_id: bodegaId, piezas_por_caja: ultimo.piezas_por_caja, imagen_url: ultimo.imagen_url, costo_unitario_pesos: costo, creado_en: creadoEn };
+  const filas: Record<string, unknown>[] = [
+    { ...base, tipo: "ENTRADA", cantidad: entradas, referencia: "Histórico de antes del sistema (entradas)", historico: true },
+  ];
+  if (salidas > 0) filas.push({ ...base, tipo: "SALIDA", cantidad: salidas, destino: "Histórico", referencia: "Histórico de antes del sistema (salidas)", historico: true });
+
+  const { data: insertados, error: errorInsert, columnasOmitidas } = await insertarMovimientosStock(supabase, filas);
+  if (errorInsert) return { error: `No se pudo guardar: ${errorInsert}` };
+  if (insertados && columnasOmitidas.length) {
+    await completarColumnasOmitidas(supabase, insertados.map((i) => i.id), filas, columnasOmitidas);
+  }
+
+  if (reemplazar) {
+    const manuales = (todos ?? []).filter((m) => m.tipo === "ENTRADA" && !m.contenedor_id && !m.venta_id && !m.historico);
+    if (manuales.length) {
+      await supabase.from("movimientos_stock").delete().in("id", manuales.map((m) => m.id));
+    }
+  }
+
+  revalidatePath("/stock");
+  revalidatePath("/stock/movimientos");
+  revalidatePath(`/stock/producto/${encodeURIComponent(sku)}`);
+  return { error: null };
+}
+
 interface LineaCargaMasiva {
   sku: string;
   nombre: string;

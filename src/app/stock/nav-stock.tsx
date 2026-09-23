@@ -9,7 +9,7 @@ const PESTANAS = [
   { href: "/stock/full", etiqueta: "Full y ML" },
   { href: "/stock/movimientos", etiqueta: "Movimientos" },
   { href: "/stock/pendientes", etiqueta: "Pendiente en China" },
-  { href: "/stock/agregar", etiqueta: "+ Agregar stock" },
+  { href: "/stock/agregar", etiqueta: "+ Agregar producto" },
   { href: "/stock/carga-masiva", etiqueta: "Carga masiva" },
   { href: "/stock/catalogo", etiqueta: "Catálogo" },
   { href: "/stock/bodegas", etiqueta: "Bodegas" },
