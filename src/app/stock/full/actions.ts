@@ -96,6 +96,15 @@ export async function atenderRecepcion(recepcionId: string, formData: FormData) 
   return r;
 }
 
+/** Recibir un envío a Full completo de un jalón (ver recibirEnvioFullCompleto). */
+export async function recibirEnvioCompleto(envioId: string, decisiones: { lineaId: string; recibidas: number; faltante: "BODEGA" | "MERMA" }[]) {
+  if (!(await conSesion())) return { error: "Inicia sesión." };
+  const { recibirEnvioFullCompleto } = await import("@/lib/salidas-ml");
+  const r = await recibirEnvioFullCompleto(envioId, decisiones);
+  if (!r.error) refrescar();
+  return r;
+}
+
 export async function resolverDiferencia(lineaId: string, decision: "QUEDO_EN_BODEGA" | "MERMA") {
   if (!(await conSesion())) return { error: "Inicia sesión." };
   const { resolverDiferenciaLinea } = await import("@/lib/salidas-ml");

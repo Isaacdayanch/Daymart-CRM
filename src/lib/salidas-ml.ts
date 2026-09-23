@@ -212,6 +212,100 @@ export async function atenderRecepcionFull(
   return { error: null };
 }
 
+/** Isaac da por recibido un envío a Full COMPLETO, de un jalón (así lo
+ * maneja: compara el envío contra lo que ML recibió y lo cierra entero, no
+ * producto por producto). Por cada línea: SALIDA destino "Full" con lo
+ * recibido; si llegó menos, la diferencia se ajusta ("se quedó en bodega")
+ * o sale como MERMA, según lo que él decida en cada renglón. Las
+ * recepciones detectadas por ML para esos productos se marcan atendidas
+ * (ligadas al envío) para que no se vuelvan a proponer. */
+export async function recibirEnvioFullCompleto(
+  envioId: string,
+  decisiones: { lineaId: string; recibidas: number; faltante: "BODEGA" | "MERMA" }[],
+  bodegaId?: string | null,
+) {
+  const supabase = createServiceClient();
+  const { data: envio } = await supabase.from("envios_full").select("*").eq("id", envioId).maybeSingle<EnvioFull>();
+  if (!envio) return { error: "No se encontró el envío." };
+  if (envio.estado !== "PREPARADO") return { error: "Este envío ya está cerrado." };
+  const { data: lineas } = await supabase.from("envios_full_lineas").select("*").eq("envio_id", envioId).returns<EnvioFullLinea[]>();
+  if (!lineas?.length) return { error: "El envío no tiene productos." };
+
+  const bodega = bodegaId ? { id: bodegaId } : envio.bodega_id ? { id: envio.bodega_id } : await bodegaPrincipal();
+  if (!bodega) return { error: "No hay ninguna bodega dada de alta." };
+  const ahora = new Date().toISOString();
+  const decisionPorLinea = new Map(decisiones.map((d) => [d.lineaId, d]));
+
+  for (const linea of lineas) {
+    if (linea.resuelta) continue;
+    const d = decisionPorLinea.get(linea.id);
+    const pendiente = linea.cantidad_enviada - linea.cantidad_recibida - linea.merma;
+    // Sin decisión explícita = llegó todo lo que faltaba.
+    const recibidas = d ? Math.max(0, Math.min(Math.round(d.recibidas), pendiente)) : pendiente;
+    const faltante = pendiente - recibidas;
+    const movimientos: Parameters<typeof insertarMovimientosStock>[1] = [];
+    if (recibidas > 0) {
+      movimientos.push({
+        tipo: "SALIDA",
+        sku: linea.sku,
+        nombre: linea.nombre,
+        bodega_id: bodega.id,
+        cantidad: recibidas,
+        piezas_por_caja: linea.piezas_por_caja,
+        imagen_url: linea.imagen_url,
+        costo_unitario_pesos: 0,
+        destino: "Full",
+        referencia: `Envío a Full #${envio.numero} recibido`,
+        envio_full_id: envioId,
+        creado_en: ahora,
+      });
+    }
+    let merma = linea.merma;
+    let enviadas = linea.cantidad_enviada;
+    if (faltante > 0) {
+      if (d?.faltante === "MERMA") {
+        movimientos.push({
+          tipo: "SALIDA",
+          sku: linea.sku,
+          nombre: linea.nombre,
+          bodega_id: bodega.id,
+          cantidad: faltante,
+          piezas_por_caja: linea.piezas_por_caja,
+          imagen_url: linea.imagen_url,
+          costo_unitario_pesos: 0,
+          destino: "Merma",
+          referencia: `No llegó a Full (envío #${envio.numero})`,
+          envio_full_id: envioId,
+          creado_en: ahora,
+        });
+        merma += faltante;
+      } else {
+        // Se quedó en bodega: nunca salió, se ajusta lo enviado.
+        enviadas -= faltante;
+      }
+    }
+    if (movimientos.length) {
+      const { error } = await insertarMovimientosStock(supabase, movimientos);
+      if (error) return { error: `${linea.nombre}: ${error}` };
+    }
+    await supabase
+      .from("envios_full_lineas")
+      .update({ cantidad_recibida: linea.cantidad_recibida + recibidas, merma, cantidad_enviada: enviadas, resuelta: true })
+      .eq("id", linea.id);
+  }
+
+  // Las recepciones que ML detectó para estos productos ya quedan explicadas por este envío.
+  const skus = Array.from(new Set(lineas.map((l) => l.sku)));
+  await supabase
+    .from("mercadolibre_full_recepciones")
+    .update({ atendido_en: ahora, decision: "SALIDA", envio_id: envioId })
+    .is("atendido_en", null)
+    .in("sku_crm", skus);
+
+  await supabase.from("envios_full").update({ estado: "RECIBIDO", cerrado_en: ahora }).eq("id", envioId);
+  return { error: null };
+}
+
 async function cerrarEnvioSiTermino(envioId: string) {
   const supabase = createServiceClient();
   const { data: pendientes } = await supabase.from("envios_full_lineas").select("id").eq("envio_id", envioId).eq("resuelta", false).limit(1);

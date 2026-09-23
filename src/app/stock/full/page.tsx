@@ -9,6 +9,7 @@ import { devolucionesPorConfirmar, enCaminoAFullPorSku, obtenerEnviosFull, obten
 import { BotonCancelarEnvio, BotonesDevolucion, BotonesDiferencia, BotonProcesarAhora, InterruptorVentasMl } from "./acciones-full";
 import { FormularioEnvioFull } from "./formulario-envio-full";
 import { TarjetaRecepcion } from "./tarjeta-recepcion";
+import { ConfirmarEnvio } from "./confirmar-envio";
 
 export const maxDuration = 60;
 
@@ -44,6 +45,11 @@ export default async function FullYMercadoLibre() {
   const salidasMl = (movimientos ?? []).filter((m) => m.orden_ml_id && m.tipo === "SALIDA");
   const salidasHoy = salidasMl.filter((m) => fechaTextoMx(new Date(m.creado_en)) === hoyTexto).reduce((s, m) => s + m.cantidad, 0);
   const enviosPreparados = envios.filter((e) => e.envio.estado === "PREPARADO");
+  // Envíos en camino primero; los ya recibidos abajo, colapsados.
+  const enviosOrdenados = [...enviosPreparados, ...envios.filter((e) => e.envio.estado !== "PREPARADO")];
+  // Lo que ML ya detectó recibido, por SKU: solo una pista al confirmar un envío.
+  const mlReporta: Record<string, number> = {};
+  for (const r of recepciones) if (r.sku_crm) mlReporta[r.sku_crm] = (mlReporta[r.sku_crm] ?? 0) + r.cantidad;
   const opcionesProducto = resumenes.map((r) => ({ sku: r.sku, nombre: r.nombre, stockActual: r.stockActual, piezasPorCaja: r.piezasPorCaja, imagenUrl: r.imagenUrl }));
 
   return (
@@ -52,47 +58,25 @@ export default async function FullYMercadoLibre() {
         <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{errorLectura} — si dice que falta una tabla, corre el SQL 0035 en Supabase.</div>
       )}
 
-      {/* ---- Recepciones detectadas en Full ---- */}
-      <section className="space-y-3">
-        <div className="flex flex-wrap items-end justify-between gap-2">
-          <div>
-            <h2 className="text-lg font-semibold text-zinc-900">¿Se recibió este Full?</h2>
-            <p className="text-sm text-zinc-500">Cada vez que Mercado Libre reporta más piezas en Full, te pregunta aquí si salieron de tu bodega.</p>
-          </div>
-          <BotonProcesarAhora />
-        </div>
-        {recepciones.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-zinc-300 bg-white p-6 text-center text-sm text-zinc-400">Nada pendiente. Se revisa solo cada hora.</p>
-        ) : (
-          <div className="grid gap-3">
-            {recepciones.map((r) => (
-              <TarjetaRecepcion
-                key={r.id}
-                recepcion={r}
-                enviosPreparados={enviosPreparados.map((e) => ({ id: e.envio.id, etiqueta: `Envío #${e.envio.numero} · ${formatoFecha(e.envio.fecha)}${e.envio.color_etiqueta ? ` · ${e.envio.color_etiqueta}` : ""}`, skus: e.lineas.filter((l) => !l.resuelta).map((l) => l.sku) }))}
-                productos={resumenes.map((r) => ({ sku: r.sku, nombre: r.nombre }))}
-              />
-            ))}
-          </div>
-        )}
-      </section>
-
       {/* ---- Envíos a Full ---- */}
       <section className="space-y-3">
         <div className="flex flex-wrap items-end justify-between gap-2">
           <div>
             <h2 className="text-lg font-semibold text-zinc-900">Envíos a Full</h2>
             <p className="text-sm text-zinc-500">
-              {totalEnCamino > 0 ? <>{totalEnCamino.toLocaleString("es-MX")} piezas en camino a Full (todavía cuentan en tu bodega hasta que ML confirme).</> : "Arma aquí lo que vas a mandar; la bodega se descuenta cuando Mercado Libre confirme."}
+              {totalEnCamino > 0 ? <>{totalEnCamino.toLocaleString("es-MX")} piezas en camino a Full (todavía cuentan en tu bodega). Cuando ML te lo confirme, da por recibido el envío completo.</> : "Arma aquí lo que vas a mandar; cuando Mercado Libre lo reciba, lo das por recibido completo y la bodega se descuenta de un jalón."}
             </p>
           </div>
-          <FormularioEnvioFull opciones={opcionesProducto} bodegas={bodegas ?? []} />
+          <div className="flex flex-wrap items-center gap-2">
+            <BotonProcesarAhora />
+            <FormularioEnvioFull opciones={opcionesProducto} bodegas={bodegas ?? []} />
+          </div>
         </div>
         {envios.length === 0 ? (
           <p className="rounded-xl border border-dashed border-zinc-300 bg-white p-6 text-center text-sm text-zinc-400">Todavía no hay envíos registrados.</p>
         ) : (
           <div className="space-y-3">
-            {envios.map(({ envio, lineas }) => {
+            {enviosOrdenados.map(({ envio, lineas }) => {
               const enviadas = lineas.reduce((s, l) => s + l.cantidad_enviada, 0);
               const recibidas = lineas.reduce((s, l) => s + l.cantidad_recibida, 0);
               return (
@@ -138,16 +122,17 @@ export default async function FullYMercadoLibre() {
                                 {l.merma > 0 && <> · merma <strong className="text-red-600">{l.merma}</strong></>}
                               </span>
                               {!l.resuelta && faltante > 0 && l.cantidad_recibida > 0 && <BotonesDiferencia lineaId={l.id} faltante={faltante} />}
-                              {!l.resuelta && l.cantidad_recibida === 0 && <span className="text-amber-700">esperando a ML</span>}
+                              {!l.resuelta && l.cantidad_recibida === 0 && <span className="text-zinc-400">en camino</span>}
                               {l.resuelta && <span className="text-emerald-700">✓</span>}
                             </div>
                           </li>
                         );
                       })}
                     </ul>
-                    {envio.estado === "PREPARADO" && recibidas === 0 && (
-                      <div className="mt-2 flex justify-end">
-                        <BotonCancelarEnvio envioId={envio.id} numero={envio.numero} />
+                    {envio.estado === "PREPARADO" && (
+                      <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                        <ConfirmarEnvio envioId={envio.id} numero={envio.numero} lineas={lineas} mlReporta={mlReporta} />
+                        {recibidas === 0 && <BotonCancelarEnvio envioId={envio.id} numero={envio.numero} />}
                       </div>
                     )}
                   </div>
@@ -157,6 +142,26 @@ export default async function FullYMercadoLibre() {
           </div>
         )}
       </section>
+
+      {/* ---- Entradas a Full que detectó ML y no cuadran con ningún envío ---- */}
+      {recepciones.length > 0 && (
+        <details className="group rounded-2xl border border-zinc-200 bg-zinc-50/60">
+          <summary className="cursor-pointer select-none px-5 py-3 text-sm text-zinc-600 hover:text-zinc-900">
+            <span className="mr-1 inline-block transition-transform group-open:rotate-90">▸</span>
+            Mercado Libre detectó {recepciones.length} entrada(s) a Full por producto — normalmente se explican al dar por recibido un envío; revisa aquí solo las que no cuadren (ej. una devolución que llegó a Full)
+          </summary>
+          <div className="grid gap-3 px-3 pb-3">
+            {recepciones.map((r) => (
+              <TarjetaRecepcion
+                key={r.id}
+                recepcion={r}
+                enviosPreparados={enviosPreparados.map((e) => ({ id: e.envio.id, etiqueta: `Envío #${e.envio.numero} · ${formatoFecha(e.envio.fecha)}${e.envio.color_etiqueta ? ` · ${e.envio.color_etiqueta}` : ""}`, skus: e.lineas.filter((l) => !l.resuelta).map((l) => l.sku) }))}
+                productos={resumenes.map((r) => ({ sku: r.sku, nombre: r.nombre }))}
+              />
+            ))}
+          </div>
+        </details>
+      )}
 
       {/* ---- Ventas de ML que salen de bodega ---- */}
       <section className="space-y-3">
