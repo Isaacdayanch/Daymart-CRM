@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { CampoFecha } from "@/components/campo-fecha";
 import { CampoMonto } from "@/components/campo-monto";
 import { Selector } from "@/components/selector";
+import { SelectorCategoria } from "./selector-categoria";
 import { formatoPesos } from "@/lib/formato";
 import type { CategoriaFinanciera, CuentaFinanciera, TipoMovimientoFinanciero } from "@/lib/tipos";
 import { registrarMovimiento, registrarPagoFactura } from "./actions";
@@ -72,10 +73,6 @@ export function FormularioMovimiento({
 
   const opcionesCuentas = cuentas.map((c) => ({ value: c.id, label: c.nombre }));
   const cuentaPorDefecto = cuentas.some((c) => c.id === cuentaInicial) ? cuentaInicial : opcionesCuentas[0]?.value;
-  const opcionesCategorias = [
-    { value: "", label: "Sin categoría" },
-    ...categorias.map((c) => ({ value: c.id, label: c.nombre })),
-  ];
   const hoyTexto = new Date().toISOString().slice(0, 10);
 
   return (
@@ -163,7 +160,7 @@ export function FormularioMovimiento({
             <div>
               <label className="block text-xs font-medium text-zinc-500">Categoría</label>
               <div className="mt-1">
-                <Selector name="categoria_id" defaultValue="" opciones={opcionesCategorias} />
+                <SelectorCategoria categorias={categorias} />
               </div>
             </div>
           )}

@@ -177,13 +177,32 @@ export async function eliminarCategoria(categoriaId: string) {
  * salida en la categoría "Comisiones" desde la misma cuenta de origen,
  * ligado al primero — juntos suman el total que de verdad salió de la
  * cuenta, sin inflar ni duplicar nada. */
+/** Categoría del formulario: el id elegido, o si Isaac escribió una nueva
+ * en el selector (`categoria_nueva`), se da de alta (o se reutiliza si ya
+ * existía con ese nombre) y se devuelve su id. */
+async function resolverCategoriaId(supabase: Awaited<ReturnType<typeof createClient>>, formData: FormData) {
+  const nueva = texto(formData, "categoria_nueva");
+  if (!nueva) return texto(formData, "categoria_id");
+  const { data: existente } = await supabase.from("categorias_financieras").select("id").ilike("nombre", nueva).is("eliminado_en", null).maybeSingle<{ id: string }>();
+  if (existente) return existente.id;
+  const { data: ultima } = await supabase.from("categorias_financieras").select("orden").order("orden", { ascending: false }).limit(1).maybeSingle<{ orden: number }>();
+  const { data: creada, error } = await supabase
+    .from("categorias_financieras")
+    .insert({ nombre: nueva, fija: false, orden: (ultima?.orden ?? 0) + 1 })
+    .select("id")
+    .single<{ id: string }>();
+  if (error || !creada) return texto(formData, "categoria_id");
+  revalidatePath("/finanzas/categorias");
+  return creada.id;
+}
+
 export async function registrarMovimiento(formData: FormData) {
   const supabase = await createClient();
 
   const tipo = formData.get("tipo") as TipoMovimientoFinanciero;
   const cuentaId = formData.get("cuenta_id") as string;
   const cuentaDestinoId = formData.get("cuenta_destino_id") as string | null;
-  const categoriaId = texto(formData, "categoria_id");
+  const categoriaId = await resolverCategoriaId(supabase, formData);
   const monto = Number(formData.get("monto"));
   const moneda = (formData.get("moneda") as Moneda) || "MXN";
   const contraparte = texto(formData, "contraparte");
@@ -320,7 +339,7 @@ export async function actualizarMovimiento(movimientoId: string, formData: FormD
 
   const cuentaId = formData.get("cuenta_id") as string;
   const cuentaDestinoId = texto(formData, "cuenta_destino_id");
-  let categoriaId = texto(formData, "categoria_id");
+  let categoriaId = await resolverCategoriaId(supabase, formData);
   const monto = Number(formData.get("monto"));
   const contraparte = texto(formData, "contraparte");
   const notas = texto(formData, "notas");
@@ -446,7 +465,7 @@ export async function registrarPagoFactura(formData: FormData) {
   const facturaId = formData.get("factura_id") as string;
   const cuentaId = formData.get("cuenta_id") as string;
   const cuentaDestinoId = texto(formData, "cuenta_destino_id");
-  const categoriaId = texto(formData, "categoria_id");
+  const categoriaId = await resolverCategoriaId(supabase, formData);
   const monto = Number(formData.get("monto"));
   const notas = texto(formData, "notas");
   const tieneComision = formData.get("tiene_comision") === "true";

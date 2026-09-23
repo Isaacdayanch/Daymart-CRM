@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { CampoFecha } from "@/components/campo-fecha";
 import { CampoMonto } from "@/components/campo-monto";
 import { Selector } from "@/components/selector";
+import { SelectorCategoria } from "../selector-categoria";
 import { formatoDolares, formatoPesos } from "@/lib/formato";
 import type { CategoriaFinanciera, CuentaFinanciera } from "@/lib/tipos";
 import { registrarPagoFactura } from "../actions";
@@ -124,11 +125,7 @@ export function RegistrarPago({
           <div>
             <label className="block text-xs font-medium text-zinc-500">Categoría</label>
             <div className="mt-1">
-              <Selector
-                name="categoria_id"
-                defaultValue=""
-                opciones={[{ value: "", label: "Sin categoría" }, ...categorias.map((c) => ({ value: c.id, label: c.nombre }))]}
-              />
+              <SelectorCategoria categorias={categorias} />
             </div>
           </div>
         )}

@@ -3,8 +3,11 @@ import { createClient } from "@/lib/supabase/server";
 import type { CategoriaFinanciera, CuentaFinanciera, MovimientoFinanciero } from "@/lib/tipos";
 import { fechaTextoMx } from "@/lib/fechas-mx";
 import { FilaMovimiento } from "./fila-movimiento";
+import { FiltroCategoria } from "./filtro-categoria";
+import { formatoDolares, formatoPesos } from "@/lib/formato";
 
-export default async function MovimientosFinanzas() {
+export default async function MovimientosFinanzas({ searchParams }: { searchParams: Promise<{ categoria?: string }> }) {
+  const { categoria: categoriaFiltro = "" } = await searchParams;
   const supabase = await createClient();
   const [
     { data: movimientos },
@@ -34,7 +37,11 @@ export default async function MovimientosFinanzas() {
     supabase.from("envios_china").select("movimiento_transferencia_id").eq("estado", "PENDIENTE").not("movimiento_transferencia_id", "is", null),
   ]);
 
-  const listaMovimientos = movimientos ?? [];
+  // Filtro por categoría (?categoria=<id>; "sin" = sin categoría).
+  const todos = movimientos ?? [];
+  const listaMovimientos = categoriaFiltro === "sin" ? todos.filter((m) => !m.categoria_id) : categoriaFiltro ? todos.filter((m) => m.categoria_id === categoriaFiltro) : todos;
+  const totalFiltro = (moneda: "MXN" | "USD") =>
+    listaMovimientos.filter((m) => m.moneda === moneda && m.tipo !== "TRANSFERENCIA").reduce((s, m) => s + (m.tipo === "ENTRADA" ? m.monto : -m.monto), 0);
   const cuentasPorId = new Map((cuentas ?? []).map((c) => [c.id, c.nombre]));
   const categoriasPorId = new Map((categorias ?? []).map((c) => [c.id, c.nombre]));
 
@@ -74,8 +81,24 @@ export default async function MovimientosFinanzas() {
           ← Registrar uno nuevo
         </Link>
       </div>
+      <div className="flex flex-wrap items-center gap-3 border-b border-zinc-100 bg-zinc-50/60 px-5 py-3 sm:px-6">
+        <div className="w-full sm:w-72">
+          <FiltroCategoria categorias={categorias ?? []} valor={categoriaFiltro} />
+        </div>
+        {categoriaFiltro && (
+          <p className="text-xs text-zinc-500">
+            {listaMovimientos.length} movimiento(s) · neto{" "}
+            <span className={`font-semibold ${totalFiltro("MXN") >= 0 ? "text-emerald-700" : "text-red-600"}`}>{formatoPesos(totalFiltro("MXN"))}</span>
+            {totalFiltro("USD") !== 0 && <> · {formatoDolares(totalFiltro("USD"))}</>}
+            {" · "}
+            <Link href="/finanzas/movimientos" className="underline hover:text-zinc-900">
+              quitar filtro
+            </Link>
+          </p>
+        )}
+      </div>
       {listaMovimientos.length === 0 ? (
-        <p className="p-6 text-sm text-zinc-500">Todavía no hay movimientos.</p>
+        <p className="p-6 text-sm text-zinc-500">{categoriaFiltro ? "No hay movimientos con esa categoría." : "Todavía no hay movimientos."}</p>
       ) : (
         Array.from(porMes.entries()).map(([clave, lista]) => (
           <section key={clave}>

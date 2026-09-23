@@ -126,6 +126,11 @@ export function CamposProducto({
         </div>
       </div>
 
+      {marcas.length === 0 && (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          Marca y SKU nuevo (MARCA-PRODUCTO-VARIANTE) se activan al correr el SQL 0038 en Supabase. Mientras, el SKU se arma con la regla anterior.
+        </p>
+      )}
       {marcas.length > 0 && (
         <div className="grid grid-cols-2 gap-3">
           <div>
