@@ -91,7 +91,9 @@ export function costoTotalContenedor(
   return fletePesos(contenedor) + contenedor.aduana_pesos + otrosGastosPesos(contenedor) + mercanciaPesos;
 }
 
-/** SKU sugerido: 3 letras de la categoría + primeras 4 letras de hasta 3 palabras del nombre. */
+/** SKU sugerido (regla vieja): 3 letras de la categoría + primeras 4 letras
+ * de hasta 3 palabras del nombre. Se conserva para los productos que ya
+ * existen; los nuevos usan `skuNuevo`. */
 export function skuSugerido(categoria: string, nombre: string) {
   const prefijo = categoria.trim().slice(0, 3).toUpperCase();
   const palabras = nombre
@@ -100,4 +102,47 @@ export function skuSugerido(categoria: string, nombre: string) {
     .slice(0, 3)
     .map((palabra) => palabra.slice(0, 4).toUpperCase());
   return [prefijo, ...palabras].filter(Boolean).join("-");
+}
+
+const PALABRAS_VACIAS = new Set(["DE", "DEL", "LA", "EL", "LOS", "LAS", "PARA", "CON", "Y", "O", "EN", "UN", "UNA", "POR", "A", "AL"]);
+
+/** Quita acentos, deja solo letras/números en mayúsculas. */
+export function normalizarParaSku(texto: string) {
+  return texto
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9 ]/g, " ");
+}
+
+/** Parte "producto" del SKU: 4 letras de las dos primeras palabras que
+ * importan del nombre ("Bloques de yoga" → BLOQYOGA). */
+export function codigoProductoSku(nombre: string) {
+  const palabras = normalizarParaSku(nombre)
+    .split(/\s+/)
+    .filter((p) => p && !PALABRAS_VACIAS.has(p));
+  return palabras
+    .slice(0, 2)
+    .map((p) => p.slice(0, 4))
+    .join("");
+}
+
+/** SKU nuevo (Isaac, 23 sep): MARCA-PRODUCTO-VARIANTE. Corto, sin categoría
+ * ni línea adentro: en el SKU solo va lo que nunca cambia. La variante
+ * (color, talla, medida) es opcional y se recorta a 4 caracteres. */
+export function skuNuevo(codigoMarca: string, nombre: string, variante?: string | null) {
+  const marca = normalizarParaSku(codigoMarca).replace(/\s+/g, "").slice(0, 4);
+  const producto = codigoProductoSku(nombre);
+  const var4 = variante ? normalizarParaSku(variante).replace(/\s+/g, "").slice(0, 4) : "";
+  return [marca, producto, var4].filter(Boolean).join("-");
+}
+
+/** Si el SKU ya existe, le agrega -2, -3… hasta encontrar uno libre. */
+export function skuLibre(sku: string, existentes: Set<string>) {
+  if (!existentes.has(sku)) return sku;
+  for (let n = 2; n < 100; n++) {
+    const candidato = `${sku}-${n}`;
+    if (!existentes.has(candidato)) return candidato;
+  }
+  return `${sku}-${Date.now()}`;
 }

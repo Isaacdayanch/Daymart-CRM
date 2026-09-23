@@ -5,8 +5,9 @@ import { CampoNumero } from "@/components/campo-numero";
 import { CampoMonto } from "@/components/campo-monto";
 import { CampoImagen } from "@/components/campo-imagen";
 import { CampoSugerencias } from "@/components/campo-sugerencias";
-import { skuSugerido } from "@/lib/calculos";
-import type { Producto } from "@/lib/tipos";
+import { Selector } from "@/components/selector";
+import { skuNuevo, skuSugerido } from "@/lib/calculos";
+import type { Marca, Producto } from "@/lib/tipos";
 
 const claseCampo =
   "mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500";
@@ -20,6 +21,7 @@ export function CamposProducto({
   categorias = [],
   fabricas = [],
   proveedores = [],
+  marcas = [],
   esRestock = false,
   contenedorRecibido = false,
 }: {
@@ -32,6 +34,9 @@ export function CamposProducto({
   categorias?: string[];
   fabricas?: string[];
   proveedores?: string[];
+  /** Marcas dadas de alta (migración 0038). Con marca, el SKU nuevo se arma
+   * MARCA-PRODUCTO-VARIANTE; sin marcas (SQL sin correr) se usa la regla vieja. */
+  marcas?: Marca[];
   /** true cuando se rellenan los campos a partir de un producto anterior
    * (restock): no se carga la cantidad ni el id, solo los datos fijos. */
   esRestock?: boolean;
@@ -45,17 +50,39 @@ export function CamposProducto({
   const [fabrica, setFabrica] = useState(inicial?.fabrica ?? fabricaPorDefecto ?? "");
   const [proveedor, setProveedor] = useState(inicial?.proveedor ?? proveedorPorDefecto ?? "");
   const [nombre, setNombre] = useState(inicial?.nombre ?? "");
-  const [sku, setSku] = useState(inicial?.sku ?? skuSugerido(categoriaPorDefecto ?? "", ""));
+  const marcaPorDefecto = marcas.find((m) => m.id === inicial?.marca_id) ?? marcas.find((m) => m.codigo === "DAY") ?? marcas[0];
+  const [marcaId, setMarcaId] = useState(marcaPorDefecto?.id ?? "");
+  const [variante, setVariante] = useState("");
+  const [sku, setSku] = useState(inicial?.sku ?? "");
+  // Un producto que ya tiene SKU (editar, restock, pendiente de China) lo
+  // conserva: el SKU nunca se cambia solo.
   const [skuEditadoManualmente, setSkuEditadoManualmente] = useState(Boolean(inicial?.sku));
+
+  function armarSku(datos: { categoria?: string; nombre?: string; marcaId?: string; variante?: string }) {
+    const cat = datos.categoria ?? categoria;
+    const nom = datos.nombre ?? nombre;
+    const marca = marcas.find((m) => m.id === (datos.marcaId ?? marcaId));
+    return marca ? skuNuevo(marca.codigo, nom, datos.variante ?? variante) : skuSugerido(cat, nom);
+  }
 
   function alCambiarCategoria(valor: string) {
     setCategoria(valor);
-    if (!skuEditadoManualmente) setSku(skuSugerido(valor, nombre));
+    if (!skuEditadoManualmente) setSku(armarSku({ categoria: valor }));
   }
 
   function alCambiarNombre(valor: string) {
     setNombre(valor);
-    if (!skuEditadoManualmente) setSku(skuSugerido(categoria, valor));
+    if (!skuEditadoManualmente) setSku(armarSku({ nombre: valor }));
+  }
+
+  function alCambiarMarca(valor: string) {
+    setMarcaId(valor);
+    if (!skuEditadoManualmente) setSku(armarSku({ marcaId: valor }));
+  }
+
+  function alCambiarVariante(valor: string) {
+    setVariante(valor);
+    if (!skuEditadoManualmente) setSku(armarSku({ variante: valor }));
   }
 
   return (
@@ -99,6 +126,33 @@ export function CamposProducto({
         </div>
       </div>
 
+      {marcas.length > 0 && (
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-medium text-zinc-500">Marca</label>
+            <div className="mt-1">
+              <Selector
+                name="marca_id"
+                defaultValue={marcaId}
+                onChange={alCambiarMarca}
+                opciones={marcas.map((m) => ({ value: m.id, label: `${m.nombre} (${m.codigo})` }))}
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-zinc-500">Variante (color, talla, medida — opcional)</label>
+            <input
+              type="text"
+              name="variante"
+              value={variante}
+              onChange={(e) => alCambiarVariante(e.target.value)}
+              placeholder="Ej. Gris, 10 kg, 120 cm"
+              className={claseCampo}
+            />
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="block text-xs font-medium text-zinc-500">Nombre del producto</label>
@@ -112,7 +166,7 @@ export function CamposProducto({
           />
         </div>
         <div>
-          <label className="block text-xs font-medium text-zinc-500">SKU (se sugiere solo, edítalo si quieres)</label>
+          <label className="block text-xs font-medium text-zinc-500">SKU (se arma solo: marca-producto-variante; edítalo si quieres)</label>
           <input
             type="text"
             name="sku"

@@ -5,7 +5,7 @@ import Image from "next/image";
 import { formatoPesos } from "@/lib/formato";
 import { cartones, cbmProducto, costoFinalPorPieza } from "@/lib/calculos";
 import { Selector } from "@/components/selector";
-import type { PendienteChina, Producto } from "@/lib/tipos";
+import type { Marca, PendienteChina, Producto } from "@/lib/tipos";
 import { agregarProducto, actualizarProducto, eliminarProducto, moverProducto } from "./actions";
 import { CamposProducto } from "./campos-producto";
 
@@ -21,6 +21,7 @@ export function Productos({
   categoriasSugeridas,
   fabricasSugeridas,
   proveedoresSugeridos,
+  marcas = [],
   soloLectura = false,
   contenedorRecibido = false,
 }: {
@@ -35,6 +36,7 @@ export function Productos({
   categoriasSugeridas: string[];
   fabricasSugeridas: string[];
   proveedoresSugeridos: string[];
+  marcas?: Marca[];
   soloLectura?: boolean;
   /** Si el contenedor ya se recibió, editar un producto existente ya NO
    * deja tocar la cantidad aquí (eso no movería el stock) — se manda a
@@ -131,6 +133,7 @@ export function Productos({
                           categorias={categoriasSugeridas}
                           fabricas={fabricasSugeridas}
                           proveedores={proveedoresSugeridos}
+                          marcas={marcas}
                           contenedorRecibido={contenedorRecibido}
                         />
                         <div className="mt-3 flex justify-end gap-2">
@@ -394,6 +397,7 @@ export function Productos({
           categorias={categoriasSugeridas}
           fabricas={fabricasSugeridas}
           proveedores={proveedoresSugeridos}
+          marcas={marcas}
         />
 
         {pendientesChina.length > 0 && (

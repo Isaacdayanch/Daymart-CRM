@@ -9,6 +9,7 @@ import {
 } from "@/lib/calculos";
 import { reconciliacionContenedor } from "@/lib/calculos-stock";
 import { obtenerSugerenciasCatalogo } from "@/lib/catalogo-proveedores";
+import { obtenerMarcas } from "@/lib/catalogo";
 import { formatoFecha, formatoPesos } from "@/lib/formato";
 import { obtenerPerfilActual } from "@/lib/perfil";
 import { Logo } from "@/components/logo";
@@ -121,6 +122,7 @@ export default async function DetalleContenedor({
   }
 
   const { fabricas, proveedores, categorias } = await obtenerSugerenciasCatalogo(supabase);
+  const marcas = await obtenerMarcas(supabase).catch(() => []);
 
   const cbmTotal = cbmTotalContenedor(listaProductos);
   const costoPorCbm = costoPorCbmContenedor(contenedor, listaProductos);
@@ -309,6 +311,7 @@ export default async function DetalleContenedor({
           categoriasSugeridas={categorias}
           fabricasSugeridas={fabricas}
           proveedoresSugeridos={proveedores}
+          marcas={marcas}
           soloLectura={!verDinero}
           contenedorRecibido={Boolean(contenedor.stock_generado_en)}
         />

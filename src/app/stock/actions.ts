@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { nombreArchivoSeguro, texto } from "@/lib/form-helpers";
 import { completarColumnasOmitidas, insertarMovimientosStock } from "@/lib/movimientos-stock";
 import { costoPromedioPonderado, stockActual } from "@/lib/calculos-stock";
+import { guardarEnCatalogo } from "@/lib/catalogo";
 import type { MovimientoStock } from "@/lib/tipos";
 
 export async function agregarBodega(formData: FormData) {
@@ -168,6 +169,7 @@ export async function agregarStockManual(formData: FormData) {
   if (insertados && columnasOmitidas.length) {
     await completarColumnasOmitidas(supabase, insertados.map((i) => i.id), [fila], columnasOmitidas);
   }
+  await guardarEnCatalogo(supabase, { sku, nombre, imagen_url: imagenUrl, piezas_por_caja: fila.piezas_por_caja });
 
   revalidatePath("/stock");
   revalidatePath("/stock/movimientos");

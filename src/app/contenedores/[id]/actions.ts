@@ -6,9 +6,12 @@ import { createClient } from "@/lib/supabase/server";
 import {
   costoFinalPorPieza,
   costoPorCbmContenedor,
+  skuLibre,
+  skuNuevo,
   skuSugerido,
   tipoCambioPromedioMercancia,
 } from "@/lib/calculos";
+import { guardarEnCatalogo, skusExistentes } from "@/lib/catalogo";
 import { nombreArchivoSeguro, numero, texto } from "@/lib/form-helpers";
 import { completarColumnasOmitidas, insertarMovimientosStock } from "@/lib/movimientos-stock";
 import { valorPendienteChinaPagado } from "@/lib/calculos-pendientes";
@@ -654,7 +657,17 @@ export async function agregarProducto(contenedorId: string, formData: FormData) 
 
   const categoria = texto(formData, "categoria") ?? "";
   const nombre = texto(formData, "nombre") ?? "";
-  const sku = texto(formData, "sku") ?? skuSugerido(categoria, nombre);
+  const marcaId = texto(formData, "marca_id");
+  // SKU: el que Isaac dejó en el campo (se arma solo en pantalla); si por
+  // lo que sea viene vacío, se arma aquí con la regla nueva (marca) o la
+  // vieja (categoría). Si ya existe en otro producto, se le agrega -2, -3…
+  // salvo que sea un restock/pendiente (mismo SKU a propósito).
+  let sku = texto(formData, "sku") ?? "";
+  if (!sku) {
+    const { data: marca } = marcaId ? await supabase.from("marcas").select("codigo").eq("id", marcaId).maybeSingle<{ codigo: string }>() : { data: null };
+    sku = marca ? skuNuevo(marca.codigo, nombre, texto(formData, "variante")) : skuSugerido(categoria, nombre);
+    sku = skuLibre(sku, await skusExistentes(supabase));
+  }
   const { url: imagenSubida, error: errorImagen } = await subirImagenProducto(
     supabase,
     contenedorId,
@@ -671,8 +684,7 @@ export async function agregarProducto(contenedorId: string, formData: FormData) 
     .limit(1)
     .maybeSingle();
 
-  await supabase.from("productos").insert({
-    contenedor_id: contenedorId,
+  const datosProducto = {
     categoria,
     fabrica: texto(formData, "fabrica"),
     proveedor: texto(formData, "proveedor"),
@@ -686,8 +698,21 @@ export async function agregarProducto(contenedorId: string, formData: FormData) 
     largo_cm: numero(formData, "largo_cm"),
     ancho_cm: numero(formData, "ancho_cm"),
     alto_cm: numero(formData, "alto_cm"),
+  };
+  let { error: errorProducto } = await supabase.from("productos").insert({
+    contenedor_id: contenedorId,
+    ...datosProducto,
+    marca_id: marcaId,
     orden: (ultimo?.orden ?? 0) + 1,
   });
+  // Si todavía no se corrió el SQL 0038 (no existe marca_id), se guarda sin marca.
+  if (errorProducto && /marca_id/.test(errorProducto.message)) {
+    ({ error: errorProducto } = await supabase.from("productos").insert({ contenedor_id: contenedorId, ...datosProducto, orden: (ultimo?.orden ?? 0) + 1 }));
+  }
+  if (errorProducto) return { error: `No se pudo guardar el producto: ${errorProducto.message}` };
+
+  // La ficha del producto vive en el catálogo (un registro por SKU).
+  await guardarEnCatalogo(supabase, { ...datosProducto, marca_id: marcaId });
 
   await resolverPendienteChinaSiAplica(supabase, contenedorId, formData, cantidad);
 
@@ -711,6 +736,7 @@ export async function actualizarProducto(contenedorId: string, productoId: strin
 
   const categoria = texto(formData, "categoria") ?? "";
   const nombre = texto(formData, "nombre") ?? "";
+  const marcaId = texto(formData, "marca_id");
   const sku = texto(formData, "sku") ?? skuSugerido(categoria, nombre);
   const { url: imagenUrl, error: errorImagen } = await subirImagenProducto(
     supabase,
@@ -718,24 +744,27 @@ export async function actualizarProducto(contenedorId: string, productoId: strin
     formData,
   );
 
-  await supabase
-    .from("productos")
-    .update({
-      categoria,
-      fabrica: texto(formData, "fabrica"),
-      proveedor: texto(formData, "proveedor"),
-      ...(imagenUrl ? { imagen_url: imagenUrl } : {}),
-      sku,
-      nombre,
-      memo: texto(formData, "memo"),
-      cantidad: yaRecibido ? (productoActual?.cantidad ?? 0) : numero(formData, "cantidad"),
-      precio_dolares: numero(formData, "precio_dolares"),
-      piezas_por_caja: numero(formData, "piezas_por_caja") || 1,
-      largo_cm: numero(formData, "largo_cm"),
-      ancho_cm: numero(formData, "ancho_cm"),
-      alto_cm: numero(formData, "alto_cm"),
-    })
-    .eq("id", productoId);
+  const cambios = {
+    categoria,
+    fabrica: texto(formData, "fabrica"),
+    proveedor: texto(formData, "proveedor"),
+    ...(imagenUrl ? { imagen_url: imagenUrl } : {}),
+    sku,
+    nombre,
+    memo: texto(formData, "memo"),
+    cantidad: yaRecibido ? (productoActual?.cantidad ?? 0) : numero(formData, "cantidad"),
+    precio_dolares: numero(formData, "precio_dolares"),
+    piezas_por_caja: numero(formData, "piezas_por_caja") || 1,
+    largo_cm: numero(formData, "largo_cm"),
+    ancho_cm: numero(formData, "ancho_cm"),
+    alto_cm: numero(formData, "alto_cm"),
+  };
+  let { error: errorProducto } = await supabase.from("productos").update({ ...cambios, marca_id: marcaId }).eq("id", productoId);
+  if (errorProducto && /marca_id/.test(errorProducto.message)) {
+    ({ error: errorProducto } = await supabase.from("productos").update(cambios).eq("id", productoId));
+  }
+  if (errorProducto) return { error: `No se pudo guardar el producto: ${errorProducto.message}` };
+  await guardarEnCatalogo(supabase, { ...cambios, imagen_url: imagenUrl ?? undefined, marca_id: marcaId });
 
   // El SKU/nombre también viven copiados en cada movimiento de stock (para
   // no depender de un join). Si se corrige el SKU aquí (ej. dos variantes

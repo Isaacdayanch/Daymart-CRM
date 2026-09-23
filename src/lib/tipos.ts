@@ -101,10 +101,41 @@ export interface PagoMercancia {
   creado_en: string;
 }
 
+export interface Marca {
+  id: string;
+  nombre: string;
+  /** 3 letras que encabezan el SKU (DAY, MAM…). */
+  codigo: string;
+  notas: string | null;
+  creado_en: string;
+  eliminado_en: string | null;
+}
+
+/** Un registro por SKU: la "ficha" del producto, fuera de cualquier
+ * contenedor (migración 0038). */
+export interface ProductoCatalogo {
+  sku: string;
+  nombre: string;
+  marca_id: string | null;
+  linea: string | null;
+  categoria: string | null;
+  imagen_url: string | null;
+  piezas_por_caja: number;
+  largo_cm: number;
+  ancho_cm: number;
+  alto_cm: number;
+  memo: string | null;
+  creado_en: string;
+  actualizado_en: string;
+  eliminado_en: string | null;
+}
+
 export interface Producto {
   id: string;
   contenedor_id: string;
   categoria: string;
+  /** Marca del producto (migración 0038); null en productos viejos. */
+  marca_id?: string | null;
   fabrica: string | null;
   proveedor: string | null;
   imagen_url: string | null;

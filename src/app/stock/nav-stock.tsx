@@ -11,6 +11,7 @@ const PESTANAS = [
   { href: "/stock/pendientes", etiqueta: "Pendiente en China" },
   { href: "/stock/agregar", etiqueta: "+ Agregar stock" },
   { href: "/stock/carga-masiva", etiqueta: "Carga masiva" },
+  { href: "/stock/catalogo", etiqueta: "Catálogo" },
   { href: "/stock/bodegas", etiqueta: "Bodegas" },
   { href: "/stock/configuracion", etiqueta: "Configuración" },
 ];
