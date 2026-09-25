@@ -4,7 +4,9 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatoPesos } from "@/lib/formato";
 import { margenPublicacion, precioNuevo as calcularPrecioNuevo, redondear } from "@/lib/mercadolibre-margen";
-import { aplicarPreciosMl } from "../actions";
+import { CampoFecha } from "@/components/campo-fecha";
+import { aplicarPromocionesMl } from "../actions";
+import { PromocionesItem } from "./promociones-item";
 
 export interface FilaPrecio {
   id: string;
@@ -39,7 +41,7 @@ function pctTexto(n: number) {
   return `${n.toFixed(1)}%`;
 }
 
-export function TablaPrecios({ filas, margenMinimo }: { filas: FilaPrecio[]; margenMinimo: number }) {
+export function TablaPromociones({ filas, margenMinimo }: { filas: FilaPrecio[]; margenMinimo: number }) {
   const router = useRouter();
   const [seleccion, setSeleccion] = useState<Set<string>>(new Set());
   const [modo, setModo] = useState<Modo>("PORCENTAJE");
@@ -54,16 +56,20 @@ export function TablaPrecios({ filas, margenMinimo }: { filas: FilaPrecio[]; mar
   const valorNum = Number(valor.replace(",", "."));
   const hayValor = valor.trim() !== "" && Number.isFinite(valorNum);
 
-  // Margen actual y propuesto por renglón (cálculo en vivo).
+  const [finFecha, setFinFecha] = useState("");
+
+  // Margen actual y propuesto por renglón (cálculo en vivo). El descuento
+  // se calcula sobre el precio BASE (si ya hay promoción, el original).
   const calculadas = useMemo(
     () =>
       filas.map((f) => {
+        const base = f.precioOriginal && f.precioOriginal > f.precio ? f.precioOriginal : f.precio;
         const datos = { comisionPct: f.comisionPct ?? 0, comisionFija: f.comisionFija, envio: f.envio ?? 0, costo: f.costo ?? 0 };
         const puedeMargen = f.comisionPct !== null && f.costo !== null;
         const actual = puedeMargen ? margenPublicacion({ precio: f.precio, ...datos }) : null;
-        const nuevo = hayValor && (modo !== "MARGEN" || puedeMargen) ? calcularPrecioNuevo(modo, valorNum, f.precio, datos) : null;
+        const nuevo = hayValor && (modo !== "MARGEN" || puedeMargen) ? calcularPrecioNuevo(modo, modo === "PORCENTAJE" ? -Math.abs(valorNum) : valorNum, base, datos) : null;
         const margenNuevo = nuevo !== null && puedeMargen ? margenPublicacion({ precio: nuevo, ...datos }) : null;
-        return { f, puedeMargen, actual, nuevo, margenNuevo, abajo: actual !== null && actual.pct < margenMinimo, nuevoAbajo: margenNuevo !== null && margenNuevo.pct < margenMinimo };
+        return { f, base, puedeMargen, actual, nuevo, margenNuevo, abajo: actual !== null && actual.pct < margenMinimo, nuevoAbajo: margenNuevo !== null && margenNuevo.pct < margenMinimo };
       }),
     [filas, modo, valorNum, hayValor, margenMinimo],
   );
@@ -76,7 +82,9 @@ export function TablaPrecios({ filas, margenMinimo }: { filas: FilaPrecio[]; mar
   const sinLiga = calculadas.filter((c) => c.f.costo === null).length;
 
   const seleccionadas = calculadas.filter((c) => seleccion.has(c.f.id));
-  const listas = seleccionadas.filter((c) => c.nuevo !== null && c.nuevo > 0 && redondear(c.nuevo) !== redondear(c.f.precio));
+  // Una promoción solo puede BAJAR el precio base (nunca subirlo).
+  const listas = seleccionadas.filter((c) => c.nuevo !== null && c.nuevo > 0 && redondear(c.nuevo) < redondear(c.base));
+  const subirian = seleccionadas.filter((c) => c.nuevo !== null && redondear(c.nuevo) >= redondear(c.base)).length;
   const bloqueadas = listas.filter((c) => c.nuevoAbajo && !permitirAbajo);
   const porAplicar = listas.filter((c) => !bloqueadas.includes(c));
 
@@ -93,24 +101,34 @@ export function TablaPrecios({ filas, margenMinimo }: { filas: FilaPrecio[]; mar
     if (porAplicar.length === 0) return;
     const resumen = porAplicar
       .slice(0, 6)
-      .map((c) => `• ${c.f.titulo.slice(0, 40)}: ${formatoPesos(c.f.precio)} → ${formatoPesos(c.nuevo ?? 0)}`)
+      .map((c) => `• ${c.f.titulo.slice(0, 40)}: ${formatoPesos(c.base)} → ${formatoPesos(c.nuevo ?? 0)} (${(100 - ((c.nuevo ?? 0) / c.base) * 100).toFixed(0)}% off)`)
       .join("\n");
     const mas = porAplicar.length > 6 ? `\n…y ${porAplicar.length - 6} más` : "";
-    if (!window.confirm(`Vas a cambiar ${porAplicar.length} precio(s) en Mercado Libre:\n\n${resumen}${mas}\n\n¿Aplicar?`)) return;
+    const vigencia = finFecha ? `hasta el ${finFecha}` : "sin fecha de fin (la quitas cuando quieras)";
+    if (!window.confirm(`Vas a aplicar ${porAplicar.length} promoción(es) "Descuento del vendedor" en Mercado Libre, ${vigencia}. El precio base NO cambia.\n\n${resumen}${mas}\n\n¿Aplicar?`)) return;
     setErrorGeneral(null);
     setAplicando({ hechos: 0, total: porAplicar.length });
     const nuevos = new Map(resultados);
     for (let i = 0; i < porAplicar.length; i += 10) {
       const tanda = porAplicar.slice(i, i + 10);
-      const r = await aplicarPreciosMl(
-        tanda.map((c) => ({ itemId: c.f.itemId, variationId: c.f.variationId, precioNuevo: c.nuevo ?? 0, titulo: c.f.titulo, modo, margenEstimadoPct: c.margenNuevo ? redondear(c.margenNuevo.pct) : null })),
+      const r = await aplicarPromocionesMl(
+        tanda.map((c) => ({
+          itemId: c.f.itemId,
+          titulo: c.f.titulo,
+          tipo: "PRICE_DISCOUNT",
+          precioPromo: c.nuevo ?? 0,
+          precioBase: c.base,
+          finFecha: finFecha || null,
+          modo,
+          margenEstimadoPct: c.margenNuevo ? redondear(c.margenNuevo.pct) : null,
+        })),
       );
       if (r.error) {
         setErrorGeneral(r.error);
         break;
       }
       for (const c of tanda) {
-        const res = r.resultados.find((x) => x.itemId === c.f.itemId && x.variationId === c.f.variationId);
+        const res = r.resultados.find((x) => x.itemId === c.f.itemId);
         nuevos.set(c.f.id, { ok: Boolean(res?.ok), error: res?.error, precioNuevo: c.nuevo ?? 0 });
       }
       setResultados(new Map(nuevos));
@@ -128,11 +146,11 @@ export function TablaPrecios({ filas, margenMinimo }: { filas: FilaPrecio[]; mar
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
             <div>
-              <p className="text-xs font-medium text-zinc-500">¿Cómo quieres el precio nuevo?</p>
+              <p className="text-xs font-medium text-zinc-500">¿Cómo quieres el precio con descuento?</p>
               <div className="mt-1 flex overflow-hidden rounded-xl border border-zinc-300 text-xs">
                 {(
                   [
-                    ["PORCENTAJE", "Subir / bajar %"],
+                    ["PORCENTAJE", "Bajar %"],
                     ["FIJO", "Precio fijo"],
                     ["MARGEN", "Que me deje X% de margen"],
                   ] as const
@@ -144,15 +162,21 @@ export function TablaPrecios({ filas, margenMinimo }: { filas: FilaPrecio[]; mar
               </div>
             </div>
             <div>
-              <p className="text-xs font-medium text-zinc-500">{modo === "PORCENTAJE" ? "% de cambio (negativo = bajar)" : modo === "FIJO" ? "Precio nuevo ($)" : "Margen que quieres (%)"}</p>
+              <p className="text-xs font-medium text-zinc-500">{modo === "PORCENTAJE" ? "% de descuento" : modo === "FIJO" ? "Precio con descuento ($)" : "Margen que quieres (%)"}</p>
               <input
                 type="number"
                 step={modo === "FIJO" ? "1" : "0.5"}
                 value={valor}
                 onChange={(e) => setValor(e.target.value)}
-                placeholder={modo === "PORCENTAJE" ? "-10" : modo === "FIJO" ? "499" : String(margenMinimo + 10)}
+                placeholder={modo === "PORCENTAJE" ? "10" : modo === "FIJO" ? "499" : String(margenMinimo + 10)}
                 className={`mt-1 w-40 ${claseInput}`}
               />
+            </div>
+            <div>
+              <p className="text-xs font-medium text-zinc-500">Hasta (opcional)</p>
+              <div className="mt-1 w-44">
+                <CampoFecha name="fin" defaultValue="" onChange={setFinFecha} />
+              </div>
             </div>
           </div>
           <div className="flex flex-col items-start gap-2 lg:items-end">
@@ -162,7 +186,7 @@ export function TablaPrecios({ filas, margenMinimo }: { filas: FilaPrecio[]; mar
               disabled={porAplicar.length === 0 || aplicando !== null}
               className="rounded-xl bg-[#2D3277] px-5 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-[#232860] disabled:opacity-40"
             >
-              {aplicando ? `Aplicando ${aplicando.hechos} de ${aplicando.total}…` : `Aplicar ${porAplicar.length > 0 ? `${porAplicar.length} cambio(s)` : "cambios"} en Mercado Libre`}
+              {aplicando ? `Aplicando ${aplicando.hechos} de ${aplicando.total}…` : `Aplicar ${porAplicar.length > 0 ? `${porAplicar.length} promoción(es)` : "promoción"} en Mercado Libre`}
             </button>
             {bloqueadas.length > 0 && (
               <label className="flex items-center gap-2 text-xs text-red-700">
@@ -170,7 +194,8 @@ export function TablaPrecios({ filas, margenMinimo }: { filas: FilaPrecio[]; mar
                 {bloqueadas.length} quedarían abajo del margen mínimo ({margenMinimo}%) — aplicar de todos modos
               </label>
             )}
-            {seleccion.size > 0 && listas.length === 0 && hayValor && <p className="text-xs text-zinc-500">Con ese valor no cambia ningún precio de los seleccionados.</p>}
+            {seleccion.size > 0 && listas.length === 0 && hayValor && <p className="text-xs text-zinc-500">Con ese valor ningún seleccionado queda abajo de su precio base — una promoción solo puede bajar el precio.</p>}
+            {subirian > 0 && listas.length > 0 && <p className="text-xs text-zinc-500">{subirian} seleccionado(s) no se tocan porque su precio no bajaría.</p>}
             {seleccion.size > 0 && !hayValor && <p className="text-xs text-zinc-500">Pon el valor para ver el precio nuevo.</p>}
           </div>
         </div>
@@ -204,12 +229,12 @@ export function TablaPrecios({ filas, margenMinimo }: { filas: FilaPrecio[]; mar
               <th className="px-2 py-2.5 text-right">Envío</th>
               <th className="px-2 py-2.5 text-right">Costo</th>
               <th className="px-2 py-2.5 text-right">Te queda</th>
-              <th className="px-2 py-2.5 text-right">Nuevo precio</th>
+              <th className="px-2 py-2.5 text-right">Con descuento</th>
               <th className="px-2 py-2.5 text-right">Te quedaría</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-100">
-            {visibles.map(({ f, actual, nuevo, margenNuevo, abajo, nuevoAbajo }) => {
+            {visibles.map(({ f, base, actual, nuevo, margenNuevo, abajo, nuevoAbajo }) => {
               const marcada = seleccion.has(f.id);
               const res = resultados.get(f.id);
               return (
@@ -236,17 +261,24 @@ export function TablaPrecios({ filas, margenMinimo }: { filas: FilaPrecio[]; mar
                           {f.logistica && <span>{f.logistica}</span>}
                           {f.skuCrm ? <span className="font-mono text-zinc-600">{f.skuCrm}</span> : <span className="text-amber-700">sin ligar</span>}
                         </p>
+                        <PromocionesItem
+                          itemId={f.itemId}
+                          titulo={f.titulo}
+                          precioBase={base}
+                          margenDe={(precio) => (f.comisionPct !== null && f.costo !== null ? margenPublicacion({ precio, comisionPct: f.comisionPct, comisionFija: f.comisionFija, envio: f.envio ?? 0, costo: f.costo }) : null)}
+                          margenMinimo={margenMinimo}
+                        />
                         {res && (
                           <p className={`mt-0.5 text-[11px] ${res.ok ? "text-emerald-700" : "text-red-700"}`}>
-                            {res.ok ? `✓ cambiado a ${formatoPesos(res.precioNuevo)}` : `✕ ${res.error ?? "falló"}`}
+                            {res.ok ? `✓ promoción aplicada a ${formatoPesos(res.precioNuevo)}` : `✕ ${res.error ?? "falló"}`}
                           </p>
                         )}
                       </div>
                     </div>
                   </td>
                   <td className="px-2 py-2.5 text-right align-top">
-                    <p className="font-medium text-zinc-900">{formatoPesos(f.precio)}</p>
-                    {f.precioOriginal !== null && f.precioOriginal > f.precio && <p className="text-[11px] text-zinc-400 line-through">{formatoPesos(f.precioOriginal)}</p>}
+                    <p className="font-medium text-zinc-900">{formatoPesos(base)}</p>
+                    {base !== f.precio && <p className="text-[11px] text-emerald-700">en promo: {formatoPesos(f.precio)}</p>}
                   </td>
                   <td className="px-2 py-2.5 text-right align-top text-zinc-600">
                     {actual ? (

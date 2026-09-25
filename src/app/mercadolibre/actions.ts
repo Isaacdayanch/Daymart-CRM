@@ -144,31 +144,56 @@ export async function desvincularPublicacion(itemId: string, variationId: number
   return { error: null };
 }
 
-// ---- Precios con margen (escritura en Mercado Libre, siempre confirmada por Isaac) ----
+// ---- Promociones (escritura en Mercado Libre, siempre confirmada por Isaac).
+// El precio base de la publicación NUNCA se cambia desde el CRM: un precio
+// más bajo se aplica como promoción (descuento del vendedor o campaña de ML).
 
-export async function aplicarPreciosMl(cambios: { itemId: string; variationId: number | null; precioNuevo: number; titulo?: string | null; modo?: "FIJO" | "PORCENTAJE" | "MARGEN"; margenEstimadoPct?: number | null }[]) {
+export async function promocionesItemMl(itemId: string) {
+  if (!(await soloDueno())) return { error: "Solo el dueño puede hacer esto.", promociones: [] };
+  try {
+    const { promocionesDeItem } = await import("@/lib/mercadolibre-promociones");
+    return { error: null, promociones: await promocionesDeItem(itemId) };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "No se pudieron consultar las promociones.", promociones: [] };
+  }
+}
+
+export async function aplicarPromocionesMl(
+  solicitudes: { itemId: string; titulo?: string | null; tipo: string; promocionId?: string | null; precioPromo?: number | null; precioBase?: number | null; finFecha?: string | null; modo?: string | null; margenEstimadoPct?: number | null }[],
+) {
   if (!(await soloDueno())) return { error: "Solo el dueño puede hacer esto.", resultados: [] };
-  const { aplicarCambioPrecio } = await import("@/lib/mercadolibre-precios");
+  const { aplicarPromocion, isoFechaMx } = await import("@/lib/mercadolibre-promociones");
   const resultados = [];
-  // Uno por uno (máx. 15 por llamada; la pantalla manda tandas) para no
+  // Una por una (máx. 15 por llamada; la pantalla manda tandas) para no
   // pasarse del tiempo de Vercel ni saturar a Mercado Libre.
-  for (const c of cambios.slice(0, 15)) resultados.push(await aplicarCambioPrecio(c));
-  revalidatePath("/mercadolibre/precios");
+  for (const s of solicitudes.slice(0, 15)) {
+    resultados.push(await aplicarPromocion({ ...s, fin: s.finFecha ? isoFechaMx(s.finFecha, true) : null }));
+  }
+  revalidatePath("/mercadolibre/promociones");
   revalidatePath("/mercadolibre/stock");
   revalidatePath("/mercadolibre");
   return { error: null, resultados };
 }
 
-export async function deshacerPrecioMl(cambioId: string) {
+export async function quitarPromocionMl(s: { itemId: string; titulo?: string | null; tipo: string; promocionId?: string | null; precioBase?: number | null }) {
+  if (!(await soloDueno())) return { error: "Solo el dueño puede hacer esto." };
+  const { quitarPromocion } = await import("@/lib/mercadolibre-promociones");
+  const r = await quitarPromocion(s);
+  revalidatePath("/mercadolibre/promociones");
+  revalidatePath("/mercadolibre/stock");
+  return { error: r.ok ? null : (r.error ?? "No se pudo quitar.") };
+}
+
+export async function deshacerPromocionMl(cambioId: string) {
   if (!(await soloDueno())) return { error: "Solo el dueño puede hacer esto." };
   try {
-    const { deshacerCambioPrecio } = await import("@/lib/mercadolibre-precios");
-    const r = await deshacerCambioPrecio(cambioId);
-    revalidatePath("/mercadolibre/precios");
+    const { deshacerPromocion } = await import("@/lib/mercadolibre-promociones");
+    const r = await deshacerPromocion(cambioId);
+    revalidatePath("/mercadolibre/promociones");
     revalidatePath("/mercadolibre/stock");
-    return { error: r.ok ? null : (r.error ?? "No se pudo deshacer.") };
+    return { error: r.ok ? null : (r.error ?? "No se pudo quitar la promoción.") };
   } catch (e) {
-    return { error: e instanceof Error ? e.message : "No se pudo deshacer." };
+    return { error: e instanceof Error ? e.message : "No se pudo quitar la promoción." };
   }
 }
 
@@ -176,12 +201,113 @@ export async function guardarMargenMinimoMl(pct: number) {
   if (!(await soloDueno())) return { error: "Solo el dueño puede hacer esto." };
   if (!Number.isFinite(pct) || pct < 0 || pct >= 90) return { error: "Pon un porcentaje entre 0 y 90." };
   try {
-    const { guardarMargenMinimo } = await import("@/lib/mercadolibre-precios");
+    const { guardarMargenMinimo } = await import("@/lib/mercadolibre-promociones");
     await guardarMargenMinimo(pct);
-    revalidatePath("/mercadolibre/precios");
+    revalidatePath("/mercadolibre/promociones");
     revalidatePath("/mercadolibre");
     return { error: null };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "No se pudo guardar." };
   }
+}
+
+// ---- Crear un producto del CRM a partir de una publicación de ML (Fase C) ----
+
+/** Copia la foto de Mercado Libre a nuestro Storage (bucket `productos`)
+ * para no depender de que ML la siga sirviendo. Si falla, se usa el link
+ * de ML tal cual. */
+async function copiarImagenMl(url: string | null, sku: string): Promise<string | null> {
+  if (!url) return null;
+  try {
+    const { createClient } = await import("@/lib/supabase/server");
+    const supabase = await createClient();
+    const r = await fetch(url, { cache: "no-store" });
+    if (!r.ok) return url;
+    const tipo = r.headers.get("content-type") ?? "image/jpeg";
+    const extension = tipo.includes("png") ? "png" : tipo.includes("webp") ? "webp" : "jpg";
+    const datos = await r.arrayBuffer();
+    const ruta = `mercadolibre/${sku.replace(/[^A-Za-z0-9_-]/g, "_")}-${Date.now()}.${extension}`;
+    const { error } = await supabase.storage.from("productos").upload(ruta, datos, { contentType: tipo });
+    if (error) return url;
+    return supabase.storage.from("productos").getPublicUrl(ruta).data.publicUrl;
+  } catch {
+    return url;
+  }
+}
+
+/** "Nuevo producto con estos datos" desde Publicaciones: crea la ficha en
+ * el catálogo con la foto/título de ML, opcionalmente su histórico de
+ * stock, y liga la publicación (y las que comparten su stock). */
+export async function crearProductoDesdeMl(formData: FormData) {
+  if (!(await soloDueno())) return { error: "Solo el dueño puede hacer esto.", sku: null };
+  const t = (k: string) => {
+    const v = formData.get(k);
+    return typeof v === "string" && v.trim() ? v.trim() : null;
+  };
+  const sku = t("sku");
+  const nombre = t("nombre");
+  const itemId = t("item_id");
+  if (!sku || !nombre || !itemId) return { error: "Falta el SKU, el nombre o la publicación.", sku: null };
+  const variationId = t("variation_id") ? Number(t("variation_id")) : null;
+  let otras: { itemId: string; variationId: number | null }[] = [];
+  try {
+    otras = JSON.parse(t("otras") ?? "[]");
+  } catch {
+    otras = [];
+  }
+
+  const { createClient } = await import("@/lib/supabase/server");
+  const supabase = await createClient();
+  const { skusExistentes, guardarEnCatalogo } = await import("@/lib/catalogo");
+  const existentes = await skusExistentes(supabase);
+  if (existentes.has(sku)) return { error: `El SKU ${sku} ya existe. Si es ese producto, usa "Ligar con producto"; si no, cambia la variante o el SKU.`, sku: null };
+
+  const imagenUrl = await copiarImagenMl(t("imagen_url_ml"), sku);
+  const entradas = Number(formData.get("entradas_total")) || 0;
+  const salidas = Number(formData.get("salidas_total")) || 0;
+
+  if (entradas > 0) {
+    // Con histórico: mismo camino que "+ Agregar producto" en Stock.
+    const fd = new FormData();
+    fd.set("sku", sku);
+    fd.set("nombre", nombre);
+    fd.set("bodega_id", t("bodega_id") ?? "");
+    fd.set("modo", "INICIAL");
+    fd.set("piezas_por_caja", t("piezas_por_caja") ?? "1");
+    fd.set("costo_unitario_pesos", t("costo_unitario_pesos") ?? "0");
+    fd.set("imagen_url_previa", imagenUrl ?? "");
+    fd.set("fecha", t("fecha") ?? "");
+    fd.set("entradas_total", String(entradas));
+    fd.set("salidas_total", String(salidas));
+    if (t("marca_id")) fd.set("marca_id", t("marca_id")!);
+    if (t("categoria")) fd.set("categoria", t("categoria")!);
+    const { registrarProductoStock } = await import("@/app/stock/actions");
+    const r = await registrarProductoStock(fd);
+    if (r.error) return { error: r.error, sku: null };
+  } else {
+    await guardarEnCatalogo(supabase, {
+      sku,
+      nombre,
+      marca_id: t("marca_id"),
+      categoria: t("categoria"),
+      imagen_url: imagenUrl,
+      piezas_por_caja: Number(formData.get("piezas_por_caja")) || 1,
+    });
+  }
+
+  // Liga la publicación elegida y las que comparten su stock (catálogo).
+  const { createServiceClient } = await import("@/lib/supabase/servicio");
+  const servicio = createServiceClient();
+  for (const v of [{ itemId, variationId }, ...otras]) {
+    let borrar = servicio.from("mercadolibre_vinculos").delete().eq("item_id", v.itemId);
+    borrar = v.variationId === null ? borrar.is("variation_id", null) : borrar.eq("variation_id", v.variationId);
+    await borrar;
+    await servicio.from("mercadolibre_vinculos").insert({ item_id: v.itemId, variation_id: v.variationId, sku_crm: sku });
+  }
+  revalidatePath("/mercadolibre/stock");
+  revalidatePath("/mercadolibre/promociones");
+  revalidatePath("/stock");
+  revalidatePath("/stock/catalogo");
+  revalidatePath("/");
+  return { error: null, sku };
 }

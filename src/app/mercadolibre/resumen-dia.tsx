@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/servicio";
 import { obtenerConexion } from "@/lib/mercadolibre-auth";
 import { claveVinculo, obtenerPublicaciones, obtenerVinculos, skuCrmDe, type PublicacionMl } from "@/lib/mercadolibre-stock";
-import { envioPromedioPorItem, obtenerMargenMinimo, piezasVendidasPorItem, preguntasSinResponder } from "@/lib/mercadolibre-precios";
+import { envioPromedioPorItem, obtenerMargenMinimo, piezasVendidasPorItem, preguntasSinResponder } from "@/lib/mercadolibre-promociones";
 import { margenPublicacion } from "@/lib/mercadolibre-margen";
 import type { OrdenItemMl, OrdenMl } from "@/lib/mercadolibre-ordenes";
 import { resumenPorSku } from "@/lib/calculos-stock";
@@ -178,8 +178,8 @@ export async function ResumenDia() {
                 }
               />
             ))}
-            <Link href="/mercadolibre/precios" className="block pt-1 text-[11px] text-red-800 underline-offset-2 hover:underline">
-              Revisar precios →
+            <Link href="/mercadolibre/promociones" className="block pt-1 text-[11px] text-red-800 underline-offset-2 hover:underline">
+              Poner en promoción →
             </Link>
           </Tarjeta>
         )}
@@ -188,7 +188,7 @@ export async function ResumenDia() {
             {sinVentas.slice(0, 6).map(({ p, valor }) => (
               <Renglon key={p.id} p={p} derecha={<>{formatoPesos(valor)} parados</>} />
             ))}
-            <Link href="/mercadolibre/precios" className="block pt-1 text-[11px] text-amber-800 underline-offset-2 hover:underline">
+            <Link href="/mercadolibre/promociones" className="block pt-1 text-[11px] text-amber-800 underline-offset-2 hover:underline">
               Bajar precio o promocionar →
             </Link>
           </Tarjeta>

@@ -183,6 +183,34 @@ export async function mercadolibrePut<T>(ruta: string, cuerpo: unknown): Promise
   return (await respuesta.json()) as T;
 }
 
+/** Baja en Mercado Libre (ej. quitar una publicación de una promoción). */
+export async function mercadolibreDelete<T>(ruta: string): Promise<T | null> {
+  const token = await obtenerAccessToken();
+  const respuesta = await fetch(`${API_URL}${ruta}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+    cache: "no-store",
+  });
+  if (!respuesta.ok) {
+    const texto = await respuesta.text().catch(() => "");
+    let detalle = texto.slice(0, 300);
+    try {
+      const j = JSON.parse(texto) as { message?: string; cause?: { message?: string }[] };
+      detalle = [j.message, ...(j.cause ?? []).map((c) => c.message)].filter(Boolean).join(" · ") || detalle;
+    } catch {
+      // texto crudo
+    }
+    throw new Error(`Mercado Libre respondió ${respuesta.status} en ${ruta}: ${detalle}`);
+  }
+  const texto = await respuesta.text().catch(() => "");
+  if (!texto) return null;
+  try {
+    return JSON.parse(texto) as T;
+  } catch {
+    return null;
+  }
+}
+
 export async function desconectarMercadoLibre() {
   const supabase = createServiceClient();
   const { error } = await supabase.from("mercadolibre_conexion").delete().eq("id", 1);

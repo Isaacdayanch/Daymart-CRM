@@ -3,12 +3,12 @@ import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/servicio";
 import { obtenerConexion } from "@/lib/mercadolibre-auth";
 import { claveVinculo, obtenerPublicaciones, obtenerVinculos, skuCrmDe } from "@/lib/mercadolibre-stock";
-import { envioPromedioPorItem, obtenerCambiosPrecio, obtenerMargenMinimo } from "@/lib/mercadolibre-precios";
+import { envioPromedioPorItem, obtenerBitacoraPromociones, obtenerMargenMinimo } from "@/lib/mercadolibre-promociones";
 import type { OrdenItemMl, OrdenMl } from "@/lib/mercadolibre-ordenes";
 import { resumenPorSku } from "@/lib/calculos-stock";
 import { obtenerPiezasPorCajaPorSku } from "@/lib/productos-stock";
 import type { ConfiguracionStock, MovimientoStock } from "@/lib/tipos";
-import { TablaPrecios, type FilaPrecio } from "./tabla-precios";
+import { TablaPromociones, type FilaPrecio } from "./tabla-promociones";
 import { Bitacora } from "./bitacora";
 import { MargenMinimo } from "./margen-minimo";
 
@@ -21,11 +21,13 @@ function haceDias(n: number) {
   return new Date(Date.now() - n * DIA_MS).toISOString();
 }
 
-/** Precios con margen real: Isaac elige publicaciones, define el precio
- * nuevo (fijo, % o "que me deje X% de margen") y ve antes de aplicar
- * cuánto le queda por pieza con la comisión de ML, el envío promedio real
- * y el costo del CRM. Nada se cambia en ML hasta que confirma. */
-export default async function PreciosMercadoLibre() {
+/** Promociones con margen real: Isaac elige publicaciones, define el precio
+ * con descuento (fijo, % o "que me deje X% de margen") y ve antes de
+ * aplicar cuánto le queda por pieza con la comisión de ML, el envío
+ * promedio real y el costo del CRM. El descuento se aplica SIEMPRE como
+ * promoción de Mercado Libre — el precio base de la publicación no se
+ * toca (regla de Isaac, 25 sep). Nada se manda a ML hasta que confirma. */
+export default async function PromocionesMercadoLibre() {
   const supabase = await createClient();
   const conexion = await obtenerConexion().catch(() => null);
 
@@ -42,7 +44,7 @@ export default async function PreciosMercadoLibre() {
   let filas: FilaPrecio[] = [];
   let errorLectura: string | null = null;
   let margenMinimo = 20;
-  let cambios = await obtenerCambiosPrecio(40);
+  let cambios = await obtenerBitacoraPromociones(40);
   let sinComision = 0;
   try {
     const servicio = createServiceClient();
@@ -103,9 +105,9 @@ export default async function PreciosMercadoLibre() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h2 className="text-lg font-semibold text-zinc-900">Precios con margen real</h2>
+          <h2 className="text-lg font-semibold text-zinc-900">Promociones con margen real</h2>
           <p className="text-sm text-zinc-500">
-            Elige publicaciones, pon el precio nuevo y ve cuánto te queda por pieza antes de aplicarlo en Mercado Libre. Nada cambia hasta que confirmes.
+            Elige publicaciones, pon el precio con descuento y ve cuánto te queda por pieza antes de aplicarlo. <strong className="text-zinc-700">El precio base de la publicación no se cambia</strong>: el descuento entra como promoción de Mercado Libre y se puede quitar cuando quieras.
           </p>
         </div>
         <MargenMinimo valor={margenMinimo} />
@@ -132,15 +134,16 @@ export default async function PreciosMercadoLibre() {
           </p>
         </div>
       ) : (
-        <TablaPrecios filas={filas} margenMinimo={margenMinimo} />
+        <TablaPromociones filas={filas} margenMinimo={margenMinimo} />
       )}
 
       <Bitacora cambios={cambios} />
 
       <p className="text-xs text-zinc-400">
-        “Comisión” es la de Mercado Libre para esa categoría y tipo de publicación al precio actual (se consulta al sincronizar; al aplicar un precio se vuelve a consultar
-        con el precio nuevo). “Envío” es el promedio real que pagaste por pieza en las ventas de esa publicación en los últimos 90 días (0 si el comprador lo paga; “—” si no
-        hay ventas con dato). “Costo” es el costo promedio del producto del CRM ligado — sin liga no hay margen. “Te queda” = precio − comisión − envío − costo.
+        “Precio” es el precio base de la publicación (si ya tiene una promoción activa, abajo se ve el precio con descuento de hoy). “Comisión” es la de Mercado Libre para esa
+        categoría y tipo de publicación (se consulta al sincronizar). “Envío” es el promedio real que pagaste por pieza en las ventas de esa publicación en los últimos 90 días
+        (0 si el comprador lo paga; “—” si no hay ventas con dato). “Costo” es el costo promedio del producto del CRM ligado — sin liga no hay margen. “Te queda” = precio −
+        comisión − envío − costo. En “Promociones de ML” de cada renglón ves las campañas que Mercado Libre te ofrece para esa publicación y el margen con su precio sugerido.
       </p>
     </div>
   );

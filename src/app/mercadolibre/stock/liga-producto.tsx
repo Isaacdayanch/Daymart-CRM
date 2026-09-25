@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { SelectorProducto } from "@/app/stock/salidas/selector-producto";
 import { desvincularPublicacion, vincularPublicacion } from "../actions";
+import { NuevoProductoMl, type CatalogoParaNuevo, type DatosMlParaProducto } from "./nuevo-producto-ml";
 
 interface Opcion {
   sku: string;
@@ -21,6 +22,8 @@ export function LigaProducto({
   origen,
   nombre,
   opciones,
+  datosMl,
+  catalogo,
 }: {
   itemId: string;
   variationId: number | null;
@@ -28,12 +31,20 @@ export function LigaProducto({
   origen: "auto" | "manual" | null;
   nombre: string | null;
   opciones: Opcion[];
+  /** Para "Nuevo producto con estos datos" (Fase C). */
+  datosMl?: DatosMlParaProducto;
+  catalogo?: CatalogoParaNuevo;
 }) {
   const router = useRouter();
   const [editando, setEditando] = useState(false);
+  const [creando, setCreando] = useState(false);
   const [elegido, setElegido] = useState(sku ?? "");
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  if (creando && datosMl && catalogo) {
+    return <NuevoProductoMl datos={datosMl} catalogo={catalogo} alCerrar={() => setCreando(false)} />;
+  }
 
   if (editando) {
     return (
@@ -63,6 +74,18 @@ export function LigaProducto({
             Cancelar
           </button>
         </div>
+        {datosMl && catalogo && (
+          <button
+            type="button"
+            onClick={() => {
+              setEditando(false);
+              setCreando(true);
+            }}
+            className="text-xs text-emerald-700 underline-offset-2 hover:underline"
+          >
+            ¿No está en el sistema? + Nuevo producto con estos datos
+          </button>
+        )}
         {error && <p className="text-xs text-red-600">{error}</p>}
       </div>
     );
@@ -102,12 +125,19 @@ export function LigaProducto({
   }
 
   return (
-    <button
-      type="button"
-      onClick={() => setEditando(true)}
-      className="rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100"
-    >
-      Ligar con producto
-    </button>
+    <div className="flex flex-col items-start gap-1">
+      <button
+        type="button"
+        onClick={() => setEditando(true)}
+        className="rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100"
+      >
+        Ligar con producto
+      </button>
+      {datosMl && catalogo && (
+        <button type="button" onClick={() => setCreando(true)} className="text-[11px] text-emerald-700 underline-offset-2 hover:underline">
+          + Nuevo producto con estos datos
+        </button>
+      )}
+    </div>
   );
 }

@@ -13,6 +13,9 @@ import {
 } from "@/lib/mercadolibre-stock";
 import { resumenPorSku, valorTotalInventario } from "@/lib/calculos-stock";
 import { obtenerPiezasPorCajaPorSku } from "@/lib/productos-stock";
+import { obtenerMarcas, skusExistentes } from "@/lib/catalogo";
+import { obtenerSugerenciasCatalogo } from "@/lib/catalogo-proveedores";
+import type { Bodega } from "@/lib/tipos";
 import { formatoFechaHoraMx } from "@/lib/fechas-mx";
 import { formatoPesos } from "@/lib/formato";
 import type { ConfiguracionStock, MovimientoStock } from "@/lib/tipos";
@@ -51,11 +54,22 @@ export default async function StockMercadoLibre({
   const supabase = await createClient();
   const conexion = await obtenerConexion().catch(() => null);
 
-  const [{ data: movimientos }, { data: configuracion }, piezasPorCajaPorSku] = await Promise.all([
+  const [{ data: movimientos }, { data: configuracion }, piezasPorCajaPorSku, marcas, sugerencias, { data: bodegas }, skusTodos] = await Promise.all([
     supabase.from("movimientos_stock").select("*").returns<MovimientoStock[]>(),
     supabase.from("configuracion_stock").select("*").single<ConfiguracionStock>(),
     obtenerPiezasPorCajaPorSku(supabase),
+    obtenerMarcas(supabase).catch(() => []),
+    obtenerSugerenciasCatalogo(supabase).catch(() => ({ categorias: [] as string[] })),
+    supabase.from("bodegas").select("*").is("eliminado_en", null).order("nombre").returns<Bodega[]>(),
+    skusExistentes(supabase).catch(() => new Set<string>()),
   ]);
+  // Para "Nuevo producto con estos datos" desde una publicación sin ligar.
+  const catalogoParaNuevo = {
+    marcas: marcas.map((m) => ({ id: m.id, nombre: m.nombre, codigo: m.codigo })),
+    categorias: sugerencias.categorias,
+    bodegas: (bodegas ?? []).map((b) => ({ id: b.id, nombre: b.nombre })),
+    skusExistentes: Array.from(skusTodos),
+  };
   const resumenes = resumenPorSku(movimientos ?? [], configuracion?.dias_espera ?? 60, piezasPorCajaPorSku);
   const skusCrm = new Set(resumenes.map((r) => r.sku));
   const costoPorSku = new Map(resumenes.map((r) => [r.sku, r.costoPromedio]));
@@ -242,6 +256,16 @@ export default async function StockMercadoLibre({
                     origen={liga.origen}
                     nombre={liga.sku ? (nombrePorSku.get(liga.sku) ?? null) : null}
                     opciones={opcionesProducto}
+                    datosMl={{
+                      itemId: liga.de.item_id,
+                      variationId: liga.de.variation_id,
+                      titulo: liga.de.titulo,
+                      variacion: liga.de.variacion,
+                      imagenUrl: liga.de.imagen_url,
+                      sellerSku: liga.de.seller_sku,
+                      otras: [p, ...g.otras].filter((o) => o.id !== liga.de.id).map((o) => ({ itemId: o.item_id, variationId: o.variation_id })),
+                    }}
+                    catalogo={catalogoParaNuevo}
                   />
                 </div>
               </div>
