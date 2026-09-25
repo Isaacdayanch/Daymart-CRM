@@ -25,6 +25,12 @@ export interface PublicacionMl {
   full_no_disponible: number | null;
   full_detalle: { status: string; quantity: number }[] | null;
   actualizado_en: string;
+  /** Migración 0040: para calcular margen sin volver a llamar a ML. */
+  categoria_id?: string | null;
+  tipo_publicacion?: string | null;
+  precio_original?: number | null;
+  comision_pct?: number | null;
+  comision_fija?: number | null;
 }
 
 export interface VinculoMl {
@@ -38,6 +44,9 @@ interface ItemApi {
   id: string;
   title?: string;
   price?: number;
+  original_price?: number | null;
+  category_id?: string;
+  listing_type_id?: string;
   available_quantity?: number;
   status?: string;
   thumbnail?: string;
@@ -119,6 +128,43 @@ async function stockFull(inventoryId: string, cache: Map<string, StockFullApi | 
   }
 }
 
+/** Comisión de Mercado Libre (% y parte fija) para un precio, categoría y
+ * tipo de publicación — lo mismo que consulta el simulador oficial. Con
+ * caché por corrida: muchas publicaciones comparten categoría y precio. */
+async function comisionDe(precio: number | null | undefined, categoriaId: string | undefined, tipo: string | undefined, cache: Map<string, { pct: number; fija: number } | null>) {
+  if (!precio || !categoriaId) return null;
+  const clave = `${categoriaId}|${tipo ?? ""}|${precio}`;
+  if (cache.has(clave)) return cache.get(clave) ?? null;
+  try {
+    const params = new URLSearchParams({ price: String(precio), category_id: categoriaId });
+    if (tipo) params.set("listing_type_id", tipo);
+    const r = await mercadolibreGet<ListingPriceApi[] | ListingPriceApi>(`/sites/MLM/listing_prices?${params}`);
+    const lista = Array.isArray(r) ? r : [r];
+    const fila = lista.find((l) => !tipo || l.listing_type_id === tipo) ?? lista[0];
+    const valor = fila
+      ? {
+          pct: fila.sale_fee_details?.percentage_fee ?? (fila.sale_fee_amount && precio ? ((fila.sale_fee_amount - (fila.sale_fee_details?.fixed_fee ?? 0)) / precio) * 100 : 0),
+          fija: fila.sale_fee_details?.fixed_fee ?? 0,
+        }
+      : null;
+    cache.set(clave, valor);
+    return valor;
+  } catch {
+    cache.set(clave, null);
+    return null;
+  }
+}
+
+interface ListingPriceApi {
+  listing_type_id: string;
+  sale_fee_amount?: number;
+  sale_fee_details?: { percentage_fee?: number; fixed_fee?: number; gross_amount?: number };
+}
+
+/** Columnas de la migración 0040: si el SQL no se ha corrido, se quitan
+ * de las filas para que la sincronización no truene. */
+const COLUMNAS_0040 = ["categoria_id", "tipo_publicacion", "precio_original", "comision_pct", "comision_fija"];
+
 /** Paso 1 de la sincronización por tandas: la lista de IDs. */
 export async function listarIdsPublicaciones() {
   const conexion = await obtenerConexion();
@@ -136,8 +182,9 @@ export async function sincronizarLotePublicaciones(ids: string[]) {
   if (!ids.length) return 0;
   try {
     const cacheFull = new Map<string, StockFullApi | null>();
+    const cacheComision = new Map<string, { pct: number; fija: number } | null>();
     const atributos =
-      "id,title,price,available_quantity,status,thumbnail,pictures,seller_custom_field,catalog_listing,item_relations,inventory_id,shipping,attributes,variations";
+      "id,title,price,original_price,category_id,listing_type_id,available_quantity,status,thumbnail,pictures,seller_custom_field,catalog_listing,item_relations,inventory_id,shipping,attributes,variations";
 
     // Los lotes de 20 items se piden en paralelo.
     const lotes: string[][] = [];
@@ -154,6 +201,13 @@ export async function sincronizarLotePublicaciones(ids: string[]) {
       for (const v of body.variations ?? []) if (v.inventory_id) inventarios.add(v.inventory_id);
     }
     await Promise.all(Array.from(inventarios).map((inv) => stockFull(inv, cacheFull)));
+    // Comisión de ML al precio actual (solo publicaciones activas: las
+    // pausadas no la necesitan y así se hacen menos llamadas).
+    await Promise.all(
+      items
+        .filter((b) => b.status === "active")
+        .flatMap((b) => ((b.variations ?? []).length ? (b.variations ?? []).map((v) => v.price ?? b.price) : [b.price]).map((precio) => comisionDe(precio, b.category_id, b.listing_type_id, cacheComision))),
+    );
 
     const filas: Record<string, unknown>[] = [];
     for (const body of items) {
@@ -169,6 +223,13 @@ export async function sincronizarLotePublicaciones(ids: string[]) {
         catalogo: Boolean(body.catalog_listing),
         relacion_item_id: relacion,
         actualizado_en: new Date().toISOString(),
+        categoria_id: body.category_id ?? null,
+        tipo_publicacion: body.listing_type_id ?? null,
+        precio_original: body.original_price ?? null,
+      };
+      const comisionPara = (precio: number | null | undefined) => {
+        const c = body.status === "active" ? cacheComision.get(`${body.category_id}|${body.listing_type_id ?? ""}|${precio}`) ?? null : null;
+        return { comision_pct: c?.pct ?? null, comision_fija: c?.fija ?? null };
       };
       const variantes = body.variations ?? [];
       if (variantes.length === 0) {
@@ -186,6 +247,7 @@ export async function sincronizarLotePublicaciones(ids: string[]) {
           full_disponible: full?.available_quantity ?? null,
           full_no_disponible: full?.not_available_quantity ?? null,
           full_detalle: full?.not_available_detail ?? null,
+          ...comisionPara(body.price),
         });
       } else {
         for (const v of variantes) {
@@ -208,6 +270,7 @@ export async function sincronizarLotePublicaciones(ids: string[]) {
             full_disponible: full?.available_quantity ?? null,
             full_no_disponible: full?.not_available_quantity ?? null,
             full_detalle: full?.not_available_detail ?? null,
+            ...comisionPara(v.price ?? body.price),
           });
         }
       }
@@ -217,7 +280,13 @@ export async function sincronizarLotePublicaciones(ids: string[]) {
     if (errorBorrar) throw new Error(errorBorrar.message);
     if (filas.length) {
       const { error } = await supabase.from("mercadolibre_publicaciones").insert(filas);
-      if (error) throw new Error(error.message);
+      if (error) {
+        // SQL 0040 sin correr: se reintenta sin las columnas nuevas.
+        if (!COLUMNAS_0040.some((c) => error.message.includes(c))) throw new Error(error.message);
+        const sinNuevas = filas.map((f) => Object.fromEntries(Object.entries(f).filter(([k]) => !COLUMNAS_0040.includes(k))));
+        const { error: error2 } = await supabase.from("mercadolibre_publicaciones").insert(sinNuevas);
+        if (error2) throw new Error(error2.message);
+      }
     }
     return filas.length;
   } catch (e) {

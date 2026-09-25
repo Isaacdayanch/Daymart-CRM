@@ -157,6 +157,32 @@ export async function mercadolibreGet<T>(ruta: string): Promise<T> {
   return (await respuesta.json()) as T;
 }
 
+/** Escritura en Mercado Libre (cambiar precio, pausar, etc.). Requiere que
+ * la aplicación tenga permiso de escritura ("write") en el DevCenter. Se
+ * usa solo cuando Isaac confirma un cambio con un botón — nada automático. */
+export async function mercadolibrePut<T>(ruta: string, cuerpo: unknown): Promise<T> {
+  const token = await obtenerAccessToken();
+  const respuesta = await fetch(`${API_URL}${ruta}`, {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${token}`, Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify(cuerpo),
+    cache: "no-store",
+  });
+  if (!respuesta.ok) {
+    const texto = await respuesta.text().catch(() => "");
+    let detalle = texto.slice(0, 300);
+    try {
+      const j = JSON.parse(texto) as { message?: string; cause?: { message?: string }[] };
+      detalle = [j.message, ...(j.cause ?? []).map((c) => c.message)].filter(Boolean).join(" · ") || detalle;
+    } catch {
+      // se deja el texto crudo
+    }
+    if (respuesta.status === 403) detalle = `${detalle} (¿la aplicación tiene permiso de escritura en el DevCenter de Mercado Libre?)`;
+    throw new Error(`Mercado Libre respondió ${respuesta.status} en ${ruta}: ${detalle}`);
+  }
+  return (await respuesta.json()) as T;
+}
+
 export async function desconectarMercadoLibre() {
   const supabase = createServiceClient();
   const { error } = await supabase.from("mercadolibre_conexion").delete().eq("id", 1);

@@ -9,6 +9,7 @@ import type { Bodega, Contenedor, MovimientoStock, Producto } from "@/lib/tipos"
 import { EditarProductoGlobal } from "./editar-producto-global";
 import { AjustarCantidad } from "./ajustar-cantidad";
 import { AgregarHistorico } from "./agregar-historico";
+import { registradoEnSistema } from "@/lib/calculos-historico";
 import { EditarCostoManual } from "./editar-costo-manual";
 
 export default async function DetalleProducto({ params }: { params: Promise<{ sku: string }> }) {
@@ -108,6 +109,8 @@ export default async function DetalleProducto({ params }: { params: Promise<{ sk
     .filter((m) => m.tipo === "ENTRADA" && !m.contenedor_id && !m.venta_id && !m.historico)
     .reduce((s, m) => s + m.cantidad, 0);
   const historico = listaMovimientos.filter((m) => m.historico);
+  // Ya registrado sin contar manuales ni histórico (contenedores, ajustes, salidas).
+  const registradasSinManuales = registradoEnSistema(listaMovimientos, true);
   const historicoEntradas = historico.filter((m) => m.tipo === "ENTRADA").reduce((s, m) => s + m.cantidad, 0);
   const historicoSalidas = historico.filter((m) => m.tipo === "SALIDA").reduce((s, m) => s + m.cantidad, 0);
 
@@ -150,7 +153,7 @@ export default async function DetalleProducto({ params }: { params: Promise<{ sk
               bodegas={bodegasConStock}
             />
             {verDinero && historico.length === 0 && (
-              <AgregarHistorico sku={sku} stockActual={actual} manualesCargadas={manualesCargadas} bodegas={(bodegas ?? []).map((b) => ({ id: b.id, nombre: b.nombre }))} />
+              <AgregarHistorico sku={sku} stockActual={actual} manualesCargadas={manualesCargadas} registradas={registradasSinManuales} bodegas={(bodegas ?? []).map((b) => ({ id: b.id, nombre: b.nombre }))} />
             )}
           </div>
         </div>

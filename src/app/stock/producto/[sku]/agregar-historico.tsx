@@ -17,12 +17,16 @@ export function AgregarHistorico({
   sku,
   stockActual,
   manualesCargadas,
+  registradas,
   bodegas,
 }: {
   sku: string;
   stockActual: number;
   /** Piezas que entraron por cargas manuales (sin contenedor, no históricas). */
   manualesCargadas: number;
+  /** Ya registrado en el sistema (sin histórico ni manuales): entradas de
+   * contenedores/ajustes que suman, y salidas/ajustes que restan. */
+  registradas: { entradas: number; salidas: number };
   bodegas: { id: string; nombre: string }[];
 }) {
   const router = useRouter();
@@ -33,8 +37,16 @@ export function AgregarHistorico({
   const [reemplazar, setReemplazar] = useState(manualesCargadas > 0);
   const [error, setError] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
-  const neto = (Number(entradas) || 0) - (Number(salidas) || 0);
-  const quedara = stockActual + neto - (reemplazar ? manualesCargadas : 0);
+  // Lo que el sistema ya tiene registrado (si se van a borrar las manuales, no cuentan).
+  const sistemaEntradas = registradas.entradas + (reemplazar ? 0 : manualesCargadas);
+  const sistemaSalidas = registradas.salidas;
+  const haySistema = sistemaEntradas > 0 || sistemaSalidas > 0;
+  const [restar, setRestar] = useState(haySistema);
+  const totalEntradas = Number(entradas) || 0;
+  const totalSalidas = Number(salidas) || 0;
+  const histEntradas = restar ? Math.max(0, totalEntradas - sistemaEntradas) : totalEntradas;
+  const histSalidas = restar ? Math.max(0, totalSalidas - sistemaSalidas) : totalSalidas;
+  const quedara = stockActual - (reemplazar ? manualesCargadas : 0) + histEntradas - histSalidas;
 
   if (!abierto) {
     return (
@@ -50,6 +62,7 @@ export function AgregarHistorico({
         setEnviando(true);
         setError(null);
         fd.set("reemplazar_manuales", reemplazar ? "true" : "false");
+        fd.set("restar_registrado", restar ? "true" : "false");
         const r = await agregarHistoricoProducto(sku, fd);
         setEnviando(false);
         if (r?.error) setError(r.error);
@@ -94,6 +107,21 @@ export function AgregarHistorico({
           <p className="text-[10px] text-zinc-400">Vacío = costo promedio actual</p>
         </div>
       </div>
+      {haySistema && (
+        <label className="mt-3 flex items-start gap-2 text-xs text-zinc-700">
+          <input type="checkbox" checked={restar} onChange={(e) => setRestar(e.target.checked)} className="mt-0.5" />
+          <span>
+            Mis totales de la hoja <strong>ya incluyen</strong> lo que el sistema tiene registrado (entraron {sistemaEntradas.toLocaleString("es-MX")}
+            {sistemaSalidas > 0 && <> y salieron {sistemaSalidas.toLocaleString("es-MX")}</>}): réstalo para no contar doble.
+            {restar && (totalEntradas > 0 || totalSalidas > 0) && (
+              <span className="block text-[11px] text-zinc-500">
+                Se guardan como histórico: {histEntradas.toLocaleString("es-MX")} entradas y {histSalidas.toLocaleString("es-MX")} salidas.
+                {(totalEntradas > 0 && totalEntradas < sistemaEntradas) || totalSalidas < sistemaSalidas ? " Ojo: tus totales son menores a lo registrado, revisa los números." : ""}
+              </span>
+            )}
+          </span>
+        </label>
+      )}
       {manualesCargadas > 0 && (
         <label className="mt-3 flex items-start gap-2 text-xs text-zinc-700">
           <input type="checkbox" checked={reemplazar} onChange={(e) => setReemplazar(e.target.checked)} className="mt-0.5" />

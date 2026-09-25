@@ -143,3 +143,45 @@ export async function desvincularPublicacion(itemId: string, variationId: number
   revalidatePath("/");
   return { error: null };
 }
+
+// ---- Precios con margen (escritura en Mercado Libre, siempre confirmada por Isaac) ----
+
+export async function aplicarPreciosMl(cambios: { itemId: string; variationId: number | null; precioNuevo: number; titulo?: string | null; modo?: "FIJO" | "PORCENTAJE" | "MARGEN"; margenEstimadoPct?: number | null }[]) {
+  if (!(await soloDueno())) return { error: "Solo el dueño puede hacer esto.", resultados: [] };
+  const { aplicarCambioPrecio } = await import("@/lib/mercadolibre-precios");
+  const resultados = [];
+  // Uno por uno (máx. 15 por llamada; la pantalla manda tandas) para no
+  // pasarse del tiempo de Vercel ni saturar a Mercado Libre.
+  for (const c of cambios.slice(0, 15)) resultados.push(await aplicarCambioPrecio(c));
+  revalidatePath("/mercadolibre/precios");
+  revalidatePath("/mercadolibre/stock");
+  revalidatePath("/mercadolibre");
+  return { error: null, resultados };
+}
+
+export async function deshacerPrecioMl(cambioId: string) {
+  if (!(await soloDueno())) return { error: "Solo el dueño puede hacer esto." };
+  try {
+    const { deshacerCambioPrecio } = await import("@/lib/mercadolibre-precios");
+    const r = await deshacerCambioPrecio(cambioId);
+    revalidatePath("/mercadolibre/precios");
+    revalidatePath("/mercadolibre/stock");
+    return { error: r.ok ? null : (r.error ?? "No se pudo deshacer.") };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "No se pudo deshacer." };
+  }
+}
+
+export async function guardarMargenMinimoMl(pct: number) {
+  if (!(await soloDueno())) return { error: "Solo el dueño puede hacer esto." };
+  if (!Number.isFinite(pct) || pct < 0 || pct >= 90) return { error: "Pon un porcentaje entre 0 y 90." };
+  try {
+    const { guardarMargenMinimo } = await import("@/lib/mercadolibre-precios");
+    await guardarMargenMinimo(pct);
+    revalidatePath("/mercadolibre/precios");
+    revalidatePath("/mercadolibre");
+    return { error: null };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "No se pudo guardar." };
+  }
+}

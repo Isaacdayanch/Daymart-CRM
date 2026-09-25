@@ -24,6 +24,7 @@ import {
 import { formatoPesos } from "@/lib/formato";
 import { BotonSincronizar } from "./boton-sincronizar";
 import { FiltroFechas } from "./filtro-fechas";
+import { ResumenDia } from "./resumen-dia";
 
 // Las llamadas a Mercado Libre pueden tardar: se sube el tope de tiempo de Vercel (máx. 60 s en plan Hobby).
 export const maxDuration = 60;
@@ -211,6 +212,8 @@ export default async function VentasMercadoLibre({
           </p>
         </div>
       </div>
+
+      {conexion && <ResumenDia />}
 
       {!conexion && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">

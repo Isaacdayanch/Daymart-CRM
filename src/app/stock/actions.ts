@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { historicoNeto, registradoEnSistema } from "@/lib/calculos-historico";
 import { createClient } from "@/lib/supabase/server";
 import { nombreArchivoSeguro, texto } from "@/lib/form-helpers";
 import { completarColumnasOmitidas, insertarMovimientosStock } from "@/lib/movimientos-stock";
@@ -203,11 +204,19 @@ export async function registrarProductoStock(formData: FormData) {
 
   const filas: Record<string, unknown>[] = [];
   if (modo === "INICIAL") {
-    const entradas = Number(formData.get("entradas_total")) || 0;
-    const salidas = Number(formData.get("salidas_total")) || 0;
-    if (entradas <= 0) return { error: "Pon cuántas piezas han entrado en total." };
-    if (salidas > entradas) return { error: "Las salidas no pueden ser más que las entradas." };
-    filas.push({ ...base, tipo: "ENTRADA", cantidad: entradas, referencia: "Histórico de antes del sistema (entradas)", historico: true });
+    const totales = { entradas: Number(formData.get("entradas_total")) || 0, salidas: Number(formData.get("salidas_total")) || 0 };
+    if (totales.entradas <= 0) return { error: "Pon cuántas piezas han entrado en total." };
+    if (totales.salidas > totales.entradas) return { error: "Las salidas no pueden ser más que las entradas." };
+    // Si el producto ya existe y los totales de la hoja ya incluyen lo que
+    // el sistema tiene registrado, se guarda solo la diferencia.
+    let registrado = { entradas: 0, salidas: 0 };
+    if (formData.get("restar_registrado") === "true") {
+      const { data: previos } = await supabase.from("movimientos_stock").select("*").eq("sku", sku).returns<MovimientoStock[]>();
+      registrado = registradoEnSistema(previos ?? []);
+    }
+    const { entradas, salidas } = historicoNeto(totales, registrado, formData.get("restar_registrado") === "true");
+    if (entradas <= 0 && salidas <= 0) return { error: "Después de restar lo que ya está en el sistema no queda nada por registrar." };
+    if (entradas > 0) filas.push({ ...base, tipo: "ENTRADA", cantidad: entradas, referencia: "Histórico de antes del sistema (entradas)", historico: true });
     if (salidas > 0) filas.push({ ...base, tipo: "SALIDA", cantidad: salidas, destino: "Histórico", referencia: "Histórico de antes del sistema (salidas)", historico: true });
   } else {
     const cantidad = Number(formData.get("cantidad")) || 0;
@@ -245,12 +254,12 @@ export async function registrarProductoStock(formData: FormData) {
  * contenedor, sin venta, no históricas) para no contar doble. */
 export async function agregarHistoricoProducto(sku: string, formData: FormData) {
   const supabase = await createClient();
-  const entradas = Number(formData.get("entradas_total")) || 0;
-  const salidas = Number(formData.get("salidas_total")) || 0;
+  const totales = { entradas: Number(formData.get("entradas_total")) || 0, salidas: Number(formData.get("salidas_total")) || 0 };
   const bodegaId = formData.get("bodega_id") as string;
   const reemplazar = formData.get("reemplazar_manuales") === "true";
-  if (entradas <= 0) return { error: "Pon cuántas piezas han entrado en total." };
-  if (salidas > entradas) return { error: "Las salidas no pueden ser más que las entradas." };
+  const restar = formData.get("restar_registrado") === "true";
+  if (totales.entradas <= 0) return { error: "Pon cuántas piezas han entrado en total." };
+  if (totales.salidas > totales.entradas) return { error: "Las salidas no pueden ser más que las entradas." };
   if (!bodegaId) return { error: "Elige la bodega." };
 
   const { data: ultimo } = await supabase.from("movimientos_stock").select("*").eq("sku", sku).order("creado_en", { ascending: false }).limit(1).maybeSingle<MovimientoStock>();
@@ -259,12 +268,16 @@ export async function agregarHistoricoProducto(sku: string, formData: FormData) 
   const costoCampo = Number(formData.get("costo_unitario_pesos"));
   const costo = Number.isFinite(costoCampo) && costoCampo > 0 ? costoCampo : costoPromedioPonderado(todos ?? []);
 
+  // Los totales de la hoja de Isaac ya incluyen lo que el sistema registró
+  // (ej. el último contenedor): se guarda solo la diferencia.
+  const { entradas, salidas } = historicoNeto(totales, registradoEnSistema(todos ?? [], reemplazar), restar);
+  if (entradas <= 0 && salidas <= 0) return { error: "Después de restar lo que ya está en el sistema no queda nada por registrar." };
+
   const fechaCampo = texto(formData, "fecha");
   const creadoEn = fechaCampo ? new Date(`${fechaCampo}T12:00:00`).toISOString() : new Date().toISOString();
   const base = { sku, nombre: ultimo.nombre, bodega_id: bodegaId, piezas_por_caja: ultimo.piezas_por_caja, imagen_url: ultimo.imagen_url, costo_unitario_pesos: costo, creado_en: creadoEn };
-  const filas: Record<string, unknown>[] = [
-    { ...base, tipo: "ENTRADA", cantidad: entradas, referencia: "Histórico de antes del sistema (entradas)", historico: true },
-  ];
+  const filas: Record<string, unknown>[] = [];
+  if (entradas > 0) filas.push({ ...base, tipo: "ENTRADA", cantidad: entradas, referencia: "Histórico de antes del sistema (entradas)", historico: true });
   if (salidas > 0) filas.push({ ...base, tipo: "SALIDA", cantidad: salidas, destino: "Histórico", referencia: "Histórico de antes del sistema (salidas)", historico: true });
 
   const { data: insertados, error: errorInsert, columnasOmitidas } = await insertarMovimientosStock(supabase, filas);

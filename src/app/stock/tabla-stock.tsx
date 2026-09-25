@@ -79,9 +79,14 @@ export function TablaStock({
             </div>
           )}
         </div>
-        <Link href={hrefImprimir} className="shrink-0 text-xs font-medium text-zinc-500 transition hover:text-zinc-900">
-          Imprimir {categoria ? `“${categoria}”` : "hoja de conteo"} →
-        </Link>
+        <div className="flex shrink-0 flex-col items-start gap-1 text-xs font-medium sm:items-end">
+          <Link href={hrefImprimir} className="text-zinc-500 transition hover:text-zinc-900">
+            Imprimir {categoria ? `“${categoria}”` : "hoja de conteo"} →
+          </Link>
+          <Link href={`${hrefImprimir}${hrefImprimir.includes("?") ? "&" : "?"}sin=1`} className="text-zinc-400 transition hover:text-zinc-900">
+            Hoja para bodega (sin cantidades) →
+          </Link>
+        </div>
       </div>
 
       {filtrados.length === 0 ? (

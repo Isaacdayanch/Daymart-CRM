@@ -19,6 +19,9 @@ export interface ProductoExistente {
   sku: string;
   nombre: string;
   stockActual: number;
+  /** Ya registrado en el sistema (sin histórico): para restar del histórico y no contar doble. */
+  entradasSistema: number;
+  salidasSistema: number;
   imagenUrl: string | null;
   marcaId: string | null;
   categoria: string | null;
@@ -73,7 +76,13 @@ export function FormularioProductoStock({
     if (!skuManual) setSku(armarSku(d));
   };
 
-  const quedan = (Number(entradas) || 0) - (Number(salidas) || 0);
+  const [restar, setRestar] = useState(true);
+  const sistemaEntradas = origen === "EXISTENTE" && existente ? existente.entradasSistema : 0;
+  const sistemaSalidas = origen === "EXISTENTE" && existente ? existente.salidasSistema : 0;
+  const haySistema = sistemaEntradas > 0 || sistemaSalidas > 0;
+  const histEntradas = haySistema && restar ? Math.max(0, (Number(entradas) || 0) - sistemaEntradas) : Number(entradas) || 0;
+  const histSalidas = haySistema && restar ? Math.max(0, (Number(salidas) || 0) - sistemaSalidas) : Number(salidas) || 0;
+  const quedan = (origen === "EXISTENTE" && existente ? existente.stockActual : 0) + histEntradas - histSalidas;
   const skuFinal = origen === "EXISTENTE" ? existente?.sku ?? "" : sku;
   const nombreFinal = origen === "EXISTENTE" ? existente?.nombre ?? "" : nombre;
 
@@ -86,6 +95,7 @@ export function FormularioProductoStock({
         formData.set("nombre", nombreFinal);
         formData.set("modo", modo);
         if (origen === "EXISTENTE" && existente) {
+          formData.set("restar_registrado", haySistema && restar ? "true" : "false");
           formData.set("imagen_url_previa", existente.imagenUrl ?? "");
           if (existente.marcaId) formData.set("marca_id", existente.marcaId);
           if (existente.categoria) formData.set("categoria", existente.categoria);
@@ -228,6 +238,16 @@ export function FormularioProductoStock({
                 <CampoFecha name="fecha" defaultValue={hoyTexto} max={hoyTexto} />
               </div>
             </div>
+            {haySistema && (
+              <label className="flex items-start gap-2 text-xs text-zinc-700 sm:col-span-3">
+                <input type="checkbox" checked={restar} onChange={(e) => setRestar(e.target.checked)} className="mt-0.5" />
+                <span>
+                  Mis totales de la hoja <strong>ya incluyen</strong> lo que el sistema tiene registrado de este producto (entraron {sistemaEntradas.toLocaleString("es-MX")}
+                  {sistemaSalidas > 0 && <> y salieron {sistemaSalidas.toLocaleString("es-MX")}</>}): réstalo para no contar doble.
+                  {restar && <span className="block text-[11px] text-zinc-500">Se guardan como histórico: {histEntradas.toLocaleString("es-MX")} entradas y {histSalidas.toLocaleString("es-MX")} salidas.</span>}
+                </span>
+              </label>
+            )}
             <p className="text-[11px] text-zinc-500 sm:col-span-2">Se guarda como una entrada y una salida marcadas “histórico”: en la ficha ves ese pasado, el stock actual queda en lo que quedan, y esas salidas no ensucian el cálculo de reorden.</p>
           </div>
         ) : (
