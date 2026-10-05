@@ -125,9 +125,25 @@ export interface ProductoCatalogo {
   ancho_cm: number;
   alto_cm: number;
   memo: string | null;
+  /** Descripción / medidas de la PIEZA (no de la caja), para el catálogo de
+   * vendedores. Migración 0043. */
+  descripcion?: string | null;
   creado_en: string;
   actualizado_en: string;
   eliminado_en: string | null;
+}
+
+/** Link secreto para que un vendedor externo vea el catálogo sin login
+ * (migración 0043). */
+export interface AccesoCatalogo {
+  id: string;
+  nombre: string;
+  token: string;
+  notas: string | null;
+  creado_en: string;
+  ultimo_acceso_en: string | null;
+  visitas: number;
+  revocado_en: string | null;
 }
 
 export interface Producto {

@@ -63,6 +63,17 @@ export function FilaCatalogo({
             <label className="block text-xs font-medium text-zinc-500">Categoría</label>
             <CampoSugerencias name="categoria" value={categoria} onChange={setCategoria} sugerencias={categorias} className={claseCampo} />
           </div>
+          <div className="sm:col-span-2 lg:col-span-4">
+            <label className="block text-xs font-medium text-zinc-500">Descripción / medidas de la pieza (para el catálogo de vendedores)</label>
+            <textarea
+              name="descripcion"
+              defaultValue={p.descripcion ?? ""}
+              rows={2}
+              placeholder="Ej. Espejo de cuerpo completo 160 × 50 cm, marco de aluminio negro, incluye soporte de pared"
+              className={claseCampo}
+            />
+            <p className="mt-1 text-[11px] text-zinc-400">Las medidas de arriba (largo × ancho × alto) son de la caja de importación; aquí va cómo es la pieza para el cliente.</p>
+          </div>
           <div className="flex items-end gap-2">
             <button type="submit" className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700">
               Guardar
@@ -99,6 +110,7 @@ export function FilaCatalogo({
           {p.linea && <span>· {p.linea}</span>}
           {p.categoria && <span>· {p.categoria}</span>}
         </p>
+        {p.descripcion && <p className="mt-0.5 truncate text-xs text-zinc-400">{p.descripcion}</p>}
       </div>
       <div className="shrink-0 text-right">
         <p className="text-sm font-semibold tabular-nums text-zinc-900">{stock === null ? "—" : `${stock.toLocaleString("es-MX")} pzas`}</p>

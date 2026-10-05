@@ -1,5 +1,10 @@
 import Link from "next/link";
+import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
+import { obtenerPerfilActual } from "@/lib/perfil";
+import type { AccesoCatalogo } from "@/lib/tipos";
+import { AccesosVendedores } from "./accesos-vendedores";
+import { FormularioPdfCatalogo } from "./formulario-pdf";
 import { obtenerCatalogo, obtenerMarcas } from "@/lib/catalogo";
 import { resumenPorSku } from "@/lib/calculos-stock";
 import { obtenerPiezasPorCajaPorSku } from "@/lib/productos-stock";
@@ -31,6 +36,21 @@ export default async function CatalogoProductos({ searchParams }: { searchParams
   const resumenes = resumenPorSku(movimientos ?? [], configuracion?.dias_espera ?? 60, piezasPorCajaPorSku);
   const stockPorSku = new Map(resumenes.map((r) => [r.sku, r.stockActual]));
 
+  // Catálogo para vendedores (solo dueño): links secretos + PDF.
+  const perfil = await obtenerPerfilActual();
+  const esDueno = perfil?.rol === "dueno";
+  let accesos: AccesoCatalogo[] = [];
+  let faltaSqlAccesos = false;
+  if (esDueno) {
+    const { data, error } = await supabase.from("accesos_catalogo").select("*").order("creado_en", { ascending: false }).returns<AccesoCatalogo[]>();
+    accesos = data ?? [];
+    faltaSqlAccesos = Boolean(error);
+  }
+  const h = await headers();
+  const host = h.get("x-forwarded-host") ?? h.get("host") ?? "daymart-crm.vercel.app";
+  const proto = h.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
+  const baseUrl = `${proto}://${host}`;
+
   const categorias = Array.from(new Set(catalogo.map((p) => p.categoria).filter((c): c is string => Boolean(c)))).sort();
   const lineas = Array.from(new Set(catalogo.map((p) => p.linea).filter((l): l is string => Boolean(l)))).sort();
   const productosPorMarca: Record<string, number> = {};
@@ -48,6 +68,17 @@ export default async function CatalogoProductos({ searchParams }: { searchParams
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
           Falta correr el SQL 0038 en Supabase para que exista el catálogo y las marcas.
         </div>
+      )}
+
+      {esDueno && (
+        <section className="space-y-4">
+          <div>
+            <h2 className="text-base font-semibold text-zinc-900">Catálogo para vendedores</h2>
+            <p className="text-xs text-zinc-500">Lo que tus vendedores externos pueden ver: productos, descripción, empaque y piezas disponibles en bodega. Sin precios (eso viene después).</p>
+          </div>
+          <AccesosVendedores accesos={accesos} baseUrl={baseUrl} faltaSql={faltaSqlAccesos} />
+          <FormularioPdfCatalogo categorias={categorias} marcas={marcas.map((m) => m.nombre)} />
+        </section>
       )}
 
       <Marcas marcas={marcas} productosPorMarca={productosPorMarca} />
