@@ -133,154 +133,157 @@ interface OperacionRecepcion {
   crudo: Crudo;
 }
 
-/** Operaciones de stock de tipo recepción (inbound_reception) en Full:
- * cada una es "llegaron N piezas del inventario X por el envío Y".
- * `/stock/fulfillment/operations/search` SÍ existe (contestó 400 en la
- * prueba real del 5 oct), pero es quisquilloso con los parámetros: se
- * prueban varias formas (rango de fechas, formato, con/sin tipo) hasta dar
- * con la que acepta, y con esa se recorre todo el periodo por ventanas. */
-async function operacionesRecepcion(sellerId: number, desde: Date, hasta: Date, inventarios: string[]): Promise<{ operaciones: OperacionRecepcion[]; camino: string | null }> {
-  const leerOperacion = (op: Crudo): OperacionRecepcion | null => {
-    const tipo = textoDe(primero(op, ["type", "operation_type"]))?.toLowerCase() ?? "";
-    if (tipo && !/inbound|reception|receiv/.test(tipo)) return null;
-    const inboundId = textoDe(primero(op, ["detail.inbound_id", "detail.inbound.id", "inbound_id", "detail.external_reference", "detail.reference", "reference", "external_reference"]));
-    if (!inboundId) return null;
+/** Operaciones de stock en Full por inventario. Lo que ML contestó en la
+ * prueba real (5 oct): `/stock/fulfillment/operations/search` EXIGE
+ * `inventory_id` ("The field inventory_id is required") y NO acepta
+ * `type=inbound_reception` ("The field type has an invalid value"). Por eso
+ * se pregunta inventario por inventario, SIN tipo, y aquí se filtran las
+ * operaciones que parezcan recepciones (type con inbound/recep/entrada).
+ * Se anotan los tipos distintos que regresa ML para aprender el nombre real. */
+async function operacionesRecepcion(
+  sellerId: number,
+  desde: Date,
+  hasta: Date,
+  inventarios: string[],
+  presupuestoMs = 40000,
+): Promise<{ operaciones: OperacionRecepcion[]; camino: string | null; tiposVistos: string[] }> {
+  const inicio = Date.now();
+  const BASE = "/stock/fulfillment/operations/search";
+  const tiposVistos = new Map<string, number>();
+  const esRecepcion = (tipo: string) => /inbound|recep|entrada|ingreso|receiv/.test(tipo);
+  const leerOperacion = (op: Crudo, inventoryIdPedido: string): OperacionRecepcion | null => {
+    const tipo = (textoDe(primero(op, ["type", "operation_type", "sub_type", "subtype"])) ?? "?").toLowerCase();
+    tiposVistos.set(tipo, (tiposVistos.get(tipo) ?? 0) + 1);
+    if (!esRecepcion(tipo)) return null;
+    const inboundId = textoDe(
+      primero(op, ["detail.inbound_id", "detail.inbound.id", "inbound_id", "detail.external_reference", "detail.reference", "detail.source_id", "detail.document_id", "reference", "external_reference", "source.id"]),
+    );
     return {
-      operacionId: textoDe(primero(op, ["id", "operation_id"])) ?? `${inboundId}:${textoDe(primero(op, ["inventory_id", "detail.inventory_id"])) ?? "?"}:${textoDe(primero(op, ["date_created", "date"])) ?? ""}`,
-      inboundId,
-      inventoryId: textoDe(primero(op, ["inventory_id", "detail.inventory_id", "result.inventory_id"])),
-      cantidad: numero(primero(op, ["detail.quantity", "detail.received_quantity", "quantity", "result.quantity", "stock_values.quantity", "detail.units", "units"])),
+      operacionId: textoDe(primero(op, ["id", "operation_id"])) ?? `${inboundId ?? "?"}:${inventoryIdPedido}:${textoDe(primero(op, ["date_created", "date"])) ?? ""}`,
+      inboundId: inboundId ?? `sin-numero:${textoDe(primero(op, ["date_created", "date"]))?.slice(0, 10) ?? "?"}`,
+      inventoryId: textoDe(primero(op, ["inventory_id", "detail.inventory_id", "result.inventory_id"])) ?? inventoryIdPedido,
+      cantidad: numero(primero(op, ["detail.quantity", "detail.received_quantity", "quantity", "result.quantity", "stock_values.quantity", "detail.units", "units", "result.total_quantity"])),
       fecha: textoDe(primero(op, ["date_created", "date", "created_at"])),
       crudo: op,
     };
   };
-  const BASE = "/stock/fulfillment/operations/search";
   const formatos: Record<string, (d: Date) => string> = {
     "ml (-00:00)": fechaMl,
     "sin milisegundos": (d) => d.toISOString().replace(/\.\d{3}Z$/, "-00:00"),
     "Z": (d) => d.toISOString(),
     "solo fecha": (d) => d.toISOString().slice(0, 10),
   };
-  const paginar = async (params: URLSearchParams) => {
+  const armar = (inv: string, d: Date | null, h: Date | null, formato: string, limite = 50) => {
+    const p = new URLSearchParams({ seller_id: String(sellerId), inventory_id: inv });
+    if (d && h && formato !== "sin fechas") {
+      p.set("date_from", formatos[formato](d));
+      p.set("date_to", formatos[formato](h));
+    }
+    p.set("limit", String(limite));
+    return p;
+  };
+  const paginar = async (inv: string, d: Date | null, h: Date | null, formato: string) => {
     const operaciones: OperacionRecepcion[] = [];
     let crudas = 0;
-    for (let offset = 0, vuelta = 0; vuelta < 40; vuelta++) {
+    const params = armar(inv, d, h, formato);
+    for (let offset = 0, vuelta = 0; vuelta < 20; vuelta++) {
       params.set("offset", String(offset));
       const r = await mercadolibreGet<unknown>(`${BASE}?${params}`);
       const filas = lista(r);
       crudas += filas.length;
       for (const op of filas) {
-        const leida = leerOperacion(op);
+        const leida = leerOperacion(op, inv);
         if (leida) operaciones.push(leida);
       }
       const paging = objeto((r as Crudo)?.paging);
       const total = numero(paging.total) ?? filas.length;
-      const limite = numero(params.get("limit")) ?? 50;
-      offset += limite;
-      if (filas.length < limite || offset >= total) break;
+      offset += 50;
+      if (filas.length < 50 || offset >= total) break;
     }
     return { operaciones, crudas };
   };
-  const armar = (d: Date, h: Date, formato: string, conTipo: boolean, limite: number, inventoryId?: string) => {
-    const p = new URLSearchParams({ seller_id: String(sellerId) });
-    if (inventoryId) p.set("inventory_id", inventoryId);
-    if (formato !== "sin fechas") {
-      p.set("date_from", formatos[formato](d));
-      p.set("date_to", formatos[formato](h));
-    }
-    if (conTipo) p.set("type", "inbound_reception");
-    p.set("limit", String(limite));
-    return p;
-  };
 
-  // Variantes en orden: ventana corta primero (si ML limita el rango, es lo más probable).
-  const variantes: { dias: number; formato: string; conTipo: boolean; limite: number }[] = [];
-  for (const dias of [7, 30, 90]) for (const formato of ["ml (-00:00)", "sin milisegundos", "Z", "solo fecha"]) variantes.push({ dias, formato, conTipo: true, limite: 50 });
-  variantes.push({ dias: 7, formato: "ml (-00:00)", conTipo: false, limite: 50 });
-  variantes.push({ dias: 7, formato: "ml (-00:00)", conTipo: true, limite: 20 });
-  variantes.push({ dias: 0, formato: "sin fechas", conTipo: true, limite: 50 });
-  variantes.push({ dias: 0, formato: "sin fechas", conTipo: false, limite: 20 });
+  if (!inventarios.length) {
+    anotar(BASE, "no hay publicaciones en Full con inventario para consultar — sincroniza Publicaciones primero");
+    return { operaciones: [], camino: null, tiposVistos: [] };
+  }
 
-  let aceptada: (typeof variantes)[number] | null = null;
+  // 1) Con el primer inventario se descubre qué forma acepta ML (rango y formato de fecha).
+  const variantes: { dias: number; formato: string }[] = [];
+  for (const dias of [90, 30, 7]) for (const formato of ["ml (-00:00)", "sin milisegundos", "Z", "solo fecha"]) variantes.push({ dias, formato });
+  variantes.push({ dias: 0, formato: "sin fechas" });
+  let aceptada: { dias: number; formato: string } | null = null;
   const erroresVistos = new Set<string>();
   for (const v of variantes) {
-    const d = new Date(hasta.getTime() - v.dias * DIA_MS);
-    const params = armar(d, hasta, v.formato, v.conTipo, v.limite);
+    const d = v.dias ? new Date(hasta.getTime() - v.dias * DIA_MS) : null;
     try {
-      const r = await mercadolibreGet<unknown>(`${BASE}?${params}`);
-      const filas = lista(r);
-      anotar(`${BASE} (${v.dias ? `${v.dias} días` : "sin fechas"}, formato ${v.formato}${v.conTipo ? "" : ", sin tipo"}, limit ${v.limite})`, `ACEPTADA: ${filas.length} operación(es) en la primera página`);
+      const r = await paginar(inventarios[0], d, v.dias ? hasta : null, v.formato);
+      anotar(`${BASE}?inventory_id=${inventarios[0]} (${v.dias ? `${v.dias} días` : "sin fechas"}, formato ${v.formato})`, `ACEPTADA: ${r.crudas} operación(es), ${r.operaciones.length} de recepción`);
       aceptada = v;
       break;
     } catch (e) {
       const m = mensajeError(e);
-      // Mismo error repetido no se anota mil veces.
       const clave = m.slice(0, 80);
       if (!erroresVistos.has(clave)) {
         erroresVistos.add(clave);
-        anotar(`${BASE} (${v.dias ? `${v.dias} días` : "sin fechas"}, formato ${v.formato}${v.conTipo ? "" : ", sin tipo"}, limit ${v.limite})`, `error: ${m}`);
+        anotar(`${BASE}?inventory_id=${inventarios[0]} (${v.dias ? `${v.dias} días` : "sin fechas"}, formato ${v.formato})`, `error: ${m}`);
       }
     }
   }
+  if (!aceptada) return { operaciones: [], camino: null, tiposVistos: Array.from(tiposVistos.keys()) };
 
-  if (aceptada) {
-    // Con la forma aceptada se recorre todo el periodo por ventanas del mismo tamaño.
-    const operaciones: OperacionRecepcion[] = [];
-    let crudas = 0;
-    if (aceptada.dias === 0) {
-      const r = await paginar(armar(desde, hasta, aceptada.formato, aceptada.conTipo, aceptada.limite));
-      operaciones.push(...r.operaciones);
-      crudas += r.crudas;
-    } else {
-      const ventanaMs = aceptada.dias * DIA_MS;
-      for (let fin = hasta.getTime(); fin > desde.getTime(); fin -= ventanaMs) {
-        const ini = Math.max(desde.getTime(), fin - ventanaMs);
+  // 2) Todos los inventarios con la forma aceptada, en tandas de 10, mientras alcance el tiempo.
+  const operaciones: OperacionRecepcion[] = [];
+  let crudas = 0;
+  let ok = 0;
+  let errores = 0;
+  let ultimoError = "";
+  let procesados = 0;
+  const ventanaMs = (aceptada.dias || 90) * DIA_MS;
+  for (let i = 0; i < inventarios.length; i += 10) {
+    if (Date.now() - inicio > presupuestoMs) break;
+    const tanda = inventarios.slice(i, i + 10);
+    const resultados = await Promise.all(
+      tanda.map(async (inv) => {
+        const acumulado: OperacionRecepcion[] = [];
+        let crudasInv = 0;
         try {
-          const r = await paginar(armar(new Date(ini), new Date(fin), aceptada.formato, aceptada.conTipo, aceptada.limite));
-          operaciones.push(...r.operaciones);
-          crudas += r.crudas;
-        } catch (e) {
-          anotar(`${BASE} ventana ${new Date(ini).toISOString().slice(0, 10)}…${new Date(fin).toISOString().slice(0, 10)}`, `error: ${mensajeError(e)}`);
-          break;
-        }
-      }
-    }
-    anotar(`${BASE} (periodo completo)`, `${crudas} operación(es), ${operaciones.length} de recepción con número de envío`);
-    if (crudas > 0 && operaciones.length === 0) anotar(`${BASE}`, "ML sí regresa operaciones pero ninguna trae el número de envío donde lo busco — revisar el crudo");
-    if (operaciones.length) return { operaciones, camino: BASE };
-    if (crudas > 0) return { operaciones: [], camino: BASE };
-  }
-
-  // Por inventario (las publicaciones en Full), en tandas de 8, con la forma aceptada (o 7 días si ninguna).
-  if (inventarios.length) {
-    const v = aceptada ?? { dias: 7, formato: "ml (-00:00)", conTipo: true, limite: 50 };
-    const operaciones: OperacionRecepcion[] = [];
-    let ok = 0;
-    let errores = 0;
-    let ultimoError = "";
-    const d = new Date(hasta.getTime() - (v.dias || 30) * DIA_MS);
-    for (let i = 0; i < inventarios.length && i < 120; i += 8) {
-      const tanda = inventarios.slice(i, i + 8);
-      const resultados = await Promise.all(
-        tanda.map(async (inv) => {
-          try {
-            const r = await paginar(armar(d, hasta, v.formato, v.conTipo, v.limite, inv));
-            ok++;
-            return r.operaciones;
-          } catch (e) {
-            errores++;
-            ultimoError = mensajeError(e);
-            return [];
+          if (aceptada!.dias === 0) {
+            const r = await paginar(inv, null, null, "sin fechas");
+            acumulado.push(...r.operaciones);
+            crudasInv += r.crudas;
+          } else {
+            for (let fin = hasta.getTime(); fin > desde.getTime(); fin -= ventanaMs) {
+              const ini = Math.max(desde.getTime(), fin - ventanaMs);
+              const r = await paginar(inv, new Date(ini), new Date(fin), aceptada!.formato);
+              acumulado.push(...r.operaciones);
+              crudasInv += r.crudas;
+            }
           }
-        }),
-      );
-      for (const r of resultados) operaciones.push(...r);
-      if (errores >= 8 && ok === 0) break;
+          ok++;
+        } catch (e) {
+          errores++;
+          ultimoError = mensajeError(e);
+        }
+        return { acumulado, crudasInv };
+      }),
+    );
+    for (const r of resultados) {
+      operaciones.push(...r.acumulado);
+      crudas += r.crudasInv;
     }
-    anotar(`${BASE} por inventario`, `${ok} inventario(s) ok, ${errores} con error${ultimoError ? ` (${ultimoError})` : ""}, ${operaciones.length} recepción(es)`);
-    if (operaciones.length) return { operaciones, camino: `${BASE} (por inventario)` };
+    procesados = Math.min(i + 10, inventarios.length);
   }
-  return { operaciones: [], camino: null };
+  const tipos = Array.from(tiposVistos.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 12)
+    .map(([t, n]) => `${t} (${n})`);
+  anotar(
+    `${BASE} por inventario`,
+    `${procesados} de ${inventarios.length} inventarios revisados, ${ok} ok, ${errores} con error${ultimoError ? ` (${ultimoError})` : ""}; ${crudas} operación(es) en total, ${operaciones.length} de recepción. Tipos que regresa ML: ${tipos.join(", ") || "ninguno"}`,
+  );
+  if (crudas > 0 && operaciones.length === 0) anotar(BASE, "ML regresa operaciones pero ninguna parece recepción por su tipo — con los tipos de arriba ajusto el filtro");
+  return { operaciones, camino: operaciones.length ? `${BASE} (por inventario)` : null, tiposVistos: Array.from(tiposVistos.keys()) };
 }
 
 interface InboundLeido {
@@ -314,30 +317,9 @@ function leerInbound(o: Crudo): InboundLeido | null {
   };
 }
 
-/** Lista de envíos (inbound) del vendedor: se intentan varios caminos. */
-async function listarInbounds(sellerId: number): Promise<{ inbounds: InboundLeido[]; camino: string | null }> {
-  const caminos = [
-    `/fulfillment/inbound/search?seller_id=${sellerId}&limit=50`,
-    `/fulfillment/inbounds/search?seller_id=${sellerId}&limit=50`,
-    `/inbound/search?seller_id=${sellerId}&limit=50`,
-    `/fulfillment/inbound?seller_id=${sellerId}&limit=50`,
-    `/users/${sellerId}/fulfillment/inbounds?limit=50`,
-    `/users/${sellerId}/inbounds/search?limit=50`,
-    `/inbounds/search?seller_id=${sellerId}&limit=50`,
-  ];
-  for (const camino of caminos) {
-    try {
-      const r = await mercadolibreGet<unknown>(camino);
-      const filas = lista(r);
-      const inbounds = filas.map(leerInbound).filter((x): x is InboundLeido => x !== null);
-      anotar(camino, `ok, ${filas.length} envío(s)${filas.length && !inbounds.length ? " pero sin id reconocible" : ""}`);
-      if (inbounds.length) return { inbounds, camino: camino.split("?")[0] };
-    } catch (e) {
-      anotar(camino, `error: ${mensajeError(e)}`);
-    }
-  }
-  return { inbounds: [], camino: null };
-}
+// (Los caminos de "lista de envíos" — /fulfillment/inbound/search, /inbound/search,
+// etc. — NO existen en la API: todos dieron 404 en la prueba real del 5 oct.
+// Se quitaron para no perder tiempo en cada corrida.)
 
 /** Detalle de un envío por id (para los que solo conocemos por sus recepciones). */
 async function detalleInbound(sellerId: number, inboundId: string, caminoConocido: string | null): Promise<{ inbound: InboundLeido | null; camino: string | null }> {
@@ -396,7 +378,7 @@ export async function probarLecturaEnvio(inboundId: string): Promise<{ ruta: str
 
 /** Trae los envíos a Full de los últimos `diasAtras` días y los guarda.
  * Regresa cuántos envíos se vieron y si alguno pasó a "recibido" nuevo. */
-export async function sincronizarEnviosFull(opciones: { diasAtras?: number } = {}) {
+export async function sincronizarEnviosFull(opciones: { diasAtras?: number; presupuestoMs?: number } = {}) {
   const supabase = createServiceClient();
   const conexion = await obtenerConexion();
   if (!conexion) throw new Error("Mercado Libre no está conectado.");
@@ -419,17 +401,24 @@ export async function sincronizarEnviosFull(opciones: { diasAtras?: number } = {
     const { data: existentes } = await supabase.from("mercadolibre_envios_full").select("inbound_id, estado, confirmado_en").returns<{ inbound_id: string; estado: EstadoEnvioMl; confirmado_en: string | null }[]>();
     const estadoPrevio = new Map((existentes ?? []).map((e) => [e.inbound_id, e.estado]));
 
-    // 1) Lista de envíos (planeados, colectados, recibidos…)
-    const { inbounds, camino: caminoLista } = await listarInbounds(conexion.ml_user_id);
+    // 1) Lista de envíos: en la prueba real (5 oct) NINGÚN camino de lista
+    // existe en la API (404), así que ya no se intenta — se construye todo a
+    // partir de las recepciones de stock por inventario.
+    const inbounds: InboundLeido[] = [];
+    const caminoLista: string | null = null;
     // 2) Recepciones reales de stock (lo que ML contó, por inventario)
     const inventariosFull = Array.from(new Set(publicaciones.filter((p) => p.inventory_id && p.logistica === "Full").map((p) => p.inventory_id as string)));
-    const { operaciones, camino: caminoOps } = await operacionesRecepcion(conexion.ml_user_id, desde, hasta, inventariosFull);
+    // Inventarios en Full primero (los que más probablemente recibieron), luego el resto.
+    const inventariosTodos = Array.from(new Set(publicaciones.filter((p) => p.inventory_id).map((p) => p.inventory_id as string)));
+    const inventariosOrdenados = [...inventariosFull, ...inventariosTodos.filter((i) => !inventariosFull.includes(i))];
+    const { operaciones, camino: caminoOps } = await operacionesRecepcion(conexion.ml_user_id, desde, hasta, inventariosOrdenados, opciones.presupuestoMs ?? 40000);
 
     const inboundsPorId = new Map(inbounds.map((i) => [i.inboundId, i]));
     // Envíos que solo conocemos por sus recepciones: se intenta su detalle.
     let caminoDetalle: string | null = null;
     const faltantes = Array.from(new Set(operaciones.map((o) => o.inboundId))).filter((id) => !inboundsPorId.has(id));
-    for (const id of faltantes.slice(0, 20)) {
+    // Solo se intenta el detalle del primero: en la prueba real esos caminos dieron 404.
+    for (const id of faltantes.slice(0, 1)) {
       const { inbound, camino } = await detalleInbound(conexion.ml_user_id, id, caminoDetalle);
       if (inbound) {
         inboundsPorId.set(id, inbound);
