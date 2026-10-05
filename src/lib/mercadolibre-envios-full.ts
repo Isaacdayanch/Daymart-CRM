@@ -17,6 +17,20 @@ import type { Bodega, EnvioFullLinea } from "@/lib/tipos";
 
 const DIA_MS = 86400000;
 
+/** Bitácora de la corrida: qué se le pidió a ML y qué contestó, para
+ * diagnosticar con Isaac (se guarda en mercadolibre_sync.endpoint_envios_full). */
+let intentos: string[] = [];
+function anotar(ruta: string, resultado: string) {
+  intentos.push(`${ruta.split("?")[0]} → ${resultado}`.slice(0, 300));
+}
+function mensajeError(e: unknown) {
+  return (e instanceof Error ? e.message : String(e)).replace(/^Mercado Libre respondió /, "").slice(0, 200);
+}
+/** Fecha en el formato que ML suele pedir en Full: 2026-10-05T00:00:00.000-00:00 */
+function fechaMl(d: Date) {
+  return d.toISOString().replace("Z", "-00:00");
+}
+
 export type EstadoEnvioMl = "PLANEADO" | "COLECTADO" | "RECIBIDO" | "CONTADO" | "CANCELADO" | "DESCONOCIDO";
 
 export const ETIQUETA_ESTADO_ENVIO_ML: Record<EstadoEnvioMl, string> = {
@@ -115,41 +129,84 @@ interface OperacionRecepcion {
 }
 
 /** Operaciones de stock de tipo recepción (inbound_reception) en Full:
- * cada una es "llegaron N piezas del inventario X por el envío Y". */
-async function operacionesRecepcion(sellerId: number, desde: string, hasta: string): Promise<{ operaciones: OperacionRecepcion[]; camino: string | null }> {
+ * cada una es "llegaron N piezas del inventario X por el envío Y". Primero
+ * se intenta por vendedor; si ML exige inventario, se consulta inventario
+ * por inventario (los de las publicaciones en Full). */
+async function operacionesRecepcion(sellerId: number, desde: string, hasta: string, inventarios: string[]): Promise<{ operaciones: OperacionRecepcion[]; camino: string | null }> {
+  const leerOperacion = (op: Crudo): OperacionRecepcion | null => {
+    const tipo = textoDe(primero(op, ["type", "operation_type"]))?.toLowerCase() ?? "";
+    if (tipo && !/inbound|reception|receiv/.test(tipo)) return null;
+    const inboundId = textoDe(primero(op, ["detail.inbound_id", "detail.inbound.id", "inbound_id", "detail.external_reference", "detail.reference", "reference", "external_reference"]));
+    if (!inboundId) return null;
+    return {
+      operacionId: textoDe(primero(op, ["id", "operation_id"])) ?? `${inboundId}:${textoDe(primero(op, ["inventory_id", "detail.inventory_id"])) ?? "?"}:${textoDe(primero(op, ["date_created", "date"])) ?? ""}`,
+      inboundId,
+      inventoryId: textoDe(primero(op, ["inventory_id", "detail.inventory_id", "result.inventory_id"])),
+      cantidad: numero(primero(op, ["detail.quantity", "detail.received_quantity", "quantity", "result.quantity", "stock_values.quantity", "detail.units", "units"])),
+      fecha: textoDe(primero(op, ["date_created", "date", "created_at"])),
+      crudo: op,
+    };
+  };
+  const paginar = async (ruta: (offset: number) => string) => {
+    const operaciones: OperacionRecepcion[] = [];
+    let crudas = 0;
+    for (let offset = 0, vuelta = 0; vuelta < 40; vuelta++) {
+      const r = await mercadolibreGet<unknown>(ruta(offset));
+      const filas = lista(r);
+      crudas += filas.length;
+      for (const op of filas) {
+        const leida = leerOperacion(op);
+        if (leida) operaciones.push(leida);
+      }
+      const paging = objeto((r as Crudo)?.paging);
+      const total = numero(paging.total) ?? filas.length;
+      offset += 50;
+      if (filas.length < 50 || offset >= total) break;
+    }
+    return { operaciones, crudas };
+  };
+
+  const base = `seller_id=${sellerId}&date_from=${encodeURIComponent(desde)}&date_to=${encodeURIComponent(hasta)}`;
   const caminos = [
-    (offset: number) => `/stock/fulfillment/operations/search?seller_id=${sellerId}&type=inbound_reception&date_from=${encodeURIComponent(desde)}&date_to=${encodeURIComponent(hasta)}&limit=50&offset=${offset}`,
-    (offset: number) => `/stock/fulfillment/operations/search?seller_id=${sellerId}&date_from=${encodeURIComponent(desde)}&date_to=${encodeURIComponent(hasta)}&limit=50&offset=${offset}`,
+    (offset: number) => `/stock/fulfillment/operations/search?${base}&type=inbound_reception&limit=50&offset=${offset}`,
+    (offset: number) => `/stock/fulfillment/operations/search?${base}&limit=50&offset=${offset}`,
   ];
   for (const camino of caminos) {
     try {
-      const operaciones: OperacionRecepcion[] = [];
-      for (let offset = 0, vuelta = 0; vuelta < 40; vuelta++) {
-        const r = await mercadolibreGet<unknown>(camino(offset));
-        const filas = lista(r);
-        for (const op of filas) {
-          const tipo = textoDe(primero(op, ["type", "operation_type"]))?.toLowerCase() ?? "";
-          if (tipo && !/inbound|reception|receiv/.test(tipo)) continue;
-          const inboundId = textoDe(primero(op, ["detail.inbound_id", "detail.inbound.id", "inbound_id", "detail.external_reference", "detail.reference", "reference"]));
-          if (!inboundId) continue;
-          operaciones.push({
-            operacionId: textoDe(primero(op, ["id", "operation_id"])) ?? `${inboundId}:${textoDe(primero(op, ["inventory_id", "detail.inventory_id"])) ?? "?"}:${textoDe(primero(op, ["date_created", "date"])) ?? ""}`,
-            inboundId,
-            inventoryId: textoDe(primero(op, ["inventory_id", "detail.inventory_id", "result.inventory_id"])),
-            cantidad: numero(primero(op, ["detail.quantity", "detail.received_quantity", "quantity", "result.quantity", "stock_values.quantity", "detail.units"])),
-            fecha: textoDe(primero(op, ["date_created", "date", "created_at"])),
-            crudo: op,
-          });
-        }
-        const paging = objeto((r as Crudo)?.paging);
-        const total = numero(paging.total) ?? filas.length;
-        offset += 50;
-        if (filas.length < 50 || offset >= total) break;
-      }
-      return { operaciones, camino: camino(0).split("?")[0] };
-    } catch {
-      // siguiente camino
+      const { operaciones, crudas } = await paginar(camino);
+      anotar(camino(0), `ok, ${crudas} operación(es), ${operaciones.length} de recepción con envío`);
+      if (operaciones.length) return { operaciones, camino: camino(0).split("?")[0] };
+    } catch (e) {
+      anotar(camino(0), `error: ${mensajeError(e)}`);
     }
+  }
+
+  // Por inventario (las publicaciones en Full), en tandas de 8.
+  if (inventarios.length) {
+    const operaciones: OperacionRecepcion[] = [];
+    let ok = 0;
+    let errores = 0;
+    let ultimoError = "";
+    for (let i = 0; i < inventarios.length && i < 120; i += 8) {
+      const tanda = inventarios.slice(i, i + 8);
+      const resultados = await Promise.all(
+        tanda.map(async (inv) => {
+          try {
+            const r = await paginar((offset) => `/stock/fulfillment/operations/search?${base}&inventory_id=${inv}&type=inbound_reception&limit=50&offset=${offset}`);
+            ok++;
+            return r.operaciones;
+          } catch (e) {
+            errores++;
+            ultimoError = mensajeError(e);
+            return [];
+          }
+        }),
+      );
+      for (const r of resultados) operaciones.push(...r);
+      if (errores >= 8 && ok === 0) break;
+    }
+    anotar(`/stock/fulfillment/operations/search?inventory_id=…`, `${ok} inventario(s) ok, ${errores} con error${ultimoError ? ` (${ultimoError})` : ""}, ${operaciones.length} recepción(es)`);
+    if (operaciones.length) return { operaciones, camino: "/stock/fulfillment/operations/search (por inventario)" };
   }
   return { operaciones: [], camino: null };
 }
@@ -191,15 +248,20 @@ async function listarInbounds(sellerId: number): Promise<{ inbounds: InboundLeid
     `/fulfillment/inbound/search?seller_id=${sellerId}&limit=50`,
     `/fulfillment/inbounds/search?seller_id=${sellerId}&limit=50`,
     `/inbound/search?seller_id=${sellerId}&limit=50`,
+    `/fulfillment/inbound?seller_id=${sellerId}&limit=50`,
     `/users/${sellerId}/fulfillment/inbounds?limit=50`,
+    `/users/${sellerId}/inbounds/search?limit=50`,
+    `/inbounds/search?seller_id=${sellerId}&limit=50`,
   ];
   for (const camino of caminos) {
     try {
       const r = await mercadolibreGet<unknown>(camino);
-      const inbounds = lista(r).map(leerInbound).filter((x): x is InboundLeido => x !== null);
+      const filas = lista(r);
+      const inbounds = filas.map(leerInbound).filter((x): x is InboundLeido => x !== null);
+      anotar(camino, `ok, ${filas.length} envío(s)${filas.length && !inbounds.length ? " pero sin id reconocible" : ""}`);
       if (inbounds.length) return { inbounds, camino: camino.split("?")[0] };
-    } catch {
-      // siguiente
+    } catch (e) {
+      anotar(camino, `error: ${mensajeError(e)}`);
     }
   }
   return { inbounds: [], camino: null };
@@ -213,9 +275,10 @@ async function detalleInbound(sellerId: number, inboundId: string, caminoConocid
     try {
       const r = await mercadolibreGet<unknown>(camino);
       const inbound = leerInbound(objeto(r));
+      anotar(camino.replace(inboundId, "{id}"), inbound ? "ok" : "ok pero sin id reconocible");
       if (inbound) return { inbound, camino: camino.replace(inboundId, "{id}").split("?")[0] };
-    } catch {
-      // siguiente
+    } catch (e) {
+      anotar(camino.replace(inboundId, "{id}"), `error: ${mensajeError(e)}`);
     }
   }
   return { inbound: null, camino: null };
@@ -234,6 +297,7 @@ export async function sincronizarEnviosFull(opciones: { diasAtras?: number } = {
   const diasAtras = opciones.diasAtras ?? 60;
   const hasta = new Date();
   const desde = new Date(hasta.getTime() - diasAtras * DIA_MS);
+  intentos = [];
 
   try {
     const publicaciones = await obtenerPublicaciones().catch(() => [] as PublicacionMl[]);
@@ -252,7 +316,8 @@ export async function sincronizarEnviosFull(opciones: { diasAtras?: number } = {
     // 1) Lista de envíos (planeados, colectados, recibidos…)
     const { inbounds, camino: caminoLista } = await listarInbounds(conexion.ml_user_id);
     // 2) Recepciones reales de stock (lo que ML contó, por inventario)
-    const { operaciones, camino: caminoOps } = await operacionesRecepcion(conexion.ml_user_id, desde.toISOString(), hasta.toISOString());
+    const inventariosFull = Array.from(new Set(publicaciones.filter((p) => p.inventory_id && p.logistica === "Full").map((p) => p.inventory_id as string)));
+    const { operaciones, camino: caminoOps } = await operacionesRecepcion(conexion.ml_user_id, fechaMl(desde), fechaMl(hasta), inventariosFull);
 
     const inboundsPorId = new Map(inbounds.map((i) => [i.inboundId, i]));
     // Envíos que solo conocemos por sus recepciones: se intenta su detalle.
@@ -342,12 +407,13 @@ export async function sincronizarEnviosFull(opciones: { diasAtras?: number } = {
       }
     }
 
-    const endpoint = [caminoLista && `lista: ${caminoLista}`, caminoOps && `recepciones: ${caminoOps}`, caminoDetalle && `detalle: ${caminoDetalle}`].filter(Boolean).join(" · ") || "ninguno respondió";
+    const resumen = [caminoLista && `lista: ${caminoLista}`, caminoOps && `recepciones: ${caminoOps}`, caminoDetalle && `detalle: ${caminoDetalle}`].filter(Boolean).join(" · ") || "ninguno respondió";
+    const endpoint = JSON.stringify({ resumen, intentos, inventariosFull: inventariosFull.length, publicaciones: publicaciones.length });
     await supabase.from("mercadolibre_sync").upsert({ id: 1, ultima_sync_envios_full: ahora, ultimo_error_envios_full: null, endpoint_envios_full: endpoint });
-    return { envios: ids.size, recibidosNuevos, endpoint, operaciones: operaciones.length, inbounds: inbounds.length };
+    return { envios: ids.size, recibidosNuevos, endpoint: resumen, intentos, operaciones: operaciones.length, inbounds: inbounds.length };
   } catch (e) {
     const mensaje = e instanceof Error ? e.message : "Error desconocido";
-    await supabase.from("mercadolibre_sync").upsert({ id: 1, ultimo_error_envios_full: mensaje });
+    await supabase.from("mercadolibre_sync").upsert({ id: 1, ultimo_error_envios_full: mensaje, endpoint_envios_full: JSON.stringify({ resumen: "falló", intentos }) });
     throw e;
   }
 }
@@ -373,6 +439,17 @@ export async function obtenerEnviosFullMl(): Promise<{ envio: EnvioFullMl; linea
 /** Envíos que ML ya marcó recibidos y que Isaac todavía no confirma ni descarta. */
 export function enviosPorConfirmar<T extends { envio: EnvioFullMl }>(envios: T[]): T[] {
   return envios.filter(({ envio }) => (envio.estado === "RECIBIDO" || envio.estado === "CONTADO") && !envio.confirmado_en && !envio.ignorado_en);
+}
+
+/** Diagnóstico guardado de la última lectura (resumen + lo que contestó ML en cada camino). */
+export function diagnosticoEnviosFull(texto: string | null | undefined): { resumen: string; intentos: string[]; inventariosFull?: number; publicaciones?: number } | null {
+  if (!texto) return null;
+  try {
+    const j = JSON.parse(texto) as { resumen?: string; intentos?: string[]; inventariosFull?: number; publicaciones?: number };
+    return { resumen: j.resumen ?? "", intentos: j.intentos ?? [], inventariosFull: j.inventariosFull, publicaciones: j.publicaciones };
+  } catch {
+    return { resumen: texto, intentos: [] };
+  }
 }
 
 export async function obtenerEstadoEnviosFull() {

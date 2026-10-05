@@ -10,7 +10,7 @@ import { BotonCancelarEnvio, BotonesDevolucion, BotonesDiferencia, BotonProcesar
 import { FormularioEnvioFull } from "./formulario-envio-full";
 import { TarjetaRecepcion } from "./tarjeta-recepcion";
 import { ConfirmarEnvio } from "./confirmar-envio";
-import { agruparLineas, enviosPorConfirmar, obtenerEnviosFullMl, obtenerEstadoEnviosFull } from "@/lib/mercadolibre-envios-full";
+import { agruparLineas, diagnosticoEnviosFull, enviosPorConfirmar, obtenerEnviosFullMl, obtenerEstadoEnviosFull } from "@/lib/mercadolibre-envios-full";
 import { resolvedorSku } from "@/lib/salidas-ml";
 import { obtenerConexion } from "@/lib/mercadolibre-auth";
 import { formatoFechaHoraMx } from "@/lib/fechas-mx";
@@ -63,6 +63,7 @@ export default async function FullYMercadoLibre() {
   } catch (e) {
     errorEnviosMl = e instanceof Error ? e.message : "No se pudieron leer los envíos de Mercado Libre.";
   }
+  const diagnostico = diagnosticoEnviosFull(estadoEnviosMl?.endpoint_envios_full);
   const porConfirmarMl = enviosPorConfirmar(enviosMl).map((e) => e.envio.inbound_id);
   const enviosMlOrdenados = [...enviosMl.filter((e) => porConfirmarMl.includes(e.envio.inbound_id)), ...enviosMl.filter((e) => !porConfirmarMl.includes(e.envio.inbound_id))];
   const enviosMlActivos = enviosMlOrdenados.filter((e) => !e.envio.confirmado_en && !e.envio.ignorado_en && e.envio.estado !== "CANCELADO");
@@ -104,9 +105,21 @@ export default async function FullYMercadoLibre() {
         </div>
         {errorEnviosMl && <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{errorEnviosMl} — si dice que falta una tabla, corre el SQL 0042 en Supabase.</div>}
         {estadoEnviosMl?.ultimo_error_envios_full && <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">La última lectura falló: {estadoEnviosMl.ultimo_error_envios_full}</div>}
-        {estadoEnviosMl?.endpoint_envios_full === "ninguno respondió" && (
+        {diagnostico && (diagnostico.resumen === "ninguno respondió" || diagnostico.resumen === "falló" || enviosMl.length === 0) && (
           <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-            Mercado Libre no contestó en ninguno de los caminos que conozco para leer envíos a Full. Revisa que la aplicación tenga el permiso de Full en el DevCenter y mándame captura de tu panel de envíos para ajustar la lectura.
+            <p className="font-medium">Mercado Libre no regresó envíos a Full por ninguno de los caminos que conozco.</p>
+            <p className="mt-1 text-xs">
+              Desde mi lado no puedo llamar a Mercado Libre, así que esto es lo que contestó cada camino en la última lectura
+              {typeof diagnostico.publicaciones === "number" && <> ({diagnostico.publicaciones} publicaciones guardadas, {diagnostico.inventariosFull ?? 0} inventarios en Full)</>}. Mándame captura de esta lista:
+            </p>
+            <ul className="mt-2 space-y-1 font-mono text-[11px] text-amber-900">
+              {diagnostico.intentos.length === 0 && <li>(sin intentos registrados — corre “Actualizar envíos desde Mercado Libre” otra vez)</li>}
+              {diagnostico.intentos.map((t, i) => (
+                <li key={i} className="break-all">
+                  {t}
+                </li>
+              ))}
+            </ul>
           </div>
         )}
         {enviosMlActivos.length === 0 && !errorEnviosMl ? (
@@ -133,8 +146,17 @@ export default async function FullYMercadoLibre() {
             </div>
           </details>
         )}
-        {estadoEnviosMl?.endpoint_envios_full && estadoEnviosMl.endpoint_envios_full !== "ninguno respondió" && (
-          <p className="text-[11px] text-zinc-400">Camino de la API que respondió: {estadoEnviosMl.endpoint_envios_full}</p>
+        {diagnostico && enviosMl.length > 0 && (
+          <details className="text-[11px] text-zinc-400">
+            <summary className="cursor-pointer">Camino de la API que respondió: {diagnostico.resumen}</summary>
+            <ul className="mt-1 space-y-0.5 font-mono">
+              {diagnostico.intentos.map((t, i) => (
+                <li key={i} className="break-all">
+                  {t}
+                </li>
+              ))}
+            </ul>
+          </details>
         )}
       </section>
 
