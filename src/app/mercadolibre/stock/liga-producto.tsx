@@ -49,7 +49,10 @@ export function LigaProducto({
   if (editando) {
     return (
       <div className="w-full space-y-1.5 lg:w-56">
-        <SelectorProducto opciones={opciones} value={elegido} onChange={setElegido} />
+        {/* El panel se abre hacia la izquierda y más ancho que la columna
+            (que en compu mide 14rem): si no, la lista salía recortada y
+            "corta y chiquita" (Isaac, 5 oct). */}
+        <SelectorProducto opciones={opciones} value={elegido} onChange={setElegido} panelClase="right-0 w-full lg:w-[30rem]" />
         <div className="flex items-center gap-2 text-xs">
           <button
             type="button"

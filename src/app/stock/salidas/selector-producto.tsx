@@ -13,10 +13,16 @@ export function SelectorProducto({
   opciones,
   value,
   onChange,
+  panelClase = "left-0 w-full min-w-72",
 }: {
   opciones: Opcion[];
   value: string;
   onChange: (sku: string) => void;
+  /** Clases de posición/ancho del panel desplegable. Por defecto se abre
+   * debajo con el mismo ancho del botón; en celdas angostas (ej. la tarjeta
+   * de Publicaciones de ML) se puede pedir `right-0 w-full lg:w-[30rem]`
+   * para que se abra hacia la izquierda, más ancho. */
+  panelClase?: string;
 }) {
   const [abierto, setAbierto] = useState(false);
   const [busqueda, setBusqueda] = useState("");
@@ -76,7 +82,7 @@ export function SelectorProducto({
       </button>
 
       {abierto && (
-        <div className="absolute z-20 mt-1.5 w-full min-w-72 overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-xl">
+        <div className={`absolute z-30 mt-1.5 overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-xl ${panelClase}`}>
           <div className="border-b border-zinc-100 p-2">
             <input
               ref={buscadorRef}
@@ -87,7 +93,7 @@ export function SelectorProducto({
               className="block w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-sm focus:border-zinc-500 focus:ring-1 focus:ring-zinc-300 focus:outline-none"
             />
           </div>
-          <div className="max-h-72 overflow-y-auto py-1">
+          <div className="max-h-80 overflow-y-auto py-1">
             {filtradas.length === 0 ? (
               <p className="px-4 py-3 text-sm text-zinc-400">Sin resultados.</p>
             ) : (

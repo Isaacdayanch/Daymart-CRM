@@ -152,8 +152,10 @@ export default async function StockMercadoLibre({
   // Lista de tarjetas en vez de tabla: foto grande, título a dos líneas,
   // IDs de ML claros, y los números en su propia rejilla — en el celular se
   // apila solo, sin scroll horizontal (Isaac: "se ve muy amontonado").
+  // overflow-visible a propósito: el desplegable "Producto del CRM" se abre
+  // por fuera de la tarjeta; con overflow-hidden se recortaba.
   const tabla = (lista: GrupoPublicacion[]) => (
-    <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
+    <div className="overflow-visible rounded-2xl border border-zinc-200 bg-white shadow-sm">
       <ul className="divide-y divide-zinc-100">
         {lista.map((g) => {
           const p = g.principal;
