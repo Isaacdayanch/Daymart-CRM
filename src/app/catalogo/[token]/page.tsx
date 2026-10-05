@@ -32,6 +32,9 @@ export default async function CatalogoPublico({
   const base = `/catalogo/${token}`;
   const hrefCon = (cambios: Partial<typeof filtros>) => `${base}${queryDeFiltros({ ...filtros, ...cambios })}`;
   const esVendedor = modo === "vendedor";
+  // Link "por categoría" para clientes: el cliente ve solo esa categoría,
+  // sin pastillas para brincar a las demás (Isaac, 5 oct).
+  const categoriaFija = !esVendedor && filtros.categoria ? filtros.categoria : null;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-zinc-50 to-white">
@@ -39,7 +42,7 @@ export default async function CatalogoPublico({
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-4 sm:px-6">
           <div className="min-w-0">
             <Logo href={base} />
-            <h1 className="mt-0.5 truncate text-lg font-semibold tracking-tight text-zinc-900">{esVendedor ? "Catálogo de productos" : `Catálogo de ${vendedor.nombre}`}</h1>
+            <h1 className="mt-0.5 truncate text-lg font-semibold tracking-tight text-zinc-900">{esVendedor ? "Catálogo de productos" : `Catálogo de ${vendedor.nombre}${categoriaFija ? ` · ${categoriaFija}` : ""}`}</h1>
           </div>
           <a
             href={`${base}/imprimir${queryDeFiltros(filtros)}`}
@@ -58,7 +61,7 @@ export default async function CatalogoPublico({
             <p className="text-sm text-zinc-600">
               Hola, <span className="font-medium text-zinc-900">{vendedor.nombre}</span>. Aquí ves el precio de venta, tu comisión por pieza y las piezas disponibles en bodega hoy.
             </p>
-            <BotonesCompartir linkClientes={`/catalogo/${vendedor.token_clientes}`} nombre={vendedor.nombre} />
+            <BotonesCompartir linkClientes={`/catalogo/${vendedor.token_clientes}`} nombre={vendedor.nombre} categorias={categorias} />
           </>
         ) : (
           <p className="text-sm text-zinc-600">
@@ -91,7 +94,7 @@ export default async function CatalogoPublico({
           </button>
         </form>
 
-        {categorias.length > 1 && (
+        {categorias.length > 1 && !categoriaFija && (
           <div className="mt-3 flex flex-wrap gap-1.5 text-xs">
             <Link href={hrefCon({ categoria: undefined })} className={`rounded-full px-3 py-1.5 ${!filtros.categoria ? "bg-zinc-900 text-white" : "bg-white text-zinc-600 ring-1 ring-zinc-200 hover:text-zinc-900"}`}>
               Todas

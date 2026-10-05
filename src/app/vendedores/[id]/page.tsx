@@ -25,7 +25,7 @@ export default async function FichaVendedorPagina({ params }: { params: Promise<
       <Link href="/vendedores" className="text-xs text-zinc-500 hover:text-zinc-900">
         ← Todos los vendedores
       </Link>
-      <FichaVendedor vendedor={vendedor} baseUrl={baseUrl} />
+      <FichaVendedor vendedor={vendedor} baseUrl={baseUrl} categorias={catalogo.categorias} />
       <ComisionesEspeciales
         vendedor={vendedor}
         especiales={especiales ?? []}

@@ -53,7 +53,34 @@ function TarjetaLink({ titulo, descripcion, url, whatsapp, color }: { titulo: st
   );
 }
 
-export function FichaVendedor({ vendedor: v, baseUrl }: { vendedor: Vendedor; baseUrl: string }) {
+function LinksPorCategoria({ base, categorias, nombre }: { base: string; categorias: string[]; nombre: string }) {
+  if (categorias.length < 2) return null;
+  return (
+    <details className="rounded-xl border border-zinc-200 bg-white p-4">
+      <summary className="cursor-pointer text-sm font-medium text-zinc-900">Links para clientes por categoría ({categorias.length})</summary>
+      <p className="mt-1 text-xs text-zinc-500">Cada link abre solo esa categoría (sin precios ni cantidades), para mandarlo directo a un cliente.</p>
+      <ul className="mt-2 divide-y divide-zinc-100">
+        {categorias.map((c) => {
+          const url = `${base}?categoria=${encodeURIComponent(c)}`;
+          return (
+            <li key={c} className="flex flex-wrap items-center gap-2 py-2 text-xs">
+              <span className="min-w-28 font-medium text-zinc-800">{c}</span>
+              <BotonCopiar texto={url} etiqueta="Copiar link" />
+              <a href={`https://wa.me/?text=${encodeURIComponent(`Catálogo de ${c} (${nombre}): ${url}`)}`} target="_blank" rel="noreferrer" className="text-zinc-500 hover:text-zinc-900 hover:underline">
+                WhatsApp
+              </a>
+              <a href={url} target="_blank" rel="noreferrer" className="text-zinc-500 hover:text-zinc-900 hover:underline">
+                ver
+              </a>
+            </li>
+          );
+        })}
+      </ul>
+    </details>
+  );
+}
+
+export function FichaVendedor({ vendedor: v, baseUrl, categorias }: { vendedor: Vendedor; baseUrl: string; categorias: string[] }) {
   const router = useRouter();
   const [editando, setEditando] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -160,6 +187,7 @@ export function FichaVendedor({ vendedor: v, baseUrl }: { vendedor: Vendedor; ba
           />
         </div>
       )}
+      {!cortado && <LinksPorCategoria base={linkClientes} categorias={categorias} nombre={v.nombre} />}
 
       <div className="flex flex-wrap items-center gap-3 text-xs">
         {cortado ? (
