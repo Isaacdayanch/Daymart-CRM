@@ -1,11 +1,11 @@
 import { notFound } from "next/navigation";
 import { HojaCatalogoVendedores } from "@/components/catalogo-vendedores";
 import { BotonImprimir } from "../../../contenedores/[id]/imprimir/boton-imprimir";
-import { cargarCatalogoPublico, filtrosDeParams, obtenerAccesoPorToken } from "@/lib/catalogo-vendedores";
+import { cargarCatalogoPublico, filtrosDeParams, obtenerVendedorPorToken } from "@/lib/catalogo-vendedores";
 
 export const dynamic = "force-dynamic";
 
-/** "Descargar PDF" del vendedor: la misma hoja que saca Isaac desde Stock. */
+/** "Descargar PDF" de las páginas públicas (vendedor o sus clientes). */
 export default async function ImprimirCatalogoPublico({
   params,
   searchParams,
@@ -14,12 +14,14 @@ export default async function ImprimirCatalogoPublico({
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
   const { token } = await params;
-  const acceso = await obtenerAccesoPorToken(token);
+  const acceso = await obtenerVendedorPorToken(token);
   if (!acceso) notFound();
+  const { vendedor, modo } = acceso;
   const sp = await searchParams;
   const filtros = filtrosDeParams(sp);
-  const { productos } = await cargarCatalogoPublico(filtros);
+  const { productos } = await cargarCatalogoPublico(vendedor, modo, filtros);
   const subtitulo = [filtros.categoria && `Categoría: ${filtros.categoria}`, filtros.marca && `Marca: ${filtros.marca}`, filtros.q && `Búsqueda: ${filtros.q}`].filter(Boolean).join(" · ");
+  const contacto = modo === "clientes" ? `Pedidos: ${vendedor.nombre}${vendedor.telefono ? ` · ${vendedor.telefono}` : ""}` : null;
 
   return (
     <div className="min-h-screen bg-white">
@@ -27,7 +29,13 @@ export default async function ImprimirCatalogoPublico({
         <p className="text-xs text-zinc-500">Dale &ldquo;Imprimir&rdquo; y elige &ldquo;Guardar como PDF&rdquo;.</p>
         <BotonImprimir />
       </div>
-      <HojaCatalogoVendedores productos={productos} subtitulo={subtitulo || null} />
+      <HojaCatalogoVendedores
+        productos={productos}
+        titulo={modo === "vendedor" ? "Catálogo de productos" : `Catálogo de ${vendedor.nombre}`}
+        subtitulo={subtitulo || null}
+        contacto={contacto}
+        vista={{ modo, conPrecios: vendedor.clientes_ven_precios, conComision: modo === "vendedor" }}
+      />
     </div>
   );
 }

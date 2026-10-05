@@ -309,7 +309,7 @@ export function TarjetaEnvioMl({ datos, bodegas }: { datos: EnvioParaPantalla; b
                     bodegaId || null,
                   );
                   setEnviando(false);
-                  if (r.error) setError(r.error);
+                  if (r.error !== null) setError(r.error);
                   else {
                     setAbierto(false);
                     setMensaje(`Listo: salieron ${r.piezas} piezas de ${r.productos} producto(s).`);

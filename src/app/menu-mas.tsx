@@ -36,6 +36,21 @@ const ITEMS = [
     ),
   },
   {
+    href: "/vendedores",
+    etiqueta: "Vendedores",
+    soloDueno: true,
+    // Persona con una pequeña etiqueta: vendedor externo con su comisión.
+    icono: (
+      <path
+        d="M7.5 8.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5ZM3 15c0-2.5 2-4.5 4.5-4.5S12 12.5 12 15M12.5 6.5h3M14 5v3"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    ),
+  },
+  {
     href: "/contenedores",
     etiqueta: "Contenedores",
     // Contenedor de embarque: rectángulo bajo y ancho con "costillas"

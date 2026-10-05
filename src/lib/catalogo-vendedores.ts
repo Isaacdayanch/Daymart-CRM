@@ -1,16 +1,17 @@
-// Catálogo para vendedores externos (migración 0043).
+// Catálogo para vendedores externos (módulo Vendedores, migración 0044).
 //
-// Una sola fuente de datos para las tres salidas: la página pública del
-// vendedor (`/catalogo/[token]`), su PDF, y el PDF que saca Isaac desde
-// Stock → Catálogo. Aquí NUNCA se calculan ni se devuelven costos, precios
-// ni nada de Finanzas: solo la ficha del producto y las piezas en bodega.
+// Una sola fuente de datos para todas las salidas: la lista de precios de
+// Isaac, el link privado del vendedor, el link para sus clientes y los PDF.
+// El COSTO solo se incluye cuando lo pide Isaac (`conCosto`), nunca en las
+// páginas públicas; Finanzas y contenedores jamás pasan por aquí.
 
 import { randomBytes } from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { resumenPorSku } from "./calculos-stock";
+import { comisionPorPieza, type ReglaComision } from "./calculos-vendedores";
 import { obtenerPiezasPorCajaPorSku } from "./productos-stock";
 import { createServiceClient } from "./supabase/servicio";
-import type { AccesoCatalogo, Marca, MovimientoStock, ProductoCatalogo } from "./tipos";
+import type { ComisionVendedorProducto, Marca, MovimientoStock, ProductoCatalogo, Vendedor } from "./tipos";
 
 export interface ProductoVendedores {
   sku: string;
@@ -28,6 +29,12 @@ export interface ProductoVendedores {
   /** Piezas en bodega (lo que Isaac puede entregar). Full NO se incluye:
    * eso lo vende Mercado Libre directo (decisión de Isaac, 5 oct). */
   stock: number;
+  /** Precio de venta al público (sin IVA). Null = sin precio todavía. */
+  precioVenta: number | null;
+  /** Costo promedio del SKU: SOLO para Isaac (`conCosto`). */
+  costo?: number;
+  /** Comisión por pieza del vendedor al que se le está mostrando. */
+  comision?: number;
 }
 
 export interface FiltrosCatalogo {
@@ -36,6 +43,8 @@ export interface FiltrosCatalogo {
   marca?: string;
   /** true = solo productos con piezas en bodega. */
   soloConStock?: boolean;
+  /** true = solo productos que ya tienen precio de venta. */
+  soloConPrecio?: boolean;
 }
 
 export interface CatalogoVendedores {
@@ -46,7 +55,7 @@ export interface CatalogoVendedores {
   total: number;
 }
 
-/** Lee un valor de búsqueda (`?q=`, `?categoria=`…) de los searchParams. */
+/** Lee los filtros (`?q=`, `?categoria=`…) de los searchParams. */
 export function filtrosDeParams(params: Record<string, string | undefined>): FiltrosCatalogo {
   return {
     q: params.q?.trim() || undefined,
@@ -67,9 +76,13 @@ export function queryDeFiltros(f: FiltrosCatalogo, extra: Record<string, string 
   return s ? `?${s}` : "";
 }
 
-/** Arma el catálogo (ficha + piezas en bodega) con el cliente que se le
- * pase: el de sesión (Isaac desde Stock) o el de servicio (página pública). */
-export async function cargarCatalogoVendedores(supabase: SupabaseClient, filtros: FiltrosCatalogo = {}): Promise<CatalogoVendedores> {
+/** Arma el catálogo (ficha + piezas en bodega + precio) con el cliente que
+ * se le pase: el de sesión (Isaac) o el de servicio (páginas públicas). */
+export async function cargarCatalogoVendedores(
+  supabase: SupabaseClient,
+  filtros: FiltrosCatalogo = {},
+  opciones: { conCosto?: boolean } = {},
+): Promise<CatalogoVendedores> {
   const [{ data: catalogo }, { data: marcas }, { data: movimientos }, piezasPorCajaPorSku] = await Promise.all([
     supabase.from("productos_catalogo").select("*").is("eliminado_en", null).order("nombre").returns<ProductoCatalogo[]>(),
     supabase.from("marcas").select("id, nombre").is("eliminado_en", null).returns<Pick<Marca, "id" | "nombre">[]>(),
@@ -82,6 +95,7 @@ export async function cargarCatalogoVendedores(supabase: SupabaseClient, filtros
 
   const todos: ProductoVendedores[] = (catalogo ?? []).map((p) => {
     const r = stockPorSku.get(p.sku);
+    const precio = p.precio_venta === null || p.precio_venta === undefined ? null : Number(p.precio_venta);
     return {
       sku: p.sku,
       nombre: p.nombre,
@@ -96,12 +110,15 @@ export async function cargarCatalogoVendedores(supabase: SupabaseClient, filtros
       memo: p.memo,
       descripcion: p.descripcion ?? null,
       stock: Math.max(0, r?.stockActual ?? 0),
+      precioVenta: precio && precio > 0 ? precio : null,
+      ...(opciones.conCosto ? { costo: r?.costoPromedio ?? 0 } : {}),
     };
   });
 
   const texto = filtros.q?.toLowerCase();
   const productos = todos
     .filter((p) => !filtros.soloConStock || p.stock > 0)
+    .filter((p) => !filtros.soloConPrecio || p.precioVenta !== null)
     .filter((p) => !filtros.categoria || p.categoria === filtros.categoria)
     .filter((p) => !filtros.marca || p.marca === filtros.marca)
     .filter((p) => !texto || [p.nombre, p.sku, p.categoria, p.linea, p.marca, p.descripcion].some((t) => t?.toLowerCase().includes(texto)))
@@ -113,30 +130,72 @@ export async function cargarCatalogoVendedores(supabase: SupabaseClient, filtros
   return { productos, categorias, marcas: marcasUsadas, total: todos.length };
 }
 
-/** Token largo al azar para el link del vendedor (32 caracteres, letras y
- * números seguros para URL). */
+/** Regla de comisión que aplica a un vendedor para un SKU: la especial del
+ * producto si existe, si no la habitual del vendedor. */
+export function reglaComisionDe(vendedor: Pick<Vendedor, "comision_pct" | "comision_fija">, especiales: ComisionVendedorProducto[], sku: string): ReglaComision {
+  const e = especiales.find((c) => c.sku === sku);
+  if (e) return { pct: Number(e.comision_pct) || 0, fija: Number(e.comision_fija) || 0 };
+  return { pct: Number(vendedor.comision_pct) || 0, fija: Number(vendedor.comision_fija) || 0 };
+}
+
+/** Le pone a cada producto la comisión por pieza de ese vendedor. */
+export function conComisionDe(productos: ProductoVendedores[], vendedor: Vendedor, especiales: ComisionVendedorProducto[]) {
+  return productos.map((p) => ({
+    ...p,
+    comision: p.precioVenta ? comisionPorPieza(p.precioVenta, reglaComisionDe(vendedor, especiales, p.sku)) : undefined,
+  }));
+}
+
+/** Token largo al azar para los links (32 caracteres, letras y números
+ * seguros para URL). */
 export function generarTokenAcceso() {
   return randomBytes(24).toString("base64url");
 }
 
-/** Busca el acceso por su token con la service role key (la página pública
- * no tiene sesión). Devuelve null si no existe o ya se cortó. Si
- * `registrarVisita`, anota la fecha y suma una visita. */
-export async function obtenerAccesoPorToken(token: string, registrarVisita = false): Promise<AccesoCatalogo | null> {
-  if (!token || token.length < 16 || token.length > 64) return null;
+export type ModoCatalogo = "vendedor" | "clientes";
+
+/** Busca el vendedor por cualquiera de sus dos tokens con la service role
+ * key (las páginas públicas no tienen sesión). Devuelve también en qué
+ * modo se abrió (link privado del vendedor o link para sus clientes). Null
+ * si no existe, está cortado o eliminado. Si `registrarVisita`, anota la
+ * fecha y suma una visita al contador del modo correspondiente. */
+export async function obtenerVendedorPorToken(token: string, registrarVisita = false): Promise<{ vendedor: Vendedor; modo: ModoCatalogo } | null> {
+  if (!token || token.length < 16 || token.length > 80) return null;
   const servicio = createServiceClient();
-  const { data } = await servicio.from("accesos_catalogo").select("*").eq("token", token).is("revocado_en", null).maybeSingle<AccesoCatalogo>();
+  const { data } = await servicio
+    .from("vendedores")
+    .select("*")
+    .or(`token_vendedor.eq.${token},token_clientes.eq.${token}`)
+    .is("revocado_en", null)
+    .is("eliminado_en", null)
+    .maybeSingle<Vendedor>();
   if (!data) return null;
+  const modo: ModoCatalogo = data.token_vendedor === token ? "vendedor" : "clientes";
   if (registrarVisita) {
-    await servicio.from("accesos_catalogo").update({ ultimo_acceso_en: new Date().toISOString(), visitas: (data.visitas ?? 0) + 1 }).eq("id", data.id);
+    const ahora = new Date().toISOString();
+    await servicio
+      .from("vendedores")
+      .update(
+        modo === "vendedor"
+          ? { ultimo_acceso_en: ahora, visitas: (data.visitas ?? 0) + 1 }
+          : { ultimo_acceso_clientes_en: ahora, visitas_clientes: (data.visitas_clientes ?? 0) + 1 },
+      )
+      .eq("id", data.id);
   }
-  return data;
+  return { vendedor: data, modo };
 }
 
-/** Catálogo para la página pública: usa la service role key y SOLO entrega
- * los campos de `ProductoVendedores` (sin costos). */
-export async function cargarCatalogoPublico(filtros: FiltrosCatalogo) {
-  return cargarCatalogoVendedores(createServiceClient(), filtros);
+/** Catálogo para las páginas públicas (service role key, SIN costo). En
+ * modo vendedor se agrega su comisión por pieza. Solo productos con precio
+ * (sin precio no se ofrece). */
+export async function cargarCatalogoPublico(vendedor: Vendedor, modo: ModoCatalogo, filtros: FiltrosCatalogo) {
+  const servicio = createServiceClient();
+  const [catalogo, { data: especiales }] = await Promise.all([
+    cargarCatalogoVendedores(servicio, { ...filtros, soloConPrecio: true }),
+    servicio.from("comisiones_vendedor_producto").select("*").eq("vendedor_id", vendedor.id).returns<ComisionVendedorProducto[]>(),
+  ]);
+  if (modo === "vendedor") catalogo.productos = conComisionDe(catalogo.productos, vendedor, especiales ?? []);
+  return catalogo;
 }
 
 export function medidasTexto(p: Pick<ProductoVendedores, "largoCm" | "anchoCm" | "altoCm">) {

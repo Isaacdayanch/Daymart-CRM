@@ -128,22 +128,41 @@ export interface ProductoCatalogo {
   /** Descripción / medidas de la PIEZA (no de la caja), para el catálogo de
    * vendedores. Migración 0043. */
   descripcion?: string | null;
+  /** Precio de venta al público para vendedores (sin IVA). Null = sin
+   * precio todavía. Migración 0044. */
+  precio_venta?: number | null;
   creado_en: string;
   actualizado_en: string;
   eliminado_en: string | null;
 }
 
-/** Link secreto para que un vendedor externo vea el catálogo sin login
- * (migración 0043). */
-export interface AccesoCatalogo {
+/** Vendedor externo (migración 0044): vende los productos de Daymart a sus
+ * clientes y cobra comisión. Tiene un link privado y otro para sus clientes. */
+export interface Vendedor {
   id: string;
   nombre: string;
-  token: string;
+  telefono: string | null;
   notas: string | null;
+  comision_pct: number;
+  comision_fija: number;
+  token_vendedor: string;
+  token_clientes: string;
+  clientes_ven_precios: boolean;
   creado_en: string;
   ultimo_acceso_en: string | null;
   visitas: number;
+  ultimo_acceso_clientes_en: string | null;
+  visitas_clientes: number;
   revocado_en: string | null;
+  eliminado_en: string | null;
+}
+
+/** Comisión especial de un vendedor para un producto concreto. */
+export interface ComisionVendedorProducto {
+  vendedor_id: string;
+  sku: string;
+  comision_pct: number;
+  comision_fija: number;
 }
 
 export interface Producto {

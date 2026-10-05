@@ -4,7 +4,6 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { texto } from "@/lib/form-helpers";
 import { obtenerPerfilActual } from "@/lib/perfil";
-import { generarTokenAcceso } from "@/lib/catalogo-vendedores";
 
 async function esDueno() {
   const perfil = await obtenerPerfilActual();
@@ -79,7 +78,7 @@ export async function actualizarProductoCatalogo(sku: string, formData: FormData
   // lo demás y se avisa.
   if (error && /descripcion/.test(error.message)) {
     ({ error } = await supabase.from("productos_catalogo").update(cambios).eq("sku", sku));
-    if (!error && descripcion) return { error: "Se guardó todo menos la descripción: falta correr el SQL 0043 en Supabase." };
+    if (!error && descripcion) return { error: "Se guardó todo menos la descripción: falta correr el SQL 0044 en Supabase." };
   }
   if (error) return { error: error.message };
   await supabase.from("movimientos_stock").update({ nombre }).eq("sku", sku);
@@ -89,50 +88,3 @@ export async function actualizarProductoCatalogo(sku: string, formData: FormData
   return { error: null };
 }
 
-// ---------- Accesos para vendedores externos (migración 0043) ----------
-
-function refrescarAccesos() {
-  revalidatePath("/stock/catalogo");
-}
-
-/** Crea un link secreto nuevo para un vendedor. */
-export async function crearAccesoCatalogo(formData: FormData) {
-  if (!(await esDueno())) return { error: "Solo el dueño puede crear accesos." };
-  const nombre = texto(formData, "nombre");
-  if (!nombre) return { error: "Ponle un nombre al vendedor (para saber de quién es el link)." };
-  const supabase = await createClient();
-  const { error } = await supabase.from("accesos_catalogo").insert({ nombre, notas: texto(formData, "notas"), token: generarTokenAcceso() });
-  if (error) return { error: /accesos_catalogo/.test(error.message) ? "Falta correr el SQL 0043 en Supabase." : error.message };
-  refrescarAccesos();
-  return { error: null };
-}
-
-/** Corta el acceso: el link deja de funcionar al instante. Se conserva el
- * registro para ver el historial (y poder reactivarlo si fue error). */
-export async function cortarAccesoCatalogo(accesoId: string) {
-  if (!(await esDueno())) return { error: "Solo el dueño puede cortar accesos." };
-  const supabase = await createClient();
-  const { error } = await supabase.from("accesos_catalogo").update({ revocado_en: new Date().toISOString() }).eq("id", accesoId);
-  if (error) return { error: error.message };
-  refrescarAccesos();
-  return { error: null };
-}
-
-export async function reactivarAccesoCatalogo(accesoId: string) {
-  if (!(await esDueno())) return { error: "Solo el dueño puede reactivar accesos." };
-  const supabase = await createClient();
-  const { error } = await supabase.from("accesos_catalogo").update({ revocado_en: null }).eq("id", accesoId);
-  if (error) return { error: error.message };
-  refrescarAccesos();
-  return { error: null };
-}
-
-/** Borra un acceso cortado (ya no se necesita el historial). */
-export async function eliminarAccesoCatalogo(accesoId: string) {
-  if (!(await esDueno())) return { error: "Solo el dueño puede quitar accesos." };
-  const supabase = await createClient();
-  const { error } = await supabase.from("accesos_catalogo").delete().eq("id", accesoId).not("revocado_en", "is", null);
-  if (error) return { error: error.message };
-  refrescarAccesos();
-  return { error: null };
-}
