@@ -184,7 +184,7 @@ async function operacionesRecepcion(
     // inbound_id son traslados de ML ENTRE SUS PROPIAS BODEGAS (2–3 piezas,
     // decenas por día, números que no están en su panel). NO son sus envíos:
     // se cuentan aparte y no se muestran como envíos.
-    let clase: OperacionRecepcion["clase"];
+    let clase: "RECEPCION" | "PLAN" | "AJUSTE";
     if (/transfer/.test(tipo)) {
       traslados++;
       return null;
@@ -204,7 +204,7 @@ async function operacionesRecepcion(
       operacionId: `${idCrudo}|${inventoryIdPedido}|${fecha ?? ""}|${tipo}|${cantidad}`,
       inboundId,
       inventoryId: textoDe(op.inventory_id) ?? inventoryIdPedido,
-      cantidad: clase === "PLAN" ? Math.abs(cantidad) : cantidad,
+      cantidad: (clase as string) === "PLAN" ? Math.abs(cantidad) : cantidad,
       fecha,
       clase,
       crudo: op,
