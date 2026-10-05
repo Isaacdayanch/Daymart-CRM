@@ -697,6 +697,92 @@ export function agruparLineas(lineas: EnvioFullMlLinea[]): LineaAgrupada[] {
 }
 
 // ---------------------------------------------------------------------------
+// Plan B de Isaac (5 oct): "ponme un buscador donde pego el número de envío,
+// tú me avientas el envío, yo lo confirmo y se registra". Como la API de ML
+// no da el contenido del envío (todos los caminos dan 404), el envío se
+// arma con lo que SÍ sabemos: los productos cuyo stock en Full SUBIÓ desde
+// la fecha en que empezó a llegar (recepciones detectadas por diferencia de
+// totales, `mercadolibre_full_recepciones`, que se registran en cada
+// sincronización de publicaciones). Isaac revisa las cantidades y confirma.
+// ---------------------------------------------------------------------------
+
+export async function armarEnvioDesdeRecepciones(numero: string, desdeIso: string): Promise<{ error: string | null; productos: number; piezas: number }> {
+  const supabase = createServiceClient();
+  const inboundId = numero.trim().replace(/^#/, "").replace(/[^0-9A-Za-z_-]/g, "");
+  if (!inboundId) return { error: "Escribe el número del envío tal como sale en tu panel (ej. 77396369).", productos: 0, piezas: 0 };
+
+  const { data: existente } = await supabase.from("mercadolibre_envios_full").select("inbound_id, confirmado_en, ignorado_en").eq("inbound_id", inboundId).maybeSingle<{ inbound_id: string; confirmado_en: string | null; ignorado_en: string | null }>();
+  if (existente?.confirmado_en) return { error: `El envío ${inboundId} ya está confirmado (ya salió de bodega). Si te equivocaste, ábrelo abajo y dale "deshacer".`, productos: 0, piezas: 0 };
+
+  // Recepciones detectadas (stock en Full que subió) desde esa fecha, sin
+  // atender todavía, sumadas por inventario.
+  const { data: recepciones, error } = await supabase
+    .from("mercadolibre_full_recepciones")
+    .select("inventory_id, item_id, variation_id, titulo, cantidad, detectado_en")
+    .gte("detectado_en", desdeIso)
+    .is("atendido_en", null)
+    .order("detectado_en", { ascending: true })
+    .returns<{ inventory_id: string; item_id: string | null; variation_id: number | null; titulo: string | null; cantidad: number; detectado_en: string }[]>();
+  if (error) return { error: `No se pudieron leer las recepciones (¿falta el SQL 0035?): ${error.message}`, productos: 0, piezas: 0 };
+
+  const publicaciones = await obtenerPublicaciones().catch(() => [] as PublicacionMl[]);
+  const porInventario = new Map<string, PublicacionMl>();
+  for (const p of publicaciones) if (p.inventory_id && (!porInventario.has(p.inventory_id) || (porInventario.get(p.inventory_id)!.catalogo && !p.catalogo))) porInventario.set(p.inventory_id, p);
+
+  const porInv = new Map<string, { cantidad: number; item_id: string | null; variation_id: number | null; titulo: string | null; fecha: string }>();
+  for (const r of recepciones ?? []) {
+    const g = porInv.get(r.inventory_id) ?? { cantidad: 0, item_id: r.item_id, variation_id: r.variation_id, titulo: r.titulo, fecha: r.detectado_en };
+    g.cantidad += Number(r.cantidad) || 0;
+    porInv.set(r.inventory_id, g);
+  }
+  const ahora = new Date().toISOString();
+  const lineas = Array.from(porInv.entries())
+    .filter(([, g]) => g.cantidad > 0)
+    .map(([inventoryId, g]) => {
+      const pub = porInventario.get(inventoryId);
+      return {
+        inbound_id: inboundId,
+        operacion_id: `manual:${inboundId}:${inventoryId}`,
+        inventory_id: inventoryId,
+        item_id: g.item_id ?? pub?.item_id ?? null,
+        variation_id: g.variation_id ?? pub?.variation_id ?? null,
+        titulo: g.titulo ?? pub?.titulo ?? null,
+        seller_sku: pub?.seller_sku ?? null,
+        imagen_url: pub?.imagen_url ?? null,
+        cantidad_planeada: null,
+        cantidad_recibida: g.cantidad,
+        fecha: g.fecha,
+        crudo: { origen: "recepciones detectadas por diferencia de totales en Full", desde: desdeIso },
+      };
+    });
+  const piezas = lineas.reduce((s, l) => s + l.cantidad_recibida, 0);
+
+  const fila = {
+    inbound_id: inboundId,
+    estado: "RECIBIDO",
+    estado_ml: "capturado a mano (número del panel de ML)",
+    fecha_creacion: desdeIso,
+    fecha_recepcion: lineas.map((l) => l.fecha).sort().pop() ?? ahora,
+    piezas_planeadas: null,
+    piezas_recibidas: piezas,
+    origen: "manual",
+    crudo: { numero: inboundId, desde: desdeIso, nota: "Armado desde el buscador por número de envío con lo que subió en Full desde esa fecha." },
+    confirmado_en: null,
+    ignorado_en: null,
+    actualizado_en: ahora,
+  };
+  const { error: errorEnvio } = await supabase.from("mercadolibre_envios_full").upsert(fila, { onConflict: "inbound_id" });
+  if (errorEnvio) return { error: `No se pudo guardar el envío (¿falta el SQL 0042?): ${errorEnvio.message}`, productos: 0, piezas: 0 };
+  // Se reemplazan las líneas del envío (si ya se había armado antes con otra fecha).
+  await supabase.from("mercadolibre_envios_full_lineas").delete().eq("inbound_id", inboundId);
+  if (lineas.length) {
+    const { error: errorLineas } = await supabase.from("mercadolibre_envios_full_lineas").insert(lineas);
+    if (errorLineas) return { error: `No se pudieron guardar los productos: ${errorLineas.message}`, productos: 0, piezas: 0 };
+  }
+  return { error: null, productos: lineas.length, piezas };
+}
+
+// ---------------------------------------------------------------------------
 // Confirmar la salida de bodega
 // ---------------------------------------------------------------------------
 
@@ -756,9 +842,15 @@ export async function confirmarEnvioFullMl(
 
   await supabase.from("mercadolibre_envios_full").update({ confirmado_en: ahora }).eq("inbound_id", inboundId);
 
-  // Las recepciones detectadas por diferencia de totales ya quedan explicadas.
+  // Las recepciones detectadas por diferencia de totales ya quedan explicadas
+  // (por SKU y también por inventario, para las publicaciones sin ligar).
   const skus = Array.from(new Set(validas.map((d) => d.sku)));
   await supabase.from("mercadolibre_full_recepciones").update({ atendido_en: ahora, decision: "SALIDA" }).is("atendido_en", null).in("sku_crm", skus);
+  const { data: lineasEnvio } = await supabase.from("mercadolibre_envios_full_lineas").select("inventory_id").eq("inbound_id", inboundId).returns<{ inventory_id: string | null }[]>();
+  const inventarios = Array.from(new Set((lineasEnvio ?? []).map((l) => l.inventory_id).filter((x): x is string => Boolean(x))));
+  if (inventarios.length) {
+    await supabase.from("mercadolibre_full_recepciones").update({ atendido_en: ahora, decision: "SALIDA" }).is("atendido_en", null).in("inventory_id", inventarios);
+  }
 
   // Envíos armados a mano en el CRM (opcional): se les anota lo recibido y se cierran si ya quedaron completos.
   const { data: lineasCrm } = await supabase

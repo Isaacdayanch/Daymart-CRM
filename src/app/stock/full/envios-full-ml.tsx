@@ -6,7 +6,8 @@ import { useRouter } from "next/navigation";
 import { formatoFechaHoraMx } from "@/lib/fechas-mx";
 import { ETIQUETA_ESTADO_ENVIO_ML, type EnvioFullMl, type LineaAgrupada } from "@/lib/mercadolibre-envios-full";
 import { Selector } from "@/components/selector";
-import { confirmarEnvioMl, deshacerConfirmacionMl, ignorarEnvioMl, probarEnvioMl, sincronizarEnviosFullAhora } from "./actions";
+import { CampoFecha } from "@/components/campo-fecha";
+import { buscarEnvioMl, confirmarEnvioMl, deshacerConfirmacionMl, ignorarEnvioMl, probarEnvioMl, sincronizarEnviosFullAhora } from "./actions";
 
 export interface LineaParaPantalla extends LineaAgrupada {
   /** Producto del CRM resuelto por la liga (null = sin ligar). */
@@ -59,6 +60,63 @@ export function BotonActualizarEnviosMl({ conectado }: { conectado: boolean }) {
       </button>
       {mensaje && <span className={`text-xs ${mensaje.startsWith("Error") ? "text-red-600" : "text-emerald-700"}`}>{mensaje}</span>}
     </div>
+  );
+}
+
+/** Buscador por número de envío (plan B de Isaac): pega el número de su
+ * panel de ML y desde cuándo empezó a llegar; el sistema arma el envío con
+ * los productos que subieron en Full desde esa fecha y lo deja listo para
+ * revisar y confirmar. */
+export function BuscarEnvioMl() {
+  const router = useRouter();
+  const hoy = new Date();
+  const hace14 = new Date(hoy.getTime() - 14 * 86400000).toISOString().slice(0, 10);
+  const [numero, setNumero] = useState("");
+  const [desde, setDesde] = useState(hace14);
+  const [cargando, setCargando] = useState(false);
+  const [mensaje, setMensaje] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <form
+      onSubmit={async (e) => {
+        e.preventDefault();
+        setCargando(true);
+        setError(null);
+        setMensaje(null);
+        const r = await buscarEnvioMl(numero, desde);
+        setCargando(false);
+        if (r.error) setError(r.error);
+        else if (r.productos === 0) setMensaje(`Se creó el envío ${numero.trim()}, pero Mercado Libre no ha reportado subidas de stock en Full desde esa fecha. Dale a "Actualizar desde Mercado Libre" en Publicaciones y vuelve a buscar, o cambia la fecha.`);
+        else {
+          setMensaje(`Listo: el envío ${numero.trim()} quedó abajo con ${r.productos} producto(s) y ${r.piezas} piezas que subieron en Full. Revísalo y confirma.`);
+          setNumero("");
+        }
+        router.refresh();
+      }}
+      className="rounded-2xl border border-[#2D3277]/20 bg-[#2D3277]/5 p-4 sm:p-5"
+    >
+      <p className="text-sm font-semibold text-zinc-900">Buscar un envío por su número</p>
+      <p className="mt-0.5 text-xs text-zinc-600">
+        Pega el número tal como sale en tu panel de Mercado Libre (“Gestión de envíos Full”) y desde qué día empezó a llegar. Te armo el envío con los productos que subieron en Full desde esa fecha; tú revisas las piezas y confirmas la salida de bodega.
+      </p>
+      <div className="mt-3 flex flex-wrap items-end gap-3">
+        <div>
+          <label className="block text-[11px] font-medium text-zinc-500">Número de envío</label>
+          <input type="text" value={numero} onChange={(e) => setNumero(e.target.value)} placeholder="77396369" required className="mt-1 w-44 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm" />
+        </div>
+        <div>
+          <label className="block text-[11px] font-medium text-zinc-500">Empezó a llegar desde</label>
+          <div className="mt-1 w-44">
+            <CampoFecha name="desde" defaultValue={hace14} max={hoy.toISOString().slice(0, 10)} onChange={setDesde} />
+          </div>
+        </div>
+        <button type="submit" disabled={cargando || !numero.trim()} className="rounded-xl bg-[#2D3277] px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-[#232860] disabled:opacity-50">
+          {cargando ? "Armando…" : "Buscar envío"}
+        </button>
+      </div>
+      {mensaje && <p className="mt-2 text-xs text-emerald-700">{mensaje}</p>}
+      {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+    </form>
   );
 }
 

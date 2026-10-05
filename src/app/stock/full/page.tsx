@@ -14,7 +14,7 @@ import { agruparLineas, diagnosticoEnviosFull, enviosPorConfirmar, obtenerEnvios
 import { resolvedorSku } from "@/lib/salidas-ml";
 import { obtenerConexion } from "@/lib/mercadolibre-auth";
 import { formatoFechaHoraMx } from "@/lib/fechas-mx";
-import { BotonActualizarEnviosMl, ProbarEnvioMl, TarjetaEnvioMl, type EnvioParaPantalla } from "./envios-full-ml";
+import { BotonActualizarEnviosMl, BuscarEnvioMl, ProbarEnvioMl, TarjetaEnvioMl, type EnvioParaPantalla } from "./envios-full-ml";
 
 export const maxDuration = 60;
 
@@ -93,47 +93,46 @@ export default async function FullYMercadoLibre() {
       <section id="envios-ml" className="space-y-3">
         <div className="flex flex-wrap items-end justify-between gap-2">
           <div>
-            <h2 className="text-lg font-semibold text-zinc-900">Envíos a Full (desde Mercado Libre)</h2>
+            <h2 className="text-lg font-semibold text-zinc-900">Envíos a Full</h2>
             <p className="text-sm text-zinc-500">
-              Tus envíos tal como están en el panel de Mercado Libre: planeados, colectados y recibidos. Cuando ML marca uno como recibido, aquí aparece para que confirmes la salida de tu bodega con un clic — nada se descuenta sin tu confirmación.
+              Busca el envío por su número de Mercado Libre: te lo armo con los productos que subieron en Full, lo revisas y confirmas la salida de tu bodega con un clic — nada se descuenta sin tu confirmación.
             </p>
-          </div>
-          <div className="flex flex-col items-end gap-1">
-            <BotonActualizarEnviosMl conectado={Boolean(conexion)} />
-            {estadoEnviosMl?.ultima_sync_envios_full && <p className="text-[11px] text-zinc-400">leído {formatoFechaHoraMx(estadoEnviosMl.ultima_sync_envios_full)} · se actualiza solo cada 15 min</p>}
           </div>
         </div>
+        <BuscarEnvioMl />
         {errorEnviosMl && <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{errorEnviosMl} — si dice que falta una tabla, corre el SQL 0042 en Supabase.</div>}
-        {estadoEnviosMl?.ultimo_error_envios_full && <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">La última lectura falló: {estadoEnviosMl.ultimo_error_envios_full}</div>}
-        {diagnostico && (diagnostico.resumen === "ninguno respondió" || diagnostico.resumen === "falló" || enviosMl.length === 0) && (
-          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-            <p className="font-medium">Mercado Libre no regresó envíos a Full por ninguno de los caminos que conozco.</p>
-            <p className="mt-1 text-xs">
-              Desde mi lado no puedo llamar a Mercado Libre, así que esto es lo que contestó cada camino en la última lectura
-              {typeof diagnostico.publicaciones === "number" && <> ({diagnostico.publicaciones} publicaciones guardadas, {diagnostico.inventariosFull ?? 0} inventarios en Full)</>}. Mándame captura de esta lista:
-            </p>
-            <ul className="mt-2 space-y-1 font-mono text-[11px] text-amber-900">
-              {diagnostico.intentos.length === 0 && <li>(sin intentos registrados — corre “Actualizar envíos desde Mercado Libre” otra vez)</li>}
-              {diagnostico.intentos.map((t, i) => (
-                <li key={i} className="break-all">
-                  {t}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
         <details className="group rounded-2xl border border-zinc-200 bg-zinc-50/60">
           <summary className="cursor-pointer select-none px-5 py-3 text-sm text-zinc-500 hover:text-zinc-800">
             <span className="mr-1 inline-block transition-transform group-open:rotate-90">▸</span>
-            Diagnóstico: probar con un número de envío de tu panel
+            Lectura automática desde Mercado Libre (en pruebas) y diagnóstico
           </summary>
-          <div className="px-2 pb-2">
+          <div className="space-y-3 px-4 pb-4">
+            <p className="text-xs text-zinc-500">
+              Mercado Libre todavía no da por su API el contenido de tus envíos (todos los caminos contestan 404); esta lectura solo encuentra movimientos de stock. Queda aquí para seguir probando sin estorbar.
+            </p>
+            <div className="flex flex-col items-start gap-1">
+              <BotonActualizarEnviosMl conectado={Boolean(conexion)} />
+              {estadoEnviosMl?.ultima_sync_envios_full && <p className="text-[11px] text-zinc-400">última lectura {formatoFechaHoraMx(estadoEnviosMl.ultima_sync_envios_full)}</p>}
+              {estadoEnviosMl?.ultimo_error_envios_full && <p className="text-xs text-red-700">La última lectura falló: {estadoEnviosMl.ultimo_error_envios_full}</p>}
+            </div>
+            {diagnostico && diagnostico.intentos.length > 0 && (
+              <details className="text-[11px] text-zinc-500">
+                <summary className="cursor-pointer">Qué contestó Mercado Libre en la última lectura</summary>
+                <ul className="mt-1 space-y-1 font-mono">
+                  {diagnostico.intentos.map((t, i) => (
+                    <li key={i} className="break-all">
+                      {t}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
             <ProbarEnvioMl />
           </div>
         </details>
         {enviosMlActivos.length === 0 && !errorEnviosMl ? (
           <p className="rounded-xl border border-dashed border-zinc-300 bg-white p-6 text-center text-sm text-zinc-400">
-            {enviosMl.length === 0 ? "Todavía no se han leído envíos de Mercado Libre. Dale a “Actualizar envíos desde Mercado Libre”." : "No hay envíos en camino ni por confirmar."}
+            {enviosMl.length === 0 ? "Todavía no hay envíos. Busca el primero por su número arriba." : "No hay envíos por confirmar."}
           </p>
         ) : (
           <div className="space-y-3">
@@ -153,18 +152,6 @@ export default async function FullYMercadoLibre() {
                 <TarjetaEnvioMl key={e.envio.inbound_id} datos={e} bodegas={(bodegas ?? []).map((b) => ({ id: b.id, nombre: b.nombre }))} />
               ))}
             </div>
-          </details>
-        )}
-        {diagnostico && enviosMl.length > 0 && (
-          <details className="text-[11px] text-zinc-400">
-            <summary className="cursor-pointer">Camino de la API que respondió: {diagnostico.resumen}</summary>
-            <ul className="mt-1 space-y-0.5 font-mono">
-              {diagnostico.intentos.map((t, i) => (
-                <li key={i} className="break-all">
-                  {t}
-                </li>
-              ))}
-            </ul>
           </details>
         )}
       </section>

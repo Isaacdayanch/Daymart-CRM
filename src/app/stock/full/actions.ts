@@ -204,3 +204,14 @@ export async function probarEnvioMl(numero: string) {
     return { error: e instanceof Error ? e.message : "No se pudo probar.", resultados: [] as { ruta: string; resultado: string; muestra?: string }[] };
   }
 }
+
+/** Plan B: Isaac pega el número del envío de su panel de ML y desde cuándo
+ * llegó; el sistema arma el envío con lo que subió en Full desde esa fecha. */
+export async function buscarEnvioMl(numero: string, desdeFecha: string) {
+  if (!(await conSesion())) return { error: "Inicia sesión.", productos: 0, piezas: 0 };
+  const desdeIso = desdeFecha ? new Date(`${desdeFecha}T00:00:00`).toISOString() : new Date(Date.now() - 14 * 86400000).toISOString();
+  const { armarEnvioDesdeRecepciones } = await import("@/lib/mercadolibre-envios-full");
+  const r = await armarEnvioDesdeRecepciones(numero, desdeIso);
+  refrescar();
+  return r;
+}
