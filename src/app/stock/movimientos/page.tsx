@@ -109,7 +109,7 @@ export default async function MovimientosStock() {
                         <Link href={`/contenedores/${m.contenedor_id}`} className="hover:underline">
                           Contenedor {contenedoresPorId.get(m.contenedor_id)}
                         </Link>
-                      ) : m.orden_ml_id || m.envio_full_id || m.recepcion_full_id ? (
+                      ) : m.orden_ml_id || m.envio_full_id || m.recepcion_full_id || m.inbound_ml_id ? (
                         <Link href="/stock/full" className="hover:underline">
                           {m.orden_ml_id ? `Venta ML #${m.orden_ml_id}` : "Full (Mercado Libre)"}
                         </Link>

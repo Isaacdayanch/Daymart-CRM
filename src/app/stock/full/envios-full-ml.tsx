@@ -1,0 +1,248 @@
+"use client";
+
+import Link from "next/link";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { formatoFechaHoraMx } from "@/lib/fechas-mx";
+import { ETIQUETA_ESTADO_ENVIO_ML, type EnvioFullMl, type LineaAgrupada } from "@/lib/mercadolibre-envios-full";
+import { Selector } from "@/components/selector";
+import { confirmarEnvioMl, deshacerConfirmacionMl, ignorarEnvioMl, sincronizarEnviosFullAhora } from "./actions";
+
+export interface LineaParaPantalla extends LineaAgrupada {
+  /** Producto del CRM resuelto por la liga (null = sin ligar). */
+  sku: string | null;
+  nombreCrm: string | null;
+  stockBodega: number | null;
+  piezasPorCaja: number | null;
+}
+
+export interface EnvioParaPantalla {
+  envio: EnvioFullMl;
+  lineas: LineaParaPantalla[];
+}
+
+const btnSec = "rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50";
+
+function colorEstado(estado: EnvioFullMl["estado"]) {
+  if (estado === "RECIBIDO" || estado === "CONTADO") return "bg-emerald-50 text-emerald-700 ring-emerald-600/20";
+  if (estado === "CANCELADO") return "bg-red-50 text-red-700 ring-red-600/20";
+  if (estado === "COLECTADO") return "bg-[#2D3277]/5 text-[#2D3277] ring-[#2D3277]/20";
+  return "bg-amber-50 text-amber-700 ring-amber-600/20";
+}
+
+export function BotonActualizarEnviosMl({ conectado }: { conectado: boolean }) {
+  const router = useRouter();
+  const [cargando, setCargando] = useState(false);
+  const [mensaje, setMensaje] = useState<string | null>(null);
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <button
+        type="button"
+        disabled={cargando || !conectado}
+        onClick={async () => {
+          setCargando(true);
+          setMensaje(null);
+          const r = await sincronizarEnviosFullAhora();
+          setCargando(false);
+          setMensaje(r.error ? `Error: ${r.error}` : `Listo: ${r.envios} envío(s) leídos${r.recibidosNuevos ? `, ${r.recibidosNuevos} recibido(s) nuevo(s)` : ""}.`);
+          router.refresh();
+        }}
+        className={btnSec}
+      >
+        {cargando ? "Leyendo envíos de ML…" : "Actualizar envíos desde Mercado Libre"}
+      </button>
+      {mensaje && <span className={`text-xs ${mensaje.startsWith("Error") ? "text-red-600" : "text-emerald-700"}`}>{mensaje}</span>}
+    </div>
+  );
+}
+
+/** Un envío a Full de Mercado Libre: estatus, productos y, si ML ya lo
+ * recibió, el botón para confirmar la salida de bodega. */
+export function TarjetaEnvioMl({ datos, bodegas }: { datos: EnvioParaPantalla; bodegas: { id: string; nombre: string }[] }) {
+  const router = useRouter();
+  const { envio, lineas } = datos;
+  const porConfirmar = (envio.estado === "RECIBIDO" || envio.estado === "CONTADO") && !envio.confirmado_en && !envio.ignorado_en;
+  const [abierto, setAbierto] = useState(false);
+  const [cantidades, setCantidades] = useState<Record<string, string>>(() => Object.fromEntries(lineas.map((l) => [l.clave, String(l.recibidas || l.planeadas || 0)])));
+  const [incluir, setIncluir] = useState<Record<string, boolean>>(() => Object.fromEntries(lineas.map((l) => [l.clave, Boolean(l.sku)])));
+  const [bodegaId, setBodegaId] = useState(bodegas[0]?.id ?? "");
+  const [enviando, setEnviando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [mensaje, setMensaje] = useState<string | null>(null);
+
+  const sinLigar = lineas.filter((l) => !l.sku).length;
+  const totalRecibidas = lineas.reduce((s, l) => s + l.recibidas, 0);
+  const totalPlaneadas = lineas.reduce((s, l) => s + (l.planeadas ?? 0), 0);
+  const seleccion = lineas.filter((l) => incluir[l.clave] && l.sku && Number(cantidades[l.clave]) > 0);
+  const piezasSeleccion = seleccion.reduce((s, l) => s + (Number(cantidades[l.clave]) || 0), 0);
+
+  return (
+    <details open={porConfirmar} className={`group rounded-2xl border bg-white shadow-sm ${porConfirmar ? "border-emerald-300 ring-2 ring-emerald-100" : "border-zinc-200"}`}>
+      <summary className="flex cursor-pointer select-none flex-wrap items-center justify-between gap-2 px-5 py-3">
+        <div className="flex items-center gap-3">
+          <span className="inline-block transition-transform group-open:rotate-90">▸</span>
+          <div>
+            <p className="text-sm font-medium text-zinc-900">
+              Envío a Full <span className="font-mono">{envio.inbound_id}</span>
+              {envio.fecha_creacion && <span className="ml-2 text-xs font-normal text-zinc-400">creado {formatoFechaHoraMx(envio.fecha_creacion)}</span>}
+            </p>
+            <p className="text-xs text-zinc-400">
+              {lineas.length} producto(s)
+              {totalPlaneadas > 0 && <> · {totalPlaneadas.toLocaleString("es-MX")} piezas planeadas</>}
+              {totalRecibidas > 0 && <> · <span className="text-emerald-700">{totalRecibidas.toLocaleString("es-MX")} recibidas por ML</span></>}
+              {envio.fecha_recepcion && <> · recibido {formatoFechaHoraMx(envio.fecha_recepcion)}</>}
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {envio.confirmado_en && <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-600">salida confirmada {formatoFechaHoraMx(envio.confirmado_en)}</span>}
+          {envio.ignorado_en && <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-500">no salió de bodega</span>}
+          <span className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset ${colorEstado(envio.estado)}`} title={envio.estado_ml ?? ""}>
+            {ETIQUETA_ESTADO_ENVIO_ML[envio.estado]}
+            {envio.estado_ml && envio.estado === "DESCONOCIDO" ? ` (${envio.estado_ml})` : ""}
+          </span>
+        </div>
+      </summary>
+      <div className="border-t border-zinc-100 px-5 py-3">
+        {lineas.length === 0 && <p className="text-xs text-zinc-400">Mercado Libre no reportó productos en este envío todavía.</p>}
+        <ul className="divide-y divide-zinc-50">
+          {lineas.map((l) => (
+            <li key={l.clave} className="flex flex-wrap items-center justify-between gap-3 py-2 text-sm">
+              <div className="flex items-center gap-3">
+                {abierto && porConfirmar && <input type="checkbox" checked={Boolean(incluir[l.clave]) && Boolean(l.sku)} disabled={!l.sku} onChange={(e) => setIncluir((x) => ({ ...x, [l.clave]: e.target.checked }))} />}
+                {l.imagen_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- miniatura de ML
+                  <img src={l.imagen_url} alt="" className="h-9 w-9 rounded-lg object-cover" />
+                ) : (
+                  <div className="h-9 w-9 rounded-lg bg-zinc-100" />
+                )}
+                <div>
+                  <p className="text-zinc-900">{l.titulo ?? l.item_id ?? l.inventory_id ?? "Producto"}</p>
+                  <p className="text-xs text-zinc-400">
+                    {l.item_id && <span className="font-mono">{l.item_id}</span>}
+                    {l.seller_sku && <> · SKU ML {l.seller_sku}</>}
+                    {" · "}
+                    {l.sku ? (
+                      <span className="text-zinc-600">
+                        CRM: <span className="font-mono">{l.sku}</span>
+                        {l.stockBodega !== null && <> · {l.stockBodega.toLocaleString("es-MX")} en bodega</>}
+                      </span>
+                    ) : (
+                      <Link href={`/mercadolibre/stock?filtro=sinligar${l.item_id ? `&q=${encodeURIComponent(l.item_id)}` : ""}`} className="text-amber-700 underline-offset-2 hover:underline">
+                        sin ligar con un producto del CRM → ligar
+                      </Link>
+                    )}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 text-xs">
+                {l.planeadas !== null && (
+                  <span className="text-zinc-500">
+                    planeadas <strong className="text-zinc-900">{l.planeadas}</strong>
+                  </span>
+                )}
+                <span className="text-zinc-500">
+                  recibidas <strong className="text-emerald-700">{l.recibidas}</strong>
+                </span>
+                {abierto && porConfirmar && (
+                  <label className="flex items-center gap-1 text-zinc-600">
+                    salen
+                    <input type="number" min={0} value={cantidades[l.clave] ?? ""} onChange={(e) => setCantidades((x) => ({ ...x, [l.clave]: e.target.value }))} disabled={!l.sku} className="w-20 rounded-lg border border-zinc-300 px-2 py-1 text-sm" />
+                  </label>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+
+        {porConfirmar && !abierto && (
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button type="button" onClick={() => setAbierto(true)} className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700">
+              Confirmar salida de bodega
+            </button>
+            <button
+              type="button"
+              onClick={async () => {
+                if (!window.confirm("¿Este envío NO salió de tu bodega (ej. una devolución que llegó a Full)? No se descuenta nada.")) return;
+                const r = await ignorarEnvioMl(envio.inbound_id);
+                if (r.error) setError(r.error);
+                router.refresh();
+              }}
+              className={btnSec}
+            >
+              No salió de mi bodega
+            </button>
+            {sinLigar > 0 && <span className="text-xs text-amber-700">{sinLigar} producto(s) sin ligar: ligarlos primero para que salgan de bodega.</span>}
+          </div>
+        )}
+        {porConfirmar && abierto && (
+          <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50/60 p-3">
+            <p className="text-xs text-zinc-700">
+              Van a salir de tu bodega <strong>{piezasSeleccion.toLocaleString("es-MX")} piezas</strong> de {seleccion.length} producto(s), con destino Full. Si ML recibió menos de lo que mandaste, corrige “salen” con lo que de verdad se fue.
+            </p>
+            <div className="mt-2 flex flex-wrap items-end gap-3">
+              {bodegas.length > 1 && (
+                <div className="w-48">
+                  <label className="block text-[11px] font-medium text-zinc-500">Bodega</label>
+                  <Selector defaultValue={bodegaId} onChange={setBodegaId} opciones={bodegas.map((b) => ({ value: b.id, label: b.nombre }))} />
+                </div>
+              )}
+              <button
+                type="button"
+                disabled={enviando || seleccion.length === 0}
+                onClick={async () => {
+                  if (!window.confirm(`¿Descontar ${piezasSeleccion} piezas de tu bodega por el envío ${envio.inbound_id}?`)) return;
+                  setEnviando(true);
+                  setError(null);
+                  const r = await confirmarEnvioMl(
+                    envio.inbound_id,
+                    seleccion.map((l) => ({ clave: l.clave, sku: l.sku!, cantidad: Number(cantidades[l.clave]) || 0, nombre: l.nombreCrm ?? l.titulo, imagenUrl: l.imagen_url, piezasPorCaja: l.piezasPorCaja })),
+                    bodegaId || null,
+                  );
+                  setEnviando(false);
+                  if (r.error) setError(r.error);
+                  else {
+                    setAbierto(false);
+                    setMensaje(`Listo: salieron ${r.piezas} piezas de ${r.productos} producto(s).`);
+                    router.refresh();
+                  }
+                }}
+                className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50"
+              >
+                {enviando ? "Registrando…" : `Sí, descontar ${piezasSeleccion.toLocaleString("es-MX")} piezas`}
+              </button>
+              <button type="button" onClick={() => setAbierto(false)} className="text-xs text-zinc-500 hover:text-zinc-900">
+                Cancelar
+              </button>
+            </div>
+          </div>
+        )}
+        {envio.confirmado_en && (
+          <div className="mt-2 flex items-center gap-3 text-xs">
+            <Link href="/stock/movimientos" className="text-zinc-500 underline-offset-2 hover:underline">
+              ver las salidas
+            </Link>
+            <button
+              type="button"
+              onClick={async () => {
+                if (!window.confirm("¿Deshacer la confirmación? Se borran las salidas de bodega de este envío y vuelve a quedar por confirmar.")) return;
+                const r = await deshacerConfirmacionMl(envio.inbound_id);
+                if (r.error) setError(r.error);
+                router.refresh();
+              }}
+              className="text-zinc-400 hover:text-red-600"
+            >
+              deshacer
+            </button>
+          </div>
+        )}
+        {mensaje && <p className="mt-2 text-xs text-emerald-700">{mensaje}</p>}
+        {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+        <details className="mt-2">
+          <summary className="cursor-pointer text-[11px] text-zinc-400">datos crudos de Mercado Libre</summary>
+          <pre className="mt-1 max-h-48 overflow-auto rounded bg-zinc-100 p-2 text-[10px] text-zinc-600">{JSON.stringify({ envio: envio.crudo, estado_ml: envio.estado_ml, origen: envio.origen }, null, 1)}</pre>
+        </details>
+      </div>
+    </details>
+  );
+}

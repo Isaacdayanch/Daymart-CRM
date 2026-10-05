@@ -186,6 +186,8 @@ export interface MovimientoStock {
   creado_en: string;
   /** Movimiento "de antes del sistema" (migración 0039): no cuenta para la rotación. */
   historico?: boolean;
+  /** Envío a Full de Mercado Libre confirmado por Isaac (migración 0042). */
+  inbound_ml_id?: string | null;
 }
 
 export const CATEGORIAS_SALIDA = ["Full", "Paquetería", "Piezas", "Muestra", "Devolución", "Ajuste"] as const;

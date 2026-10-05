@@ -150,3 +150,45 @@ export async function procesarAhora() {
     return { error: e instanceof Error ? e.message : "No se pudo procesar.", generadas: 0 };
   }
 }
+
+// ---- Envíos a Full leídos de Mercado Libre (migración 0042) ----
+
+export async function sincronizarEnviosFullAhora() {
+  if (!(await conSesion())) return { error: "Inicia sesión.", envios: 0, recibidosNuevos: 0, endpoint: "" };
+  try {
+    const { sincronizarEnviosFull } = await import("@/lib/mercadolibre-envios-full");
+    const r = await sincronizarEnviosFull({ diasAtras: 90 });
+    refrescar();
+    return { error: null, ...r };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "No se pudieron leer los envíos.", envios: 0, recibidosNuevos: 0, endpoint: "" };
+  }
+}
+
+export async function confirmarEnvioMl(
+  inboundId: string,
+  decisiones: { clave: string; sku: string; cantidad: number; nombre?: string | null; imagenUrl?: string | null; piezasPorCaja?: number | null }[],
+  bodegaId?: string | null,
+) {
+  if (!(await conSesion())) return { error: "Inicia sesión." };
+  const { confirmarEnvioFullMl } = await import("@/lib/mercadolibre-envios-full");
+  const r = await confirmarEnvioFullMl(inboundId, decisiones, bodegaId);
+  refrescar();
+  return r;
+}
+
+export async function ignorarEnvioMl(inboundId: string) {
+  if (!(await conSesion())) return { error: "Inicia sesión." };
+  const { ignorarEnvioFullMl } = await import("@/lib/mercadolibre-envios-full");
+  const r = await ignorarEnvioFullMl(inboundId);
+  refrescar();
+  return r;
+}
+
+export async function deshacerConfirmacionMl(inboundId: string) {
+  if (!(await conSesion())) return { error: "Inicia sesión." };
+  const { deshacerConfirmacionEnvioMl } = await import("@/lib/mercadolibre-envios-full");
+  const r = await deshacerConfirmacionEnvioMl(inboundId);
+  refrescar();
+  return r;
+}

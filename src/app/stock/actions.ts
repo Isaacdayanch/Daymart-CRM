@@ -613,7 +613,7 @@ async function movimientoSuelto(supabase: Awaited<ReturnType<typeof createClient
   if (data.venta_id) {
     return { movimiento: null, error: "Este movimiento viene de una venta — corrígelo o cancélalo desde Ventas." };
   }
-  if (data.orden_ml_id || data.envio_full_id || data.recepcion_full_id) {
+  if (data.orden_ml_id || data.envio_full_id || data.recepcion_full_id || data.inbound_ml_id) {
     return { movimiento: null, error: "Este movimiento lo generó Mercado Libre (venta o Full) — se atiende desde Stock → Full y ML." };
   }
   return { movimiento: data, error: null };

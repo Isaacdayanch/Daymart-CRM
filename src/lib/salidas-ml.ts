@@ -23,7 +23,7 @@ async function bodegaPrincipal(): Promise<Bodega | null> {
 }
 
 /** Liga publicación → SKU del CRM (manual o automática por SKU igual). */
-async function resolvedorSku() {
+export async function resolvedorSku() {
   const supabase = createServiceClient();
   const [publicaciones, vinculos, { data: skus }] = await Promise.all([
     obtenerPublicaciones(),

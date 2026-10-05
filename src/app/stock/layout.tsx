@@ -2,6 +2,7 @@ import { NavStock } from "./nav-stock";
 import { Logo } from "@/components/logo";
 import { obtenerPerfilActual } from "@/lib/perfil";
 import { MenuMas } from "../menu-mas";
+import { AvisoEnviosFull } from "./aviso-envios-full";
 
 export default async function StockLayout({ children }: { children: React.ReactNode }) {
   const perfil = await obtenerPerfilActual();
@@ -22,7 +23,10 @@ export default async function StockLayout({ children }: { children: React.ReactN
           </div>
         </div>
       </header>
-      <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6 print:px-0 print:py-0">{children}</main>
+      <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6 print:px-0 print:py-0">
+        <AvisoEnviosFull />
+        {children}
+      </main>
     </div>
   );
 }

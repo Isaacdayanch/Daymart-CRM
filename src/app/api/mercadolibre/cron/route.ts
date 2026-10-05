@@ -77,6 +77,28 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  // Envíos a Full leídos de ML (cada 15 min): cuando ML marca uno recibido,
+  // aparece el aviso en Stock para que Isaac confirme la salida de bodega.
+  if (Date.now() - inicio < 45000) {
+    try {
+      const { obtenerEstadoEnviosFull, sincronizarEnviosFull } = await import("@/lib/mercadolibre-envios-full");
+      const estado = await obtenerEstadoEnviosFull();
+      const ultima = estado?.ultima_sync_envios_full ? new Date(estado.ultima_sync_envios_full).getTime() : 0;
+      if (Date.now() - ultima > 15 * 60000) {
+        const r = await sincronizarEnviosFull({ diasAtras: 60 });
+        resultado.enviosFull = { envios: r.envios, recibidosNuevos: r.recibidosNuevos };
+        if (r.recibidosNuevos) {
+          revalidatePath("/stock");
+          revalidatePath("/stock/full");
+        }
+      } else {
+        resultado.enviosFull = "al_dia";
+      }
+    } catch (e) {
+      resultado.enviosFull = { error: e instanceof Error ? e.message : "Fallaron los envíos a Full." };
+    }
+  }
+
   // Salidas automáticas por ventas de ML que ya salieron de la bodega
   // (solo si Isaac activó el interruptor con su fecha de arranque).
   try {
