@@ -126,6 +126,9 @@ interface OperacionRecepcion {
   inventoryId: string | null;
   cantidad: number | null;
   fecha: string | null;
+  /** RECEPCION = llegaron piezas (TRANSFER_DELIVERY); PLAN = reserva del envío
+   * (TRANSFER_RESERVATION); AJUSTE = diferencia que ML anotó sobre el envío (ADJUSTMENT). */
+  clase: "RECEPCION" | "PLAN" | "AJUSTE";
   crudo: Crudo;
 }
 
@@ -159,21 +162,43 @@ async function operacionesRecepcion(
   const VENTANA_MS = 60 * DIA_MS;
   const tiposVistos = new Map<string, number>();
   const muestraPorTipo = new Map<string, string>();
-  const esRecepcion = (tipo: string, crudo: Crudo) => /inbound|recep|receiv|entrada|ingreso/.test(tipo) || JSON.stringify(crudo).toLowerCase().includes("inbound");
+  /** Forma REAL de una operación (muestra cruda del 5 oct):
+   * {"id":4788777819473360000,"date_created":"2026-10-04T19:11:30Z","type":"TRANSFER_DELIVERY",
+   *  "detail":{"available_quantity":1,"not_available_detail":[]},
+   *  "result":{"total":30,"available_quantity":30,"not_available_quantity":0},
+   *  "external_references":[{"type":"inbound_id","value":"78476158"}],"inventory_id":"WLJX87123"}
+   * El número de envío viene en external_references (type inbound_id). */
+  const referenciaInbound = (op: Crudo) => {
+    const refs = lista(op.external_references);
+    const ref = refs.find((r) => (textoDe(r.type) ?? "").toLowerCase().includes("inbound"));
+    return textoDe(ref?.value) ?? textoDe(primero(op, ["detail.inbound_id", "inbound_id"]));
+  };
   const leerOperacion = (op: Crudo, inventoryIdPedido: string): OperacionRecepcion | null => {
-    const tipo = (textoDe(primero(op, ["type", "operation_type", "sub_type", "subtype"])) ?? "?").toLowerCase();
+    const tipo = (textoDe(primero(op, ["type", "operation_type"])) ?? "?").toLowerCase();
     tiposVistos.set(tipo, (tiposVistos.get(tipo) ?? 0) + 1);
     if (!muestraPorTipo.has(tipo)) muestraPorTipo.set(tipo, JSON.stringify(op).slice(0, 450));
-    if (!esRecepcion(tipo, op)) return null;
-    const inboundId = textoDe(
-      primero(op, ["detail.inbound_id", "detail.inbound.id", "inbound_id", "detail.external_reference", "detail.reference", "detail.source_id", "detail.document_id", "reference", "external_reference", "source.id", "detail.id"]),
-    );
+    const inboundId = referenciaInbound(op);
+    if (!inboundId) return null;
+    let clase: OperacionRecepcion["clase"];
+    if (/transfer_delivery|inbound|recep|receiv/.test(tipo)) clase = "RECEPCION";
+    else if (/transfer_reservation/.test(tipo)) clase = "PLAN";
+    else if (/adjustment/.test(tipo)) clase = "AJUSTE";
+    else return null;
+    const detalle = objeto(op.detail);
+    const disponible = numero(detalle.available_quantity) ?? 0;
+    const noDisponible = numero(detalle.not_available_quantity) ?? 0;
+    const cantidad = disponible + noDisponible;
+    const fecha = textoDe(primero(op, ["date_created", "date", "created_at"]));
+    // El id de ML es un número tan grande que JavaScript le pierde precisión:
+    // se arma una clave compuesta para no confundir dos operaciones.
+    const idCrudo = textoDe(op.id) ?? "?";
     return {
-      operacionId: textoDe(primero(op, ["id", "operation_id"])) ?? `${inboundId ?? "?"}:${inventoryIdPedido}:${textoDe(primero(op, ["date_created", "date"])) ?? ""}`,
-      inboundId: inboundId ?? `sin-numero:${textoDe(primero(op, ["date_created", "date"]))?.slice(0, 10) ?? "?"}`,
-      inventoryId: textoDe(primero(op, ["inventory_id", "detail.inventory_id", "result.inventory_id"])) ?? inventoryIdPedido,
-      cantidad: numero(primero(op, ["detail.quantity", "detail.received_quantity", "quantity", "result.quantity", "stock_values.quantity", "detail.units", "units", "result.total_quantity"])),
-      fecha: textoDe(primero(op, ["date_created", "date", "created_at"])),
+      operacionId: `${idCrudo}|${inventoryIdPedido}|${fecha ?? ""}|${tipo}|${cantidad}`,
+      inboundId,
+      inventoryId: textoDe(op.inventory_id) ?? inventoryIdPedido,
+      cantidad: clase === "PLAN" ? Math.abs(cantidad) : cantidad,
+      fecha,
+      clase,
       crudo: op,
     };
   };
@@ -264,7 +289,7 @@ async function operacionesRecepcion(
     .map(([t, n]) => `${t} (${n})`);
   anotar(
     `${BASE} por inventario (formato Z, ventanas de 60 días, de 2 en 2)`,
-    `inventarios ${desdeIndice + 1}–${indice} de ${inventarios.length} revisados en esta corrida (${ok} ok, ${errores} con error${ultimoError ? `: ${ultimoError}` : ""}${cuotaAgotada ? "; ML cortó por cuota, se sigue en la próxima corrida" : ""}); ${crudas} operación(es), ${operaciones.length} que parecen recepción. Tipos que regresa ML: ${tipos.join(", ") || "ninguno"}`,
+    `inventarios ${desdeIndice + 1}–${indice} de ${inventarios.length} revisados en esta corrida (${ok} ok, ${errores} con error${ultimoError ? `: ${ultimoError}` : ""}${cuotaAgotada ? "; ML cortó por cuota, se sigue en la próxima corrida" : ""}); ${crudas} operación(es), ${operaciones.length} ligadas a un envío (recepciones, reservas y ajustes). Tipos que regresa ML: ${tipos.join(", ") || "ninguno"}`,
   );
   for (const [tipo, muestra] of muestraPorTipo) anotar(`muestra cruda de "${tipo}"`, muestra);
   return {
@@ -388,6 +413,8 @@ export async function sincronizarEnviosFull(opciones: { diasAtras?: number; pres
     const publicacionDe = (inventoryId: string | null, itemId: string | null, variationId: number | null) =>
       (inventoryId ? porInventario.get(inventoryId) : undefined) ?? (itemId ? porItem.get(`${itemId}|${variationId ?? 0}`) ?? porItem.get(`${itemId}|0`) : undefined) ?? null;
 
+    // Limpieza de una versión anterior que guardaba envíos "sin-numero:…".
+    await supabase.from("mercadolibre_envios_full").delete().like("inbound_id", "sin-numero:%");
     const { data: existentes } = await supabase.from("mercadolibre_envios_full").select("inbound_id, estado, confirmado_en").returns<{ inbound_id: string; estado: EstadoEnvioMl; confirmado_en: string | null }[]>();
     const estadoPrevio = new Map((existentes ?? []).map((e) => [e.inbound_id, e.estado]));
 
@@ -441,20 +468,24 @@ export async function sincronizarEnviosFull(opciones: { diasAtras?: number; pres
     for (const inboundId of ids) {
       const inbound = inboundsPorId.get(inboundId) ?? null;
       const ops = opsPorInbound.get(inboundId) ?? [];
-      const piezasRecibidasOps = ops.reduce((s, o) => s + (o.cantidad ?? 0), 0);
+      const recepciones = ops.filter((o) => o.clase !== "PLAN");
+      const planes = ops.filter((o) => o.clase === "PLAN");
+      const piezasRecibidasOps = recepciones.reduce((s, o) => s + (o.cantidad ?? 0), 0);
       const piezasRecibidasPlan = inbound?.lineas.reduce((s, l) => s + (l.recibidas ?? 0), 0) ?? 0;
       const piezasRecibidas = Math.max(piezasRecibidasOps, piezasRecibidasPlan);
+      const piezasPlaneadasOps = planes.reduce((s, o) => s + (o.cantidad ?? 0), 0);
       let estado = normalizarEstadoEnvio(inbound?.estadoMl);
-      // Si ya hay recepciones de stock, el envío está al menos recibido.
-      if (ops.length && (estado === "PLANEADO" || estado === "COLECTADO" || estado === "DESCONOCIDO")) estado = "RECIBIDO";
-      const fechaRecepcion = inbound?.fechaRecepcion ?? ops.map((o) => o.fecha).filter(Boolean).sort().pop() ?? null;
+      // Con recepciones de stock el envío está al menos recibido; con solo reservas, planeado.
+      if (recepciones.length && (estado === "PLANEADO" || estado === "COLECTADO" || estado === "DESCONOCIDO")) estado = "RECIBIDO";
+      else if (!recepciones.length && planes.length && estado === "DESCONOCIDO") estado = "PLANEADO";
+      const fechaRecepcion = inbound?.fechaRecepcion ?? recepciones.map((o) => o.fecha).filter(Boolean).sort().pop() ?? null;
       const fila = {
         inbound_id: inboundId,
         estado,
         estado_ml: inbound?.estadoMl ?? null,
         fecha_creacion: inbound?.fechaCreacion ?? ops.map((o) => o.fecha).filter(Boolean).sort()[0] ?? null,
         fecha_recepcion: fechaRecepcion,
-        piezas_planeadas: inbound ? inbound.lineas.reduce((s, l) => s + (l.planeadas ?? 0), 0) || null : null,
+        piezas_planeadas: (inbound ? inbound.lineas.reduce((s, l) => s + (l.planeadas ?? 0), 0) : 0) || piezasPlaneadasOps || null,
         piezas_recibidas: piezasRecibidas,
         origen: inbound ? (ops.length ? "inbound+operaciones" : "inbound") : "operaciones",
         crudo: inbound?.crudo ?? (ops[0]?.crudo ?? null),
@@ -496,14 +527,16 @@ export async function sincronizarEnviosFull(opciones: { diasAtras?: number; pres
           titulo: pub?.titulo ?? null,
           seller_sku: pub?.seller_sku ?? null,
           imagen_url: pub?.imagen_url ?? null,
-          cantidad_planeada: null,
-          cantidad_recibida: op.cantidad ?? 0,
+          cantidad_planeada: op.clase === "PLAN" ? (op.cantidad ?? 0) : null,
+          cantidad_recibida: op.clase === "PLAN" ? 0 : (op.cantidad ?? 0),
           fecha: op.fecha,
           crudo: op.crudo,
         });
       }
-      if (lineas.length) {
-        const { error: errorLineas } = await supabase.from("mercadolibre_envios_full_lineas").upsert(lineas, { onConflict: "operacion_id" });
+      // Sin repetidos en la misma tanda (Postgres no deja tocar dos veces la misma fila en un upsert).
+      const unicas = Array.from(new Map(lineas.map((l) => [l.operacion_id as string, l])).values());
+      if (unicas.length) {
+        const { error: errorLineas } = await supabase.from("mercadolibre_envios_full_lineas").upsert(unicas, { onConflict: "operacion_id" });
         if (errorLineas) throw new Error(`No se pudieron guardar los productos del envío ${inboundId}: ${errorLineas.message}`);
       }
     }
