@@ -21,10 +21,15 @@ const DIA_MS = 86400000;
  * diagnosticar con Isaac (se guarda en mercadolibre_sync.endpoint_envios_full). */
 let intentos: string[] = [];
 function anotar(ruta: string, resultado: string) {
-  intentos.push(`${ruta.split("?")[0]} → ${resultado}`.slice(0, 300));
+  intentos.push(`${ruta} → ${resultado}`.slice(0, 600));
 }
 function mensajeError(e: unknown) {
-  return (e instanceof Error ? e.message : String(e)).replace(/^Mercado Libre respondió /, "").slice(0, 200);
+  // "Mercado Libre respondió 400 en /ruta?...: {mensaje}" → "400: {mensaje}" (sin la ruta, que ya se anota aparte)
+  return (e instanceof Error ? e.message : String(e))
+    .replace(/^Mercado Libre respondió /, "")
+    .replace(/ en \/[^\s:]+(\?[^\s:]*)?: /, ": ")
+    .replace(/\s+/g, " ")
+    .slice(0, 400);
 }
 /** Fecha en el formato que ML suele pedir en Full: 2026-10-05T00:00:00.000-00:00 */
 function fechaMl(d: Date) {
@@ -129,10 +134,12 @@ interface OperacionRecepcion {
 }
 
 /** Operaciones de stock de tipo recepción (inbound_reception) en Full:
- * cada una es "llegaron N piezas del inventario X por el envío Y". Primero
- * se intenta por vendedor; si ML exige inventario, se consulta inventario
- * por inventario (los de las publicaciones en Full). */
-async function operacionesRecepcion(sellerId: number, desde: string, hasta: string, inventarios: string[]): Promise<{ operaciones: OperacionRecepcion[]; camino: string | null }> {
+ * cada una es "llegaron N piezas del inventario X por el envío Y".
+ * `/stock/fulfillment/operations/search` SÍ existe (contestó 400 en la
+ * prueba real del 5 oct), pero es quisquilloso con los parámetros: se
+ * prueban varias formas (rango de fechas, formato, con/sin tipo) hasta dar
+ * con la que acepta, y con esa se recorre todo el periodo por ventanas. */
+async function operacionesRecepcion(sellerId: number, desde: Date, hasta: Date, inventarios: string[]): Promise<{ operaciones: OperacionRecepcion[]; camino: string | null }> {
   const leerOperacion = (op: Crudo): OperacionRecepcion | null => {
     const tipo = textoDe(primero(op, ["type", "operation_type"]))?.toLowerCase() ?? "";
     if (tipo && !/inbound|reception|receiv/.test(tipo)) return null;
@@ -147,11 +154,19 @@ async function operacionesRecepcion(sellerId: number, desde: string, hasta: stri
       crudo: op,
     };
   };
-  const paginar = async (ruta: (offset: number) => string) => {
+  const BASE = "/stock/fulfillment/operations/search";
+  const formatos: Record<string, (d: Date) => string> = {
+    "ml (-00:00)": fechaMl,
+    "sin milisegundos": (d) => d.toISOString().replace(/\.\d{3}Z$/, "-00:00"),
+    "Z": (d) => d.toISOString(),
+    "solo fecha": (d) => d.toISOString().slice(0, 10),
+  };
+  const paginar = async (params: URLSearchParams) => {
     const operaciones: OperacionRecepcion[] = [];
     let crudas = 0;
     for (let offset = 0, vuelta = 0; vuelta < 40; vuelta++) {
-      const r = await mercadolibreGet<unknown>(ruta(offset));
+      params.set("offset", String(offset));
+      const r = await mercadolibreGet<unknown>(`${BASE}?${params}`);
       const filas = lista(r);
       crudas += filas.length;
       for (const op of filas) {
@@ -160,39 +175,96 @@ async function operacionesRecepcion(sellerId: number, desde: string, hasta: stri
       }
       const paging = objeto((r as Crudo)?.paging);
       const total = numero(paging.total) ?? filas.length;
-      offset += 50;
-      if (filas.length < 50 || offset >= total) break;
+      const limite = numero(params.get("limit")) ?? 50;
+      offset += limite;
+      if (filas.length < limite || offset >= total) break;
     }
     return { operaciones, crudas };
   };
+  const armar = (d: Date, h: Date, formato: string, conTipo: boolean, limite: number, inventoryId?: string) => {
+    const p = new URLSearchParams({ seller_id: String(sellerId) });
+    if (inventoryId) p.set("inventory_id", inventoryId);
+    if (formato !== "sin fechas") {
+      p.set("date_from", formatos[formato](d));
+      p.set("date_to", formatos[formato](h));
+    }
+    if (conTipo) p.set("type", "inbound_reception");
+    p.set("limit", String(limite));
+    return p;
+  };
 
-  const base = `seller_id=${sellerId}&date_from=${encodeURIComponent(desde)}&date_to=${encodeURIComponent(hasta)}`;
-  const caminos = [
-    (offset: number) => `/stock/fulfillment/operations/search?${base}&type=inbound_reception&limit=50&offset=${offset}`,
-    (offset: number) => `/stock/fulfillment/operations/search?${base}&limit=50&offset=${offset}`,
-  ];
-  for (const camino of caminos) {
+  // Variantes en orden: ventana corta primero (si ML limita el rango, es lo más probable).
+  const variantes: { dias: number; formato: string; conTipo: boolean; limite: number }[] = [];
+  for (const dias of [7, 30, 90]) for (const formato of ["ml (-00:00)", "sin milisegundos", "Z", "solo fecha"]) variantes.push({ dias, formato, conTipo: true, limite: 50 });
+  variantes.push({ dias: 7, formato: "ml (-00:00)", conTipo: false, limite: 50 });
+  variantes.push({ dias: 7, formato: "ml (-00:00)", conTipo: true, limite: 20 });
+  variantes.push({ dias: 0, formato: "sin fechas", conTipo: true, limite: 50 });
+  variantes.push({ dias: 0, formato: "sin fechas", conTipo: false, limite: 20 });
+
+  let aceptada: (typeof variantes)[number] | null = null;
+  const erroresVistos = new Set<string>();
+  for (const v of variantes) {
+    const d = new Date(hasta.getTime() - v.dias * DIA_MS);
+    const params = armar(d, hasta, v.formato, v.conTipo, v.limite);
     try {
-      const { operaciones, crudas } = await paginar(camino);
-      anotar(camino(0), `ok, ${crudas} operación(es), ${operaciones.length} de recepción con envío`);
-      if (operaciones.length) return { operaciones, camino: camino(0).split("?")[0] };
+      const r = await mercadolibreGet<unknown>(`${BASE}?${params}`);
+      const filas = lista(r);
+      anotar(`${BASE} (${v.dias ? `${v.dias} días` : "sin fechas"}, formato ${v.formato}${v.conTipo ? "" : ", sin tipo"}, limit ${v.limite})`, `ACEPTADA: ${filas.length} operación(es) en la primera página`);
+      aceptada = v;
+      break;
     } catch (e) {
-      anotar(camino(0), `error: ${mensajeError(e)}`);
+      const m = mensajeError(e);
+      // Mismo error repetido no se anota mil veces.
+      const clave = m.slice(0, 80);
+      if (!erroresVistos.has(clave)) {
+        erroresVistos.add(clave);
+        anotar(`${BASE} (${v.dias ? `${v.dias} días` : "sin fechas"}, formato ${v.formato}${v.conTipo ? "" : ", sin tipo"}, limit ${v.limite})`, `error: ${m}`);
+      }
     }
   }
 
-  // Por inventario (las publicaciones en Full), en tandas de 8.
+  if (aceptada) {
+    // Con la forma aceptada se recorre todo el periodo por ventanas del mismo tamaño.
+    const operaciones: OperacionRecepcion[] = [];
+    let crudas = 0;
+    if (aceptada.dias === 0) {
+      const r = await paginar(armar(desde, hasta, aceptada.formato, aceptada.conTipo, aceptada.limite));
+      operaciones.push(...r.operaciones);
+      crudas += r.crudas;
+    } else {
+      const ventanaMs = aceptada.dias * DIA_MS;
+      for (let fin = hasta.getTime(); fin > desde.getTime(); fin -= ventanaMs) {
+        const ini = Math.max(desde.getTime(), fin - ventanaMs);
+        try {
+          const r = await paginar(armar(new Date(ini), new Date(fin), aceptada.formato, aceptada.conTipo, aceptada.limite));
+          operaciones.push(...r.operaciones);
+          crudas += r.crudas;
+        } catch (e) {
+          anotar(`${BASE} ventana ${new Date(ini).toISOString().slice(0, 10)}…${new Date(fin).toISOString().slice(0, 10)}`, `error: ${mensajeError(e)}`);
+          break;
+        }
+      }
+    }
+    anotar(`${BASE} (periodo completo)`, `${crudas} operación(es), ${operaciones.length} de recepción con número de envío`);
+    if (crudas > 0 && operaciones.length === 0) anotar(`${BASE}`, "ML sí regresa operaciones pero ninguna trae el número de envío donde lo busco — revisar el crudo");
+    if (operaciones.length) return { operaciones, camino: BASE };
+    if (crudas > 0) return { operaciones: [], camino: BASE };
+  }
+
+  // Por inventario (las publicaciones en Full), en tandas de 8, con la forma aceptada (o 7 días si ninguna).
   if (inventarios.length) {
+    const v = aceptada ?? { dias: 7, formato: "ml (-00:00)", conTipo: true, limite: 50 };
     const operaciones: OperacionRecepcion[] = [];
     let ok = 0;
     let errores = 0;
     let ultimoError = "";
+    const d = new Date(hasta.getTime() - (v.dias || 30) * DIA_MS);
     for (let i = 0; i < inventarios.length && i < 120; i += 8) {
       const tanda = inventarios.slice(i, i + 8);
       const resultados = await Promise.all(
         tanda.map(async (inv) => {
           try {
-            const r = await paginar((offset) => `/stock/fulfillment/operations/search?${base}&inventory_id=${inv}&type=inbound_reception&limit=50&offset=${offset}`);
+            const r = await paginar(armar(d, hasta, v.formato, v.conTipo, v.limite, inv));
             ok++;
             return r.operaciones;
           } catch (e) {
@@ -205,8 +277,8 @@ async function operacionesRecepcion(sellerId: number, desde: string, hasta: stri
       for (const r of resultados) operaciones.push(...r);
       if (errores >= 8 && ok === 0) break;
     }
-    anotar(`/stock/fulfillment/operations/search?inventory_id=…`, `${ok} inventario(s) ok, ${errores} con error${ultimoError ? ` (${ultimoError})` : ""}, ${operaciones.length} recepción(es)`);
-    if (operaciones.length) return { operaciones, camino: "/stock/fulfillment/operations/search (por inventario)" };
+    anotar(`${BASE} por inventario`, `${ok} inventario(s) ok, ${errores} con error${ultimoError ? ` (${ultimoError})` : ""}, ${operaciones.length} recepción(es)`);
+    if (operaciones.length) return { operaciones, camino: `${BASE} (por inventario)` };
   }
   return { operaciones: [], camino: null };
 }
@@ -351,7 +423,7 @@ export async function sincronizarEnviosFull(opciones: { diasAtras?: number } = {
     const { inbounds, camino: caminoLista } = await listarInbounds(conexion.ml_user_id);
     // 2) Recepciones reales de stock (lo que ML contó, por inventario)
     const inventariosFull = Array.from(new Set(publicaciones.filter((p) => p.inventory_id && p.logistica === "Full").map((p) => p.inventory_id as string)));
-    const { operaciones, camino: caminoOps } = await operacionesRecepcion(conexion.ml_user_id, fechaMl(desde), fechaMl(hasta), inventariosFull);
+    const { operaciones, camino: caminoOps } = await operacionesRecepcion(conexion.ml_user_id, desde, hasta, inventariosFull);
 
     const inboundsPorId = new Map(inbounds.map((i) => [i.inboundId, i]));
     // Envíos que solo conocemos por sus recepciones: se intenta su detalle.
@@ -442,6 +514,7 @@ export async function sincronizarEnviosFull(opciones: { diasAtras?: number } = {
     }
 
     const resumen = [caminoLista && `lista: ${caminoLista}`, caminoOps && `recepciones: ${caminoOps}`, caminoDetalle && `detalle: ${caminoDetalle}`].filter(Boolean).join(" · ") || "ninguno respondió";
+    if (operaciones[0]) anotar("muestra de una operación cruda", JSON.stringify(operaciones[0].crudo).slice(0, 500));
     const endpoint = JSON.stringify({ resumen, intentos, inventariosFull: inventariosFull.length, publicaciones: publicaciones.length });
     await supabase.from("mercadolibre_sync").upsert({ id: 1, ultima_sync_envios_full: ahora, ultimo_error_envios_full: null, endpoint_envios_full: endpoint });
     return { envios: ids.size, recibidosNuevos, endpoint: resumen, intentos, operaciones: operaciones.length, inbounds: inbounds.length };
