@@ -192,3 +192,15 @@ export async function deshacerConfirmacionMl(inboundId: string) {
   refrescar();
   return r;
 }
+
+/** Prueba directa con un número de envío del panel de ML (diagnóstico). */
+export async function probarEnvioMl(numero: string) {
+  if (!(await conSesion())) return { error: "Inicia sesión.", resultados: [] as { ruta: string; resultado: string; muestra?: string }[] };
+  if (!numero.trim()) return { error: "Escribe el número del envío (ej. 77396369).", resultados: [] as { ruta: string; resultado: string; muestra?: string }[] };
+  try {
+    const { probarLecturaEnvio } = await import("@/lib/mercadolibre-envios-full");
+    return { error: null, resultados: await probarLecturaEnvio(numero.trim().replace(/^#/, "")) };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "No se pudo probar.", resultados: [] as { ruta: string; resultado: string; muestra?: string }[] };
+  }
+}

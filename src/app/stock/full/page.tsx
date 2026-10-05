@@ -14,7 +14,7 @@ import { agruparLineas, diagnosticoEnviosFull, enviosPorConfirmar, obtenerEnvios
 import { resolvedorSku } from "@/lib/salidas-ml";
 import { obtenerConexion } from "@/lib/mercadolibre-auth";
 import { formatoFechaHoraMx } from "@/lib/fechas-mx";
-import { BotonActualizarEnviosMl, TarjetaEnvioMl, type EnvioParaPantalla } from "./envios-full-ml";
+import { BotonActualizarEnviosMl, ProbarEnvioMl, TarjetaEnvioMl, type EnvioParaPantalla } from "./envios-full-ml";
 
 export const maxDuration = 60;
 
@@ -122,6 +122,7 @@ export default async function FullYMercadoLibre() {
             </ul>
           </div>
         )}
+        {enviosMl.length === 0 && <ProbarEnvioMl />}
         {enviosMlActivos.length === 0 && !errorEnviosMl ? (
           <p className="rounded-xl border border-dashed border-zinc-300 bg-white p-6 text-center text-sm text-zinc-400">
             {enviosMl.length === 0 ? "Todavía no se han leído envíos de Mercado Libre. Dale a “Actualizar envíos desde Mercado Libre”." : "No hay envíos en camino ni por confirmar."}

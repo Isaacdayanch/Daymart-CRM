@@ -284,6 +284,40 @@ async function detalleInbound(sellerId: number, inboundId: string, caminoConocid
   return { inbound: null, camino: null };
 }
 
+/** Prueba directa con un número de envío real del panel de ML (ej. 77396369):
+ * se le pregunta a ML por ese envío por todos los caminos conocidos y se
+ * regresa qué contestó cada uno (con un pedazo de la respuesta), para
+ * descubrir el endpoint correcto con Isaac sin adivinar. */
+export async function probarLecturaEnvio(inboundId: string): Promise<{ ruta: string; resultado: string; muestra?: string }[]> {
+  const conexion = await obtenerConexion();
+  if (!conexion) throw new Error("Mercado Libre no está conectado.");
+  const id = inboundId.replace(/[^0-9A-Za-z_-]/g, "");
+  const sellerId = conexion.ml_user_id;
+  const rutas = [
+    `/fulfillment/inbound/${id}?seller_id=${sellerId}`,
+    `/fulfillment/inbound/${id}`,
+    `/fulfillment/inbounds/${id}?seller_id=${sellerId}`,
+    `/inbound/${id}?seller_id=${sellerId}`,
+    `/inbound/${id}`,
+    `/fulfillment/inbound/search?seller_id=${sellerId}&id=${id}`,
+    `/fulfillment/inbound/search?seller_id=${sellerId}&inbound_id=${id}`,
+    `/fulfillment/inbound/${id}/items?seller_id=${sellerId}`,
+    `/stock/fulfillment/operations/search?seller_id=${sellerId}&type=inbound_reception&inbound_id=${id}`,
+    `/shipments/${id}`,
+  ];
+  const resultados: { ruta: string; resultado: string; muestra?: string }[] = [];
+  for (const ruta of rutas) {
+    try {
+      const r = await mercadolibreGet<unknown>(ruta);
+      const texto = JSON.stringify(r);
+      resultados.push({ ruta: ruta.replace(String(sellerId), "{seller}"), resultado: `ok (${texto.length} caracteres)`, muestra: texto.slice(0, 700) });
+    } catch (e) {
+      resultados.push({ ruta: ruta.replace(String(sellerId), "{seller}"), resultado: `error: ${mensajeError(e)}` });
+    }
+  }
+  return resultados;
+}
+
 // ---------------------------------------------------------------------------
 // Sincronización → copia local
 // ---------------------------------------------------------------------------

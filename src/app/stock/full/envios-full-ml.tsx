@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { formatoFechaHoraMx } from "@/lib/fechas-mx";
 import { ETIQUETA_ESTADO_ENVIO_ML, type EnvioFullMl, type LineaAgrupada } from "@/lib/mercadolibre-envios-full";
 import { Selector } from "@/components/selector";
-import { confirmarEnvioMl, deshacerConfirmacionMl, ignorarEnvioMl, sincronizarEnviosFullAhora } from "./actions";
+import { confirmarEnvioMl, deshacerConfirmacionMl, ignorarEnvioMl, probarEnvioMl, sincronizarEnviosFullAhora } from "./actions";
 
 export interface LineaParaPantalla extends LineaAgrupada {
   /** Producto del CRM resuelto por la liga (null = sin ligar). */
@@ -58,6 +58,51 @@ export function BotonActualizarEnviosMl({ conectado }: { conectado: boolean }) {
         {cargando ? "Leyendo envíos de ML…" : "Actualizar envíos desde Mercado Libre"}
       </button>
       {mensaje && <span className={`text-xs ${mensaje.startsWith("Error") ? "text-red-600" : "text-emerald-700"}`}>{mensaje}</span>}
+    </div>
+  );
+}
+
+/** Diagnóstico: probar un número de envío real del panel de ML por todos
+ * los caminos conocidos y ver qué contesta cada uno. */
+export function ProbarEnvioMl() {
+  const [numero, setNumero] = useState("");
+  const [cargando, setCargando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [resultados, setResultados] = useState<{ ruta: string; resultado: string; muestra?: string }[]>([]);
+  return (
+    <div className="rounded-xl border border-zinc-200 bg-white p-4 text-sm">
+      <p className="font-medium text-zinc-900">Probar con un número de envío de tu panel de Mercado Libre</p>
+      <p className="mt-0.5 text-xs text-zinc-500">Escribe el número tal como sale en “Gestión de envíos Full” (ej. 77396369). Le pregunto a ML por ese envío por todos los caminos y te muestro qué contesta cada uno; mándame captura.</p>
+      <form
+        className="mt-2 flex flex-wrap items-center gap-2"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          setCargando(true);
+          setError(null);
+          const r = await probarEnvioMl(numero);
+          setCargando(false);
+          if (r.error) setError(r.error);
+          setResultados(r.resultados);
+        }}
+      >
+        <input type="text" value={numero} onChange={(e) => setNumero(e.target.value)} placeholder="77396369" className="w-44 rounded-lg border border-zinc-300 px-3 py-1.5 text-sm" />
+        <button type="submit" disabled={cargando} className={btnSec}>
+          {cargando ? "Preguntando a ML…" : "Probar"}
+        </button>
+        {error && <span className="text-xs text-red-600">{error}</span>}
+      </form>
+      {resultados.length > 0 && (
+        <ul className="mt-3 space-y-2 font-mono text-[11px]">
+          {resultados.map((r) => (
+            <li key={r.ruta} className={`rounded-lg border p-2 ${r.resultado.startsWith("ok") ? "border-emerald-200 bg-emerald-50 text-emerald-900" : "border-zinc-200 bg-zinc-50 text-zinc-600"}`}>
+              <p className="break-all">
+                {r.ruta} → {r.resultado}
+              </p>
+              {r.muestra && <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all text-[10px] text-emerald-800">{r.muestra}</pre>}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
