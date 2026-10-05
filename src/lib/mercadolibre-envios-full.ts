@@ -162,6 +162,7 @@ async function operacionesRecepcion(
   const VENTANA_MS = 60 * DIA_MS;
   const tiposVistos = new Map<string, number>();
   const muestraPorTipo = new Map<string, string>();
+  let traslados = 0;
   /** Forma REAL de una operación (muestra cruda del 5 oct):
    * {"id":4788777819473360000,"date_created":"2026-10-04T19:11:30Z","type":"TRANSFER_DELIVERY",
    *  "detail":{"available_quantity":1,"not_available_detail":[]},
@@ -179,9 +180,16 @@ async function operacionesRecepcion(
     if (!muestraPorTipo.has(tipo)) muestraPorTipo.set(tipo, JSON.stringify(op).slice(0, 450));
     const inboundId = referenciaInbound(op);
     if (!inboundId) return null;
+    // Lo que vio Isaac el 5 oct: TRANSFER_DELIVERY/TRANSFER_RESERVATION con
+    // inbound_id son traslados de ML ENTRE SUS PROPIAS BODEGAS (2–3 piezas,
+    // decenas por día, números que no están en su panel). NO son sus envíos:
+    // se cuentan aparte y no se muestran como envíos.
     let clase: OperacionRecepcion["clase"];
-    if (/transfer_delivery|inbound|recep|receiv/.test(tipo)) clase = "RECEPCION";
-    else if (/transfer_reservation/.test(tipo)) clase = "PLAN";
+    if (/transfer/.test(tipo)) {
+      traslados++;
+      return null;
+    }
+    if (/inbound|recep|receiv/.test(tipo)) clase = "RECEPCION";
     else if (/adjustment/.test(tipo)) clase = "AJUSTE";
     else return null;
     const detalle = objeto(op.detail);
@@ -289,7 +297,7 @@ async function operacionesRecepcion(
     .map(([t, n]) => `${t} (${n})`);
   anotar(
     `${BASE} por inventario (formato Z, ventanas de 60 días, de 2 en 2)`,
-    `inventarios ${desdeIndice + 1}–${indice} de ${inventarios.length} revisados en esta corrida (${ok} ok, ${errores} con error${ultimoError ? `: ${ultimoError}` : ""}${cuotaAgotada ? "; ML cortó por cuota, se sigue en la próxima corrida" : ""}); ${crudas} operación(es), ${operaciones.length} ligadas a un envío (recepciones, reservas y ajustes). Tipos que regresa ML: ${tipos.join(", ") || "ninguno"}`,
+    `inventarios ${desdeIndice + 1}–${indice} de ${inventarios.length} revisados en esta corrida (${ok} ok, ${errores} con error${ultimoError ? `: ${ultimoError}` : ""}${cuotaAgotada ? "; ML cortó por cuota, se sigue en la próxima corrida" : ""}); ${crudas} operación(es): ${traslados} traslados internos de ML (se ignoran), ${operaciones.length} ligadas a un envío tuyo (recepciones/ajustes). Tipos que regresa ML: ${tipos.join(", ") || "ninguno"}`,
   );
   for (const [tipo, muestra] of muestraPorTipo) anotar(`muestra cruda de "${tipo}"`, muestra);
   return {
@@ -362,17 +370,45 @@ export async function probarLecturaEnvio(inboundId: string): Promise<{ ruta: str
   if (!conexion) throw new Error("Mercado Libre no está conectado.");
   const id = inboundId.replace(/[^0-9A-Za-z_-]/g, "");
   const sellerId = conexion.ml_user_id;
+  const publicaciones = await obtenerPublicaciones().catch(() => [] as PublicacionMl[]);
+  const inventario = publicaciones.find((p) => p.logistica === "Full" && p.inventory_id && (p.full_disponible ?? 0) > 0)?.inventory_id ?? publicaciones.find((p) => p.inventory_id)?.inventory_id ?? null;
+  const hasta = new Date();
+  const desde = new Date(hasta.getTime() - 59 * DIA_MS);
+  const fechas = `date_from=${encodeURIComponent(desde.toISOString())}&date_to=${encodeURIComponent(hasta.toISOString())}`;
   const rutas = [
+    // Detalle del envío por id, en todas las formas que se me ocurren
     `/fulfillment/inbound/${id}?seller_id=${sellerId}`,
-    `/fulfillment/inbound/${id}`,
     `/fulfillment/inbounds/${id}?seller_id=${sellerId}`,
-    `/inbound/${id}?seller_id=${sellerId}`,
-    `/inbound/${id}`,
-    `/fulfillment/inbound/search?seller_id=${sellerId}&id=${id}`,
-    `/fulfillment/inbound/search?seller_id=${sellerId}&inbound_id=${id}`,
-    `/fulfillment/inbound/${id}/items?seller_id=${sellerId}`,
-    `/stock/fulfillment/operations/search?seller_id=${sellerId}&type=inbound_reception&inbound_id=${id}`,
+    `/inbounds/${id}?seller_id=${sellerId}`,
+    `/fbm/inbounds/${id}?seller_id=${sellerId}`,
+    `/fbm/inbound/${id}`,
+    `/logistics/inbounds/${id}?seller_id=${sellerId}`,
+    `/stock/fulfillment/inbounds/${id}?seller_id=${sellerId}`,
+    `/stock/fulfillment/inbound/${id}?seller_id=${sellerId}`,
+    `/fulfillment/inbound-shipments/${id}?seller_id=${sellerId}`,
+    `/fulfillment/shipments/${id}?seller_id=${sellerId}`,
+    `/inbound/shipments/${id}?seller_id=${sellerId}`,
+    `/users/${sellerId}/inbounds/${id}`,
+    `/users/${sellerId}/fulfillment/inbounds/${id}`,
     `/shipments/${id}`,
+    `/shipments/${id}/items`,
+    // Listas por vendedor
+    `/fbm/inbounds/search?seller_id=${sellerId}&limit=20`,
+    `/logistics/inbounds/search?seller_id=${sellerId}&limit=20`,
+    `/stock/fulfillment/inbounds/search?seller_id=${sellerId}&limit=20`,
+    `/fulfillment/inbound-shipments/search?seller_id=${sellerId}&limit=20`,
+    `/users/${sellerId}/fulfillment/inbounds/search?limit=20`,
+    `/shipments/search?seller_id=${sellerId}&logistic_type=fulfillment&limit=20`,
+    // Operaciones: filtros de tipo en mayúsculas (los tipos que regresa ML van en mayúsculas)
+    ...(inventario
+      ? [
+          `/stock/fulfillment/operations/search?seller_id=${sellerId}&inventory_id=${inventario}&${fechas}&type=INBOUND_RECEPTION&limit=5`,
+          `/stock/fulfillment/operations/search?seller_id=${sellerId}&inventory_id=${inventario}&${fechas}&type=RECEPTION&limit=5`,
+          `/stock/fulfillment/operations/search?seller_id=${sellerId}&inventory_id=${inventario}&${fechas}&type=INBOUND&limit=5`,
+          `/stock/fulfillment/operations/search?seller_id=${sellerId}&inventory_id=${inventario}&${fechas}&external_reference=${id}&limit=5`,
+          `/stock/fulfillment/operations/search?seller_id=${sellerId}&inventory_id=${inventario}&${fechas}&inbound_id=${id}&limit=5`,
+        ]
+      : []),
   ];
   const resultados: { ruta: string; resultado: string; muestra?: string }[] = [];
   for (const ruta of rutas) {
@@ -413,8 +449,26 @@ export async function sincronizarEnviosFull(opciones: { diasAtras?: number; pres
     const publicacionDe = (inventoryId: string | null, itemId: string | null, variationId: number | null) =>
       (inventoryId ? porInventario.get(inventoryId) : undefined) ?? (itemId ? porItem.get(`${itemId}|${variationId ?? 0}`) ?? porItem.get(`${itemId}|0`) : undefined) ?? null;
 
-    // Limpieza de una versión anterior que guardaba envíos "sin-numero:…".
+    // Limpieza de versiones anteriores: envíos "sin-numero:…" y envíos armados
+    // con traslados internos de ML (TRANSFER_*), que no son envíos de Isaac.
     await supabase.from("mercadolibre_envios_full").delete().like("inbound_id", "sin-numero:%");
+    {
+      const { data: abiertos } = await supabase.from("mercadolibre_envios_full").select("inbound_id").is("confirmado_en", null).is("ignorado_en", null).returns<{ inbound_id: string }[]>();
+      if (abiertos?.length) {
+        const { data: lineasAbiertas } = await supabase
+          .from("mercadolibre_envios_full_lineas")
+          .select("inbound_id, crudo")
+          .in("inbound_id", abiertos.map((a) => a.inbound_id))
+          .returns<{ inbound_id: string; crudo: Crudo | null }[]>();
+        const conRecepcionReal = new Set<string>();
+        for (const l of lineasAbiertas ?? []) {
+          const tipo = (textoDe(objeto(l.crudo).type) ?? "").toLowerCase();
+          if (!/transfer|adjustment/.test(tipo)) conRecepcionReal.add(l.inbound_id);
+        }
+        const borrar = abiertos.map((a) => a.inbound_id).filter((id) => !conRecepcionReal.has(id));
+        if (borrar.length) await supabase.from("mercadolibre_envios_full").delete().in("inbound_id", borrar);
+      }
+    }
     const { data: existentes } = await supabase.from("mercadolibre_envios_full").select("inbound_id, estado, confirmado_en").returns<{ inbound_id: string; estado: EstadoEnvioMl; confirmado_en: string | null }[]>();
     const estadoPrevio = new Map((existentes ?? []).map((e) => [e.inbound_id, e.estado]));
 
@@ -468,6 +522,9 @@ export async function sincronizarEnviosFull(opciones: { diasAtras?: number; pres
     for (const inboundId of ids) {
       const inbound = inboundsPorId.get(inboundId) ?? null;
       const ops = opsPorInbound.get(inboundId) ?? [];
+      // Un envío solo "existe" si tiene recepciones (o viene de la API de envíos);
+      // puros ajustes sueltos no arman un envío.
+      if (!inbound && !ops.some((o) => o.clase === "RECEPCION" || o.clase === "PLAN")) continue;
       const recepciones = ops.filter((o) => o.clase !== "PLAN");
       const planes = ops.filter((o) => o.clase === "PLAN");
       const piezasRecibidasOps = recepciones.reduce((s, o) => s + (o.cantidad ?? 0), 0);

@@ -122,7 +122,15 @@ export default async function FullYMercadoLibre() {
             </ul>
           </div>
         )}
-        {enviosMl.length === 0 && <ProbarEnvioMl />}
+        <details className="group rounded-2xl border border-zinc-200 bg-zinc-50/60">
+          <summary className="cursor-pointer select-none px-5 py-3 text-sm text-zinc-500 hover:text-zinc-800">
+            <span className="mr-1 inline-block transition-transform group-open:rotate-90">▸</span>
+            Diagnóstico: probar con un número de envío de tu panel
+          </summary>
+          <div className="px-2 pb-2">
+            <ProbarEnvioMl />
+          </div>
+        </details>
         {enviosMlActivos.length === 0 && !errorEnviosMl ? (
           <p className="rounded-xl border border-dashed border-zinc-300 bg-white p-6 text-center text-sm text-zinc-400">
             {enviosMl.length === 0 ? "Todavía no se han leído envíos de Mercado Libre. Dale a “Actualizar envíos desde Mercado Libre”." : "No hay envíos en camino ni por confirmar."}
