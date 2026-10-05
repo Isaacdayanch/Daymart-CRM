@@ -325,6 +325,23 @@ export async function guardarOrden(orden: OrdenApi, conEnvio: boolean) {
   }
 }
 
+/** Renglones de muchas órdenes, en tandas de 300 ids: un `.in()` con miles
+ * de ids hace una URL enorme que Supabase rechaza o tarda mucho (así se
+ * puso lenta la pantalla de Ventas el 5 oct). */
+export async function itemsDeOrdenes(ordenIds: number[], columnas = "*"): Promise<OrdenItemMl[]> {
+  const supabase = createServiceClient();
+  const resultado: OrdenItemMl[] = [];
+  for (let i = 0; i < ordenIds.length; i += 300) {
+    const { data } = await supabase
+      .from("mercadolibre_orden_items")
+      .select(columnas)
+      .in("orden_id", ordenIds.slice(i, i + 300))
+      .returns<OrdenItemMl[]>();
+    resultado.push(...(data ?? []));
+  }
+  return resultado;
+}
+
 export async function obtenerEstadoSync(): Promise<EstadoSync | null> {
   const supabase = createServiceClient();
   const { data } = await supabase.from("mercadolibre_sync").select("*").eq("id", 1).maybeSingle<EstadoSync>();

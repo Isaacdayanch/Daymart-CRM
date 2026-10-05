@@ -4,7 +4,7 @@ import { createServiceClient } from "@/lib/supabase/servicio";
 import { obtenerConexion } from "@/lib/mercadolibre-auth";
 import { claveVinculo, obtenerPublicaciones, obtenerVinculos, skuCrmDe } from "@/lib/mercadolibre-stock";
 import { envioPromedioPorItem, obtenerBitacoraPromociones, obtenerMargenMinimo } from "@/lib/mercadolibre-promociones";
-import type { OrdenItemMl, OrdenMl } from "@/lib/mercadolibre-ordenes";
+import { itemsDeOrdenes, type OrdenItemMl, type OrdenMl } from "@/lib/mercadolibre-ordenes";
 import { resumenPorSku } from "@/lib/calculos-stock";
 import { obtenerPiezasPorCajaPorSku } from "@/lib/productos-stock";
 import type { ConfiguracionStock, MovimientoStock } from "@/lib/tipos";
@@ -52,19 +52,12 @@ export default async function PromocionesMercadoLibre() {
     const [publicaciones, vinculosLista, { data: ordenes }, minimo] = await Promise.all([
       obtenerPublicaciones(),
       obtenerVinculos(),
-      servicio.from("mercadolibre_ordenes").select("*").eq("estado", "paid").gte("fecha_creacion", desde).limit(5000).returns<OrdenMl[]>(),
+      servicio.from("mercadolibre_ordenes").select("id, estado, fecha_creacion, costo_envio_vendedor").eq("estado", "paid").gte("fecha_creacion", desde).limit(5000).returns<OrdenMl[]>(),
       obtenerMargenMinimo(),
     ]);
     margenMinimo = minimo;
     let items: OrdenItemMl[] = [];
-    if (ordenes?.length) {
-      const { data } = await servicio
-        .from("mercadolibre_orden_items")
-        .select("orden_id, item_id, cantidad")
-        .in("orden_id", ordenes.map((o) => o.id))
-        .returns<OrdenItemMl[]>();
-      items = data ?? [];
-    }
+    if (ordenes?.length) items = await itemsDeOrdenes(ordenes.map((o) => o.id), "orden_id, item_id, cantidad");
     const envioPorItem = envioPromedioPorItem(ordenes ?? [], items, 90);
     const vinculos = new Map(vinculosLista.map((v) => [claveVinculo(v.item_id, v.variation_id), v.sku_crm]));
 

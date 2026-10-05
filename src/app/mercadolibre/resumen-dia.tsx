@@ -5,7 +5,7 @@ import { obtenerConexion } from "@/lib/mercadolibre-auth";
 import { claveVinculo, obtenerPublicaciones, obtenerVinculos, skuCrmDe, type PublicacionMl } from "@/lib/mercadolibre-stock";
 import { envioPromedioPorItem, obtenerMargenMinimo, piezasVendidasPorItem, preguntasSinResponder } from "@/lib/mercadolibre-promociones";
 import { margenPublicacion } from "@/lib/mercadolibre-margen";
-import type { OrdenItemMl, OrdenMl } from "@/lib/mercadolibre-ordenes";
+import { itemsDeOrdenes, type OrdenItemMl, type OrdenMl } from "@/lib/mercadolibre-ordenes";
 import { resumenPorSku } from "@/lib/calculos-stock";
 import { obtenerPiezasPorCajaPorSku } from "@/lib/productos-stock";
 import { formatoPesos } from "@/lib/formato";
@@ -60,11 +60,13 @@ export async function ResumenDia() {
   const supabase = await createClient();
   try {
     const servicio = createServiceClient();
-    const desde = haceDias(90);
+    // Solo 30 días y solo las columnas que se usan: esta tarjeta se calcula
+    // en cada apertura de Ventas y no debe hacerla lenta.
+    const desde = haceDias(30);
     const [pubs, vins, { data: ords }, minimo, conexion] = await Promise.all([
       obtenerPublicaciones(),
       obtenerVinculos(),
-      servicio.from("mercadolibre_ordenes").select("*").eq("estado", "paid").gte("fecha_creacion", desde).limit(5000).returns<OrdenMl[]>(),
+      servicio.from("mercadolibre_ordenes").select("id, estado, fecha_creacion, costo_envio_vendedor").eq("estado", "paid").gte("fecha_creacion", desde).limit(3000).returns<OrdenMl[]>(),
       obtenerMargenMinimo().catch(() => 20),
       obtenerConexion().catch(() => null),
     ]);
@@ -72,15 +74,11 @@ export async function ResumenDia() {
     vinculos = new Map(vins.map((v) => [claveVinculo(v.item_id, v.variation_id), v.sku_crm]));
     ordenes = ords ?? [];
     margenMinimo = minimo;
-    if (ordenes.length) {
-      const { data } = await servicio
-        .from("mercadolibre_orden_items")
-        .select("orden_id, item_id, cantidad")
-        .in("orden_id", ordenes.map((o) => o.id))
-        .returns<OrdenItemMl[]>();
-      items = data ?? [];
+    if (ordenes.length) items = await itemsDeOrdenes(ordenes.map((o) => o.id), "orden_id, item_id, cantidad");
+    // Preguntas: una llamada a ML con tope de 3 s; si tarda más, se omite.
+    if (conexion) {
+      preguntas = await Promise.race([preguntasSinResponder(conexion.ml_user_id), new Promise<null>((r) => setTimeout(() => r(null), 3000))]);
     }
-    if (conexion) preguntas = await preguntasSinResponder(conexion.ml_user_id);
   } catch {
     return null;
   }
@@ -99,7 +97,7 @@ export async function ResumenDia() {
   const activas = publicaciones.filter((p) => p.estado === "active");
   const vendidas30 = piezasVendidasPorItem(ordenes, items, 30);
   const vendidas14 = piezasVendidasPorItem(ordenes, items, DIAS_SIN_VENTAS);
-  const envioPorItem = envioPromedioPorItem(ordenes, items, 90);
+  const envioPorItem = envioPromedioPorItem(ordenes, items, 30);
 
   // 1) Full por acabarse: piezas en Full ÷ (vendidas en 30 días ÷ 30).
   const vistosFull = new Set<string>();

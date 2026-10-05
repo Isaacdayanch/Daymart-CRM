@@ -1,9 +1,12 @@
 import Link from "next/link";
+import { Suspense } from "react";
+import { after } from "next/server";
 import { createServiceClient } from "@/lib/supabase/servicio";
 import { obtenerConexion } from "@/lib/mercadolibre-auth";
 import {
   ESTADOS_ORDEN,
   completarMontosGuardados,
+  itemsDeOrdenes,
   obtenerEstadoSync,
   procesarNotificacionesPendientes,
   sincronizarOrdenes,
@@ -82,17 +85,20 @@ export default async function VentasMercadoLibre({
   let errorLectura: string | null = null;
   try {
     sync = await obtenerEstadoSync();
+    // La pantalla se muestra PRIMERO con lo que ya hay guardado; el refresco
+    // contra Mercado Libre (avisos del webhook, ventas de 2 días, montos
+    // pendientes) corre DESPUÉS de responder, con `after()`. Antes se hacía
+    // antes de pintar y la pantalla tardaba 20–40 s en abrir (Isaac, 5 oct).
     if (conexion) {
-      await procesarNotificacionesPendientes(20).catch(() => 0);
       const vieja = !sync?.ultima_sync || ahora.getTime() - new Date(sync.ultima_sync).getTime() > AUTO_SYNC_MS;
       if (sync?.ultima_sync && vieja) {
-        await sincronizarOrdenes({ diasAtras: 2 }).catch(() => 0);
-        sync = await obtenerEstadoSync();
+        after(async () => {
+          await procesarNotificacionesPendientes(20).catch(() => 0);
+          await sincronizarOrdenes({ diasAtras: 2 }).catch(() => 0);
+          await completarMontosGuardados(200).catch(() => 0);
+        });
       }
     }
-    // Órdenes guardadas antes de la migración 0037: se les completan los
-    // montos del cobro desde su payload (rápido, sin llamar a ML).
-    await completarMontosGuardados(200).catch(() => 0);
     const supabase = createServiceClient();
     const { data, error } = await supabase
       .from("mercadolibre_ordenes")
@@ -104,14 +110,7 @@ export default async function VentasMercadoLibre({
       .returns<OrdenMl[]>();
     if (error) throw new Error(error.message);
     ordenes = data ?? [];
-    if (ordenes.length) {
-      const { data: dataItems } = await supabase
-        .from("mercadolibre_orden_items")
-        .select("*")
-        .in("orden_id", ordenes.map((o) => o.id))
-        .returns<OrdenItemMl[]>();
-      items = dataItems ?? [];
-    }
+    if (ordenes.length) items = await itemsDeOrdenes(ordenes.map((o) => o.id));
   } catch (e) {
     errorLectura = e instanceof Error ? e.message : "No se pudieron leer las ventas.";
   }
@@ -213,7 +212,11 @@ export default async function VentasMercadoLibre({
         </div>
       </div>
 
-      {conexion && <ResumenDia />}
+      {conexion && (
+        <Suspense fallback={<p className="text-xs text-zinc-400">Calculando “Para hoy”…</p>}>
+          <ResumenDia />
+        </Suspense>
+      )}
 
       {!conexion && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
