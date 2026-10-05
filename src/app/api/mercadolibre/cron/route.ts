@@ -77,9 +77,12 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // Envíos a Full leídos de ML (cada 15 min): cuando ML marca uno recibido,
-  // aparece el aviso en Stock para que Isaac confirme la salida de bodega.
-  if (Date.now() - inicio < 45000) {
+  // Envíos a Full leídos de ML: cuando ML marca uno recibido, aparece el
+  // aviso en Stock para que Isaac confirme la salida de bodega.
+  // APAGADO (5 oct) mientras se encuentra el camino correcto de la API: la
+  // lectura por operaciones solo trae traslados internos y gasta la cuota.
+  const ENVIOS_FULL_AUTOMATICO = false;
+  if (ENVIOS_FULL_AUTOMATICO && Date.now() - inicio < 45000) {
     try {
       const { obtenerEstadoEnviosFull, sincronizarEnviosFull } = await import("@/lib/mercadolibre-envios-full");
       const estado = await obtenerEstadoEnviosFull();
