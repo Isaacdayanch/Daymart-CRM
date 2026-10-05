@@ -154,14 +154,14 @@ export async function procesarAhora() {
 // ---- Envíos a Full leídos de Mercado Libre (migración 0042) ----
 
 export async function sincronizarEnviosFullAhora() {
-  if (!(await conSesion())) return { error: "Inicia sesión.", envios: 0, recibidosNuevos: 0, endpoint: "", intentos: [] as string[] };
+  if (!(await conSesion())) return { error: "Inicia sesión.", envios: 0, recibidosNuevos: 0, endpoint: "", intentos: [] as string[], revisados: 0, totalInventarios: 0 };
   try {
     const { sincronizarEnviosFull } = await import("@/lib/mercadolibre-envios-full");
-    const r = await sincronizarEnviosFull({ diasAtras: 90 });
+    const r = await sincronizarEnviosFull({ diasAtras: 60, presupuestoMs: 45000 });
     refrescar();
     return { error: null, ...r };
   } catch (e) {
-    return { error: e instanceof Error ? e.message : "No se pudieron leer los envíos.", envios: 0, recibidosNuevos: 0, endpoint: "", intentos: [] as string[] };
+    return { error: e instanceof Error ? e.message : "No se pudieron leer los envíos.", envios: 0, recibidosNuevos: 0, endpoint: "", intentos: [] as string[], revisados: 0, totalInventarios: 0 };
   }
 }
 

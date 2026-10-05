@@ -84,9 +84,10 @@ export async function GET(request: NextRequest) {
       const { obtenerEstadoEnviosFull, sincronizarEnviosFull } = await import("@/lib/mercadolibre-envios-full");
       const estado = await obtenerEstadoEnviosFull();
       const ultima = estado?.ultima_sync_envios_full ? new Date(estado.ultima_sync_envios_full).getTime() : 0;
-      if (Date.now() - ultima > 15 * 60000) {
-        const r = await sincronizarEnviosFull({ diasAtras: 60 });
-        resultado.enviosFull = { envios: r.envios, recibidosNuevos: r.recibidosNuevos };
+      // Cada 5 min, con cursor: en cada corrida revisa una tanda de inventarios (ML tiene cuota).
+      if (Date.now() - ultima > 5 * 60000) {
+        const r = await sincronizarEnviosFull({ diasAtras: 60, presupuestoMs: Math.max(5000, 45000 - (Date.now() - inicio)) });
+        resultado.enviosFull = { envios: r.envios, recibidosNuevos: r.recibidosNuevos, revisados: r.revisados, totalInventarios: r.totalInventarios };
         if (r.recibidosNuevos) {
           revalidatePath("/stock");
           revalidatePath("/stock/full");

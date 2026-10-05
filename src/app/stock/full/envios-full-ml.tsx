@@ -48,8 +48,8 @@ export function BotonActualizarEnviosMl({ conectado }: { conectado: boolean }) {
             r.error
               ? `Error: ${r.error}`
               : r.envios === 0
-                ? "Mercado Libre no regresó ningún envío por ninguno de los caminos — abajo está el diagnóstico con lo que contestó cada uno (mándame captura)."
-                : `Listo: ${r.envios} envío(s) leídos${r.recibidosNuevos ? `, ${r.recibidosNuevos} recibido(s) nuevo(s)` : ""}.`,
+                ? `Se revisaron ${r.revisados ?? 0} de ${r.totalInventarios ?? 0} inventarios y no apareció ningún envío — abajo está el diagnóstico (mándame captura). Vuelve a darle para seguir con la siguiente tanda.`
+                : `Listo: ${r.envios} envío(s) leídos (${r.revisados ?? 0} de ${r.totalInventarios ?? 0} inventarios en esta tanda)${r.recibidosNuevos ? `, ${r.recibidosNuevos} recibido(s) nuevo(s)` : ""}.`,
           );
           router.refresh();
         }}
