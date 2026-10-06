@@ -117,7 +117,7 @@ export function TablaPrecios({ filas, vendedores, especiales }: { filas: FilaPre
         <div>
           <h2 className="text-sm font-semibold text-zinc-900">Lista de precios y rentabilidad</h2>
           <p className="mt-0.5 text-xs text-zinc-500">
-            Una sola lista para todos los vendedores (precios sin IVA). Escribe el precio y ve en vivo cuánto se lleva el vendedor y cuánto te queda a ti.
+            Una sola lista para todos los vendedores (precios sin IVA). Es el <strong>precio mínimo autorizado</strong>: el vendedor puede subirlo desde su link y el sobreprecio es suyo; tu rentabilidad se calcula sobre este mínimo. Escribe el precio y ve en vivo cuánto se lleva el vendedor y cuánto te queda a ti.
             {sinPrecio > 0 && <> <strong>{sinPrecio}</strong> producto(s) sin precio todavía: no salen en ningún link.</>}
           </p>
         </div>
@@ -159,7 +159,7 @@ export function TablaPrecios({ filas, vendedores, especiales }: { filas: FilaPre
             <tr className="border-b border-zinc-100 text-[11px] uppercase tracking-wide text-zinc-400">
               <th className="py-2 pl-4 pr-2 font-medium sm:pl-5">Producto</th>
               <th className="px-2 py-2 text-right font-medium">Costo</th>
-              <th className="px-2 py-2 font-medium">Precio de venta</th>
+              <th className="px-2 py-2 font-medium">Precio mínimo autorizado</th>
               <th className="px-2 py-2 text-right font-medium">Comisión</th>
               <th className="px-2 py-2 text-right font-medium">Te queda</th>
               <th className="py-2 pl-2 pr-4 text-right font-medium sm:pr-5">Margen</th>

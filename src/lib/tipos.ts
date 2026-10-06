@@ -157,6 +157,14 @@ export interface Vendedor {
   eliminado_en: string | null;
 }
 
+/** Precio propio de un vendedor para un producto (≥ mínimo autorizado). */
+export interface PrecioVendedor {
+  vendedor_id: string;
+  sku: string;
+  precio: number;
+  actualizado_en: string;
+}
+
 /** Comisión especial de un vendedor para un producto concreto. */
 export interface ComisionVendedorProducto {
   vendedor_id: string;

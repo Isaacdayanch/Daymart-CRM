@@ -24,10 +24,10 @@ export default async function CatalogoPublico({
   const acceso = await obtenerVendedorPorToken(token, true);
   if (!acceso) notFound();
   const { vendedor, modo } = acceso;
-  const vista: OpcionesVista = { modo, conPrecios: vendedor.clientes_ven_precios, conComision: modo === "vendedor" };
-
   const sp = await searchParams;
   const filtros = filtrosDeParams(sp);
+  const vista: OpcionesVista = { modo, conPrecios: vendedor.clientes_ven_precios && !filtros.sinPrecios, conComision: modo === "vendedor", token: modo === "vendedor" ? token : undefined };
+
   const { productos, categorias, marcas, total } = await cargarCatalogoPublico(vendedor, modo, filtros);
   const base = `/catalogo/${token}`;
   const hrefCon = (cambios: Partial<typeof filtros>) => `${base}${queryDeFiltros({ ...filtros, ...cambios })}`;
@@ -59,9 +59,9 @@ export default async function CatalogoPublico({
         {esVendedor ? (
           <>
             <p className="text-sm text-zinc-600">
-              Hola, <span className="font-medium text-zinc-900">{vendedor.nombre}</span>. Aquí ves el precio de venta, tu comisión por pieza y las piezas disponibles en bodega hoy.
+              Hola, <span className="font-medium text-zinc-900">{vendedor.nombre}</span>. El precio que ves es el <strong>mínimo autorizado</strong>: puedes subirlo en cada producto y lo que subas es tuyo completo, además de tu comisión. Las piezas son las disponibles en bodega hoy.
             </p>
-            <BotonesCompartir linkClientes={`/catalogo/${vendedor.token_clientes}`} nombre={vendedor.nombre} categorias={categorias} />
+            <BotonesCompartir linkClientes={`/catalogo/${vendedor.token_clientes}`} nombre={vendedor.nombre} categorias={categorias} clientesVenPrecios={vendedor.clientes_ven_precios} />
           </>
         ) : (
           <p className="text-sm text-zinc-600">

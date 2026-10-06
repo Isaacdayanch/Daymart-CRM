@@ -11,7 +11,8 @@
 
 import { Logo } from "@/components/logo";
 import { formatoFecha, formatoPesos } from "@/lib/formato";
-import { medidasTexto, type ModoCatalogo, type ProductoVendedores } from "@/lib/catalogo-vendedores";
+import { medidasTexto, precioAlCliente, type ModoCatalogo, type ProductoVendedores } from "@/lib/catalogo-vendedores";
+import { PrecioVendedor } from "@/app/catalogo/[token]/precio-vendedor";
 
 export interface OpcionesVista {
   modo: ModoCatalogo;
@@ -23,6 +24,8 @@ export interface OpcionesVista {
   sinPrecios?: boolean;
   /** Mostrar la columna "Tu comisión" (solo en el link privado del vendedor). */
   conComision?: boolean;
+  /** Token del link privado: habilita "Tu precio" editable en la tarjeta. */
+  token?: string;
 }
 
 function Foto({ p, clase }: { p: ProductoVendedores; clase: string }) {
@@ -79,18 +82,38 @@ export function TarjetaProductoVendedores({ p, vista }: { p: ProductoVendedores;
           <Dato etiqueta="Caja (L × A × Al)" valor={medidas} />
         </dl>
         {p.memo && <p className="text-[11px] text-zinc-400">{p.memo}</p>}
-        {muestraPrecio(vista) && p.precioVenta !== null && (
-          <div className="flex items-end justify-between gap-2 border-t border-zinc-100 pt-2">
-            <div>
-              <p className="text-[11px] uppercase tracking-wide text-zinc-400">Precio</p>
-              <p className="text-lg font-semibold text-zinc-900">{formatoPesos(p.precioVenta)}</p>
+        {muestraPrecio(vista) && p.precioVenta !== null && vista.modo === "vendedor" && (
+          <div className="space-y-2 border-t border-zinc-100 pt-2">
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <p className="text-[11px] uppercase tracking-wide text-zinc-400">Mínimo autorizado</p>
+                <p className="text-sm font-medium text-zinc-700">{formatoPesos(p.precioVenta)}</p>
+              </div>
+              {vista.token ? (
+                <PrecioVendedor token={vista.token} sku={p.sku} minimo={p.precioVenta} actual={p.precioVendedor ?? null} />
+              ) : (
+                <div>
+                  <p className="text-[11px] uppercase tracking-wide text-zinc-400">Precio</p>
+                  <p className="text-lg font-semibold text-zinc-900">{formatoPesos(precioAlCliente(p) ?? p.precioVenta)}</p>
+                </div>
+              )}
             </div>
-            {vista.conComision && p.comision !== undefined && (
-              <div className="text-right">
-                <p className="text-[11px] uppercase tracking-wide text-emerald-700">Tu comisión</p>
-                <p className="text-sm font-semibold text-emerald-700">{formatoPesos(p.comision)} / pza</p>
+            {vista.conComision && p.gananciaTotal !== undefined && (
+              <div className="rounded-lg bg-emerald-50 px-2.5 py-1.5 text-xs text-emerald-800">
+                <span className="font-semibold">Ganas {formatoPesos(p.gananciaTotal)} / pza</span>
+                {p.sobreprecio ? (
+                  <span className="text-emerald-700"> = comisión {formatoPesos(p.comision ?? 0)} + sobreprecio {formatoPesos(p.sobreprecio)}</span>
+                ) : (
+                  <span className="text-emerald-700"> de comisión</span>
+                )}
               </div>
             )}
+          </div>
+        )}
+        {muestraPrecio(vista) && p.precioVenta !== null && vista.modo === "clientes" && (
+          <div className="border-t border-zinc-100 pt-2">
+            <p className="text-[11px] uppercase tracking-wide text-zinc-400">Precio</p>
+            <p className="text-lg font-semibold text-zinc-900">{formatoPesos(precioAlCliente(p) ?? p.precioVenta)}</p>
           </div>
         )}
         <div className="pt-1">
@@ -140,8 +163,8 @@ export function HojaCatalogoVendedores({
             <th className="w-32 py-2 pr-3 font-medium">Foto</th>
             <th className="py-2 pr-3 font-medium">Producto</th>
             <th className="w-40 py-2 pr-3 font-medium">Empaque</th>
-            {conPrecio && <th className="w-24 py-2 pr-3 text-right font-medium">Precio</th>}
-            {vista.conComision && <th className="w-24 py-2 pr-3 text-right font-medium">Tu comisión</th>}
+            {conPrecio && <th className="w-24 py-2 pr-3 text-right font-medium">{vista.modo === "vendedor" && vista.conComision ? "Mínimo / tu precio" : "Precio"}</th>}
+            {vista.conComision && <th className="w-24 py-2 pr-3 text-right font-medium">Ganas / pza</th>}
             {conCantidad && <th className="w-24 py-2 text-right font-medium">{vista.modo === "vendedor" ? "Disponibles" : "Existencia"}</th>}
           </tr>
         </thead>
@@ -164,8 +187,19 @@ export function HojaCatalogoVendedores({
                 <p>{p.piezasPorCaja} pza(s) por caja</p>
                 {medidasTexto(p) && <p className="text-zinc-500">Caja: {medidasTexto(p)}</p>}
               </td>
-              {conPrecio && <td className="py-3 pr-3 text-right text-sm font-semibold tabular-nums text-zinc-900">{p.precioVenta !== null ? formatoPesos(p.precioVenta) : "—"}</td>}
-              {vista.conComision && <td className="py-3 pr-3 text-right text-sm tabular-nums text-emerald-700">{p.comision !== undefined ? formatoPesos(p.comision) : "—"}</td>}
+              {conPrecio && (
+                <td className="py-3 pr-3 text-right text-sm font-semibold tabular-nums text-zinc-900">
+                  {p.precioVenta === null ? "—" : vista.modo === "vendedor" && vista.conComision && p.precioVendedor && p.precioVendedor > p.precioVenta ? (
+                    <>
+                      <span className="block text-xs font-normal text-zinc-500">{formatoPesos(p.precioVenta)}</span>
+                      {formatoPesos(p.precioVendedor)}
+                    </>
+                  ) : (
+                    formatoPesos(vista.modo === "clientes" ? (precioAlCliente(p) ?? p.precioVenta) : p.precioVenta)
+                  )}
+                </td>
+              )}
+              {vista.conComision && <td className="py-3 pr-3 text-right text-sm tabular-nums text-emerald-700">{p.gananciaTotal !== undefined ? formatoPesos(p.gananciaTotal) : "—"}</td>}
               {conCantidad && (
                 <td className="py-3 text-right text-sm font-semibold tabular-nums text-zinc-900">
                   {p.stock > 0 ? (vista.modo === "vendedor" ? p.stock.toLocaleString("es-MX") : "Disponible") : <span className="text-zinc-400">Agotado</span>}

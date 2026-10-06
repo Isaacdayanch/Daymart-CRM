@@ -8,10 +8,10 @@
 import { randomBytes } from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { resumenPorSku } from "./calculos-stock";
-import { comisionPorPieza, type ReglaComision } from "./calculos-vendedores";
+import { gananciaVendedor, type ReglaComision } from "./calculos-vendedores";
 import { obtenerPiezasPorCajaPorSku } from "./productos-stock";
 import { createServiceClient } from "./supabase/servicio";
-import type { ComisionVendedorProducto, Marca, MovimientoStock, ProductoCatalogo, Vendedor } from "./tipos";
+import type { ComisionVendedorProducto, Marca, MovimientoStock, PrecioVendedor, ProductoCatalogo, Vendedor } from "./tipos";
 
 export interface ProductoVendedores {
   sku: string;
@@ -29,12 +29,23 @@ export interface ProductoVendedores {
   /** Piezas en bodega (lo que Isaac puede entregar). Full NO se incluye:
    * eso lo vende Mercado Libre directo (decisión de Isaac, 5 oct). */
   stock: number;
-  /** Precio de venta al público (sin IVA). Null = sin precio todavía. */
+  /** Precio MÍNIMO autorizado por Isaac (sin IVA). Null = sin precio todavía. */
   precioVenta: number | null;
+  /** Precio que fijó el vendedor (≥ mínimo), si lo subió. */
+  precioVendedor?: number | null;
   /** Costo promedio del SKU: SOLO para Isaac (`conCosto`). */
   costo?: number;
-  /** Comisión por pieza del vendedor al que se le está mostrando. */
+  /** Comisión por pieza del vendedor al que se le está mostrando (sobre el
+   * mínimo), su sobreprecio y el total que gana por pieza. */
   comision?: number;
+  sobreprecio?: number;
+  gananciaTotal?: number;
+}
+
+/** Precio que ve el cliente final: el del vendedor si lo subió, si no el mínimo. */
+export function precioAlCliente(p: Pick<ProductoVendedores, "precioVenta" | "precioVendedor">) {
+  if (p.precioVenta === null) return null;
+  return p.precioVendedor && p.precioVendedor > p.precioVenta ? p.precioVendedor : p.precioVenta;
 }
 
 export interface FiltrosCatalogo {
@@ -45,6 +56,9 @@ export interface FiltrosCatalogo {
   soloConStock?: boolean;
   /** true = solo productos que ya tienen precio de venta. */
   soloConPrecio?: boolean;
+  /** Link de clientes mandado "sin precios" aunque el vendedor tenga
+   * activado que sus clientes vean precios (`?sinprecios=1`). */
+  sinPrecios?: boolean;
 }
 
 export interface CatalogoVendedores {
@@ -62,6 +76,7 @@ export function filtrosDeParams(params: Record<string, string | undefined>): Fil
     categoria: params.categoria?.trim() || undefined,
     marca: params.marca?.trim() || undefined,
     soloConStock: params.todos !== "1",
+    sinPrecios: params.sinprecios === "1",
   };
 }
 
@@ -71,6 +86,7 @@ export function queryDeFiltros(f: FiltrosCatalogo, extra: Record<string, string 
   if (f.categoria) p.set("categoria", f.categoria);
   if (f.marca) p.set("marca", f.marca);
   if (!f.soloConStock) p.set("todos", "1");
+  if (f.sinPrecios) p.set("sinprecios", "1");
   for (const [k, v] of Object.entries(extra)) if (v) p.set(k, v);
   const s = p.toString();
   return s ? `?${s}` : "";
@@ -138,12 +154,16 @@ export function reglaComisionDe(vendedor: Pick<Vendedor, "comision_pct" | "comis
   return { pct: Number(vendedor.comision_pct) || 0, fija: Number(vendedor.comision_fija) || 0 };
 }
 
-/** Le pone a cada producto la comisión por pieza de ese vendedor. */
-export function conComisionDe(productos: ProductoVendedores[], vendedor: Vendedor, especiales: ComisionVendedorProducto[]) {
-  return productos.map((p) => ({
-    ...p,
-    comision: p.precioVenta ? comisionPorPieza(p.precioVenta, reglaComisionDe(vendedor, especiales, p.sku)) : undefined,
-  }));
+/** Le pone a cada producto su precio propio (si lo subió) y lo que gana por
+ * pieza ese vendedor: comisión sobre el mínimo + sobreprecio. */
+export function conComisionDe(productos: ProductoVendedores[], vendedor: Vendedor, especiales: ComisionVendedorProducto[], precios: PrecioVendedor[] = []) {
+  const precioPorSku = new Map(precios.map((x) => [x.sku, Number(x.precio)]));
+  return productos.map((p) => {
+    const precioVendedor = precioPorSku.get(p.sku) ?? null;
+    if (p.precioVenta === null) return { ...p, precioVendedor };
+    const g = gananciaVendedor(p.precioVenta, precioVendedor, reglaComisionDe(vendedor, especiales, p.sku));
+    return { ...p, precioVendedor, comision: g.base, sobreprecio: g.sobreprecio, gananciaTotal: g.total };
+  });
 }
 
 /** Token largo al azar para los links (32 caracteres, letras y números
@@ -185,17 +205,42 @@ export async function obtenerVendedorPorToken(token: string, registrarVisita = f
   return { vendedor: data, modo };
 }
 
-/** Catálogo para las páginas públicas (service role key, SIN costo). En
- * modo vendedor se agrega su comisión por pieza. Solo productos con precio
- * (sin precio no se ofrece). */
+/** Catálogo para las páginas públicas (service role key, SIN costo). Siempre
+ * trae el precio propio del vendedor (lo ven sus clientes); en modo vendedor
+ * además su comisión/sobreprecio. Solo productos con precio mínimo. */
 export async function cargarCatalogoPublico(vendedor: Vendedor, modo: ModoCatalogo, filtros: FiltrosCatalogo) {
   const servicio = createServiceClient();
-  const [catalogo, { data: especiales }] = await Promise.all([
+  const [catalogo, { data: especiales }, { data: precios }] = await Promise.all([
     cargarCatalogoVendedores(servicio, { ...filtros, soloConPrecio: true }),
     servicio.from("comisiones_vendedor_producto").select("*").eq("vendedor_id", vendedor.id).returns<ComisionVendedorProducto[]>(),
+    servicio.from("precios_vendedor").select("*").eq("vendedor_id", vendedor.id).returns<PrecioVendedor[]>(),
   ]);
-  if (modo === "vendedor") catalogo.productos = conComisionDe(catalogo.productos, vendedor, especiales ?? []);
+  const conPrecios = conComisionDe(catalogo.productos, vendedor, especiales ?? [], precios ?? []);
+  catalogo.productos = modo === "vendedor" ? conPrecios : conPrecios.map((p) => ({ ...p, comision: undefined, sobreprecio: undefined, gananciaTotal: undefined }));
   return catalogo;
+}
+
+/** Guarda (o quita, con null) el precio propio del vendedor para un SKU.
+ * Se llama desde su link privado, SIN sesión: valida el token, que sea el
+ * link del vendedor (no el de clientes) y que el precio no baje del mínimo. */
+export async function fijarPrecioVendedorPorToken(token: string, sku: string, precio: number | null) {
+  const acceso = await obtenerVendedorPorToken(token);
+  if (!acceso || acceso.modo !== "vendedor") return { error: "Este link ya no está activo." };
+  const servicio = createServiceClient();
+  const { data: prod } = await servicio.from("productos_catalogo").select("precio_venta").eq("sku", sku).maybeSingle<{ precio_venta: number | null }>();
+  const minimo = prod?.precio_venta ? Number(prod.precio_venta) : null;
+  if (minimo === null) return { error: "Este producto todavía no tiene precio autorizado." };
+  if (precio === null || precio <= minimo) {
+    const { error } = await servicio.from("precios_vendedor").delete().eq("vendedor_id", acceso.vendedor.id).eq("sku", sku);
+    if (error) return { error: /precios_vendedor/.test(error.message) ? "Falta correr el SQL 0045 en Supabase." : error.message };
+    return { error: null, precio: minimo };
+  }
+  if (!Number.isFinite(precio)) return { error: "Precio inválido." };
+  const { error } = await servicio
+    .from("precios_vendedor")
+    .upsert({ vendedor_id: acceso.vendedor.id, sku, precio, actualizado_en: new Date().toISOString() }, { onConflict: "vendedor_id,sku" });
+  if (error) return { error: /precios_vendedor/.test(error.message) ? "Falta correr el SQL 0045 en Supabase." : error.message };
+  return { error: null, precio };
 }
 
 export function medidasTexto(p: Pick<ProductoVendedores, "largoCm" | "anchoCm" | "altoCm">) {

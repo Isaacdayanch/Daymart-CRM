@@ -38,3 +38,13 @@ export function precioParaMargenVendedor(costo: number, regla: ReglaComision, ma
   if (divisor <= 0) return null;
   return Math.ceil((costo + (regla.fija || 0)) / divisor);
 }
+
+/** Lo que gana el vendedor por pieza cuando vende a `precioVendedor` con un
+ * mínimo autorizado `minimo`: su comisión normal sobre el mínimo + TODO el
+ * sobreprecio (regla de Isaac, 6 oct). */
+export function gananciaVendedor(minimo: number, precioVendedor: number | null | undefined, regla: ReglaComision) {
+  const base = comisionPorPieza(minimo, regla);
+  const precio = precioVendedor && precioVendedor > minimo ? precioVendedor : minimo;
+  const sobreprecio = Math.max(0, Math.round((precio - minimo) * 100) / 100);
+  return { base, sobreprecio, total: Math.round((base + sobreprecio) * 100) / 100, precio };
+}

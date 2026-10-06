@@ -34,7 +34,7 @@ export default async function ImprimirCatalogoPublico({
         titulo={modo === "vendedor" ? "Catálogo de productos" : `Catálogo de ${vendedor.nombre}`}
         subtitulo={subtitulo || null}
         contacto={contacto}
-        vista={{ modo, conPrecios: vendedor.clientes_ven_precios, conComision: modo === "vendedor" }}
+        vista={{ modo, conPrecios: vendedor.clientes_ven_precios && !filtros.sinPrecios, conComision: modo === "vendedor" }}
       />
     </div>
   );

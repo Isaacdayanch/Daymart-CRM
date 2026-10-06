@@ -131,7 +131,7 @@ export function FichaVendedor({ vendedor: v, baseUrl, categorias }: { vendedor: 
             </div>
             <label className="flex items-center gap-2 text-sm text-zinc-700 sm:col-span-2 lg:col-span-4">
               <input type="checkbox" name="clientes_ven_precios" defaultChecked={v.clientes_ven_precios} className="rounded border-zinc-300" />
-              Sus clientes SÍ ven el precio de venta en el link para clientes
+              Sus clientes SÍ ven precios en el link para clientes (el precio del vendedor, nunca menor a tu mínimo)
             </label>
             <div className="flex items-center gap-3 sm:col-span-2 lg:col-span-4">
               <button type="submit" className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700">
@@ -181,7 +181,7 @@ export function FichaVendedor({ vendedor: v, baseUrl, categorias }: { vendedor: 
           <TarjetaLink
             color="emerald"
             titulo="Link para sus clientes"
-            descripcion={`Lo comparte el vendedor. Sin cantidades exactas${v.clientes_ven_precios ? ", con precio de venta" : " y sin precios"}.`}
+            descripcion={`Lo comparte el vendedor. Sin cantidades exactas${v.clientes_ven_precios ? ", con el precio del vendedor (él puede mandarlo también sin precios)" : " y sin precios"}.`}
             url={linkClientes}
             whatsapp={`Catálogo de productos (${v.nombre}): ${linkClientes}`}
           />
