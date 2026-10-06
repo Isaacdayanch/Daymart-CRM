@@ -88,3 +88,99 @@ export async function actualizarProductoCatalogo(sku: string, formData: FormData
   return { error: null };
 }
 
+
+/** Quita un producto de Stock por completo (caso real de Isaac: un producto
+ * duplicado). A propósito NO es fácil: hay que escribir el SKU exacto.
+ *
+ * Solo se puede quitar un producto cuyo stock se capturó a mano (altas en
+ * Stock, carga masiva, histórico, ajustes, salidas sueltas). Si el SKU está
+ * ligado a algo más — un contenedor, una venta, una orden o envío de
+ * Mercado Libre, un envío a Full en camino o mercancía pendiente en China —
+ * se niega y dice exactamente qué lo detiene, porque esos registros se
+ * corrigen desde su origen (mismo principio que `movimientoSuelto`).
+ *
+ * Qué borra: sus movimientos de stock, sus ligas con publicaciones de ML,
+ * sus precios/comisiones de vendedores, y la ficha del catálogo queda con
+ * `eliminado_en` (soft delete: si el mismo SKU se vuelve a dar de alta,
+ * `guardarEnCatalogo` la revive). */
+export async function eliminarProductoStock(sku: string, formData: FormData) {
+  if (!(await esDueno())) return { error: "Solo el dueño puede quitar productos." };
+  const confirmacion = (texto(formData, "confirmacion") ?? "").toUpperCase();
+  if (confirmacion !== sku.trim().toUpperCase()) {
+    return { error: `Para quitarlo escribe exactamente el SKU: ${sku}` };
+  }
+  const supabase = await createClient();
+
+  const [{ data: movimientos }, { data: enContenedores }, { data: pendientes }, { data: lineasFull }] = await Promise.all([
+    supabase
+      .from("movimientos_stock")
+      .select("id, contenedor_id, venta_id, orden_ml_id, envio_full_id, recepcion_full_id, inbound_ml_id")
+      .eq("sku", sku)
+      .returns<{ id: string; contenedor_id: string | null; venta_id: string | null; orden_ml_id: number | null; envio_full_id: string | null; recepcion_full_id: string | null; inbound_ml_id: string | null }[]>(),
+    supabase
+      .from("productos")
+      .select("contenedor:contenedores(numero, eliminado_en)")
+      .eq("sku", sku)
+      .returns<{ contenedor: { numero: number; eliminado_en: string | null } | { numero: number; eliminado_en: string | null }[] | null }[]>(),
+    supabase.from("pendientes_china").select("id").eq("sku", sku).eq("estado", "PENDIENTE"),
+    supabase
+      .from("envios_full_lineas")
+      .select("id, envio:envios_full(numero, estado)")
+      .eq("sku", sku)
+      .returns<{ id: string; envio: { numero: number; estado: string } | { numero: number; estado: string }[] | null }[]>(),
+  ]);
+
+  const ataduras: string[] = [];
+  const numerosContenedor = new Set<number>();
+  for (const p of enContenedores ?? []) {
+    const c = Array.isArray(p.contenedor) ? p.contenedor[0] : p.contenedor;
+    if (c && !c.eliminado_en) numerosContenedor.add(c.numero);
+  }
+  if (numerosContenedor.size > 0) {
+    ataduras.push(`está en el contenedor ${Array.from(numerosContenedor).sort((a, b) => a - b).join(", ")} (quítalo o cámbiale el SKU desde el contenedor)`);
+  }
+  const movs = movimientos ?? [];
+  if (movs.some((m) => m.contenedor_id)) ataduras.push("tiene entradas que vienen de un contenedor recibido");
+  if (movs.some((m) => m.venta_id)) ataduras.push("tiene salidas por ventas directas (cancélalas desde Ventas)");
+  if (movs.some((m) => m.orden_ml_id || m.envio_full_id || m.recepcion_full_id || m.inbound_ml_id)) {
+    ataduras.push("tiene salidas generadas por Mercado Libre (ventas o envíos a Full)");
+  }
+  const enviosAbiertos = new Set<number>();
+  for (const l of lineasFull ?? []) {
+    const e = Array.isArray(l.envio) ? l.envio[0] : l.envio;
+    if (e && e.estado === "PREPARADO") enviosAbiertos.add(e.numero);
+  }
+  if (enviosAbiertos.size > 0) ataduras.push(`va en el envío a Full #${Array.from(enviosAbiertos).join(", #")} que sigue en camino`);
+  if ((pendientes ?? []).length > 0) ataduras.push("tiene mercancía pendiente en China (Stock → Pendientes)");
+  if (ataduras.length > 0) {
+    return { error: `No se puede quitar «${sku}»: ${ataduras.join("; ")}. Si es un duplicado, lo que conviene es quitar el otro.` };
+  }
+
+  // Todo lo que tiene es capturado a mano: se borra.
+  const { error: errorMov } = await supabase.from("movimientos_stock").delete().eq("sku", sku);
+  if (errorMov) return { error: `No se pudieron borrar sus movimientos: ${errorMov.message}` };
+
+  // Precios y comisiones de vendedores (si falta el SQL, no detiene el borrado).
+  await supabase.from("precios_vendedor").delete().eq("sku", sku);
+  await supabase.from("comisiones_vendedor_producto").delete().eq("sku", sku);
+
+  // Ligas con publicaciones de Mercado Libre (tabla sin políticas: solo el
+  // servidor con la service role key).
+  try {
+    const { createServiceClient } = await import("@/lib/supabase/servicio");
+    await createServiceClient().from("mercadolibre_vinculos").delete().eq("sku_crm", sku);
+  } catch {
+    // sin service role key (entorno local) — la liga se queda, no estorba
+  }
+
+  const { error: errorCat } = await supabase.from("productos_catalogo").update({ eliminado_en: new Date().toISOString() }).eq("sku", sku);
+  if (errorCat && !/does not exist|schema cache/i.test(errorCat.message)) return { error: errorCat.message };
+
+  refrescar();
+  revalidatePath("/stock/movimientos");
+  revalidatePath("/stock/catalogo");
+  revalidatePath("/mercadolibre/stock");
+  revalidatePath("/vendedores/precios");
+  revalidatePath("/");
+  return { error: null, movimientosBorrados: movs.length };
+}

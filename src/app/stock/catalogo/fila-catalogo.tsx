@@ -7,6 +7,7 @@ import { CampoSugerencias } from "@/components/campo-sugerencias";
 import { Selector } from "@/components/selector";
 import type { Marca, ProductoCatalogo } from "@/lib/tipos";
 import { actualizarProductoCatalogo } from "./actions";
+import { EliminarProducto } from "./eliminar-producto";
 
 const claseCampo = "mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500";
 
@@ -16,12 +17,15 @@ export function FilaCatalogo({
   categorias,
   lineas,
   stock,
+  puedeQuitar = false,
 }: {
   producto: ProductoCatalogo;
   marcas: Marca[];
   categorias: string[];
   lineas: string[];
   stock: number | null;
+  /** Solo dueño: muestra "quitar producto" (confirmando con el SKU). */
+  puedeQuitar?: boolean;
 }) {
   const router = useRouter();
   const [editando, setEditando] = useState(false);
@@ -84,6 +88,11 @@ export function FilaCatalogo({
           </div>
           {error && <p className="text-xs text-red-600 lg:col-span-4">{error}</p>}
         </form>
+        {puedeQuitar && (
+          <div className="mt-3 border-t border-zinc-200 pt-3">
+            <EliminarProducto sku={p.sku} nombre={p.nombre} compacto />
+          </div>
+        )}
       </li>
     );
   }

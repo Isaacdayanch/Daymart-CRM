@@ -4,6 +4,7 @@ import { obtenerCatalogo, obtenerMarcas } from "@/lib/catalogo";
 import { resumenPorSku } from "@/lib/calculos-stock";
 import { obtenerPiezasPorCajaPorSku } from "@/lib/productos-stock";
 import type { ConfiguracionStock, MovimientoStock } from "@/lib/tipos";
+import { obtenerPerfilActual } from "@/lib/perfil";
 import { FilaCatalogo } from "./fila-catalogo";
 import { Marcas } from "./marcas";
 
@@ -13,6 +14,8 @@ import { Marcas } from "./marcas";
 export default async function CatalogoProductos({ searchParams }: { searchParams: Promise<{ q?: string; marca?: string }> }) {
   const { q = "", marca: marcaFiltro = "" } = await searchParams;
   const supabase = await createClient();
+  const perfil = await obtenerPerfilActual();
+  const esDueno = perfil?.rol === "dueno";
   let catalogo: Awaited<ReturnType<typeof obtenerCatalogo>> = [];
   let marcas: Awaited<ReturnType<typeof obtenerMarcas>> = [];
   let faltaSql = false;
@@ -57,7 +60,7 @@ export default async function CatalogoProductos({ searchParams }: { searchParams
         <div className="border-b border-zinc-100 p-5">
           <h2 className="text-sm font-semibold text-zinc-900">Catálogo de productos</h2>
           <p className="mt-0.5 text-xs text-zinc-500">
-            Un registro por SKU. Se llena solo desde Contenedores y altas manuales; aquí corriges nombre, marca, línea, categoría y la descripción de la pieza. Los precios para vendedores viven en{" "}
+            Un registro por SKU. Se llena solo desde Contenedores y altas manuales; aquí corriges nombre, marca, línea, categoría y la descripción de la pieza (y en «editar» puedes quitar un producto duplicado, confirmando con su SKU). Los precios para vendedores viven en{" "}
             <Link href="/vendedores/precios" className="underline-offset-2 hover:underline">
               Vendedores → Lista de precios
             </Link>
@@ -82,7 +85,7 @@ export default async function CatalogoProductos({ searchParams }: { searchParams
         </div>
         <ul className="divide-y divide-zinc-100">
           {lista.map((p) => (
-            <FilaCatalogo key={p.sku} producto={p} marcas={marcas} categorias={categorias} lineas={lineas} stock={stockPorSku.get(p.sku) ?? null} />
+            <FilaCatalogo key={p.sku} producto={p} marcas={marcas} categorias={categorias} lineas={lineas} stock={stockPorSku.get(p.sku) ?? null} puedeQuitar={esDueno} />
           ))}
           {lista.length === 0 && <li className="px-5 py-10 text-center text-sm text-zinc-400">{catalogo.length ? "Nada con ese filtro." : "El catálogo está vacío."}</li>}
         </ul>

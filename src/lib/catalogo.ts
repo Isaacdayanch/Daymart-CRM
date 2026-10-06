@@ -33,7 +33,9 @@ export interface DatosCatalogo {
  * la ficha). Nunca truena la operación principal: si la tabla no existe
  * todavía (falta el SQL 0038), devuelve el error para avisar, nada más. */
 export async function guardarEnCatalogo(supabase: SupabaseClient, datos: DatosCatalogo) {
-  const fila: Record<string, unknown> = { sku: datos.sku, nombre: datos.nombre, actualizado_en: new Date().toISOString() };
+  // `eliminado_en: null` revive la ficha si el SKU se había quitado de Stock
+  // y se vuelve a dar de alta.
+  const fila: Record<string, unknown> = { sku: datos.sku, nombre: datos.nombre, actualizado_en: new Date().toISOString(), eliminado_en: null };
   const opcionales: (keyof DatosCatalogo)[] = ["marca_id", "linea", "categoria", "imagen_url", "piezas_por_caja", "largo_cm", "ancho_cm", "alto_cm", "memo"];
   for (const campo of opcionales) {
     const v = datos[campo];
@@ -49,7 +51,7 @@ export async function guardarEnCatalogo(supabase: SupabaseClient, datos: DatosCa
  * contenedor, movimientos) para no repetir uno nuevo. */
 export async function skusExistentes(supabase: SupabaseClient): Promise<Set<string>> {
   const [{ data: cat }, { data: prods }, { data: movs }] = await Promise.all([
-    supabase.from("productos_catalogo").select("sku"),
+    supabase.from("productos_catalogo").select("sku").is("eliminado_en", null),
     supabase.from("productos").select("sku"),
     supabase.from("movimientos_stock").select("sku"),
   ]);

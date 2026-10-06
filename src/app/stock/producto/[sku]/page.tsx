@@ -11,6 +11,7 @@ import { AjustarCantidad } from "./ajustar-cantidad";
 import { AgregarHistorico } from "./agregar-historico";
 import { registradoEnSistema } from "@/lib/calculos-historico";
 import { EditarCostoManual } from "./editar-costo-manual";
+import { EliminarProducto } from "@/app/stock/catalogo/eliminar-producto";
 
 export default async function DetalleProducto({ params }: { params: Promise<{ sku: string }> }) {
   const { sku: skuCrudo } = await params;
@@ -285,6 +286,13 @@ export default async function DetalleProducto({ params }: { params: Promise<{ sk
             </table>
           </div>
         </div>
+
+        {verDinero && (
+          <div className="flex items-center justify-between rounded-xl border border-zinc-200 bg-white px-5 py-3">
+            <p className="text-xs text-zinc-500">¿Este producto está duplicado o se dio de alta por error?</p>
+            <EliminarProducto sku={sku} nombre={masReciente.nombre} />
+          </div>
+        )}
       </main>
     </div>
   );
