@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { texto } from "@/lib/form-helpers";
-import type { EnvioChina, Moneda, MovimientoFinanciero, TipoCuentaFinanciera, TipoMovimientoFinanciero } from "@/lib/tipos";
+import type { EnvioChina, Moneda, MovimientoDeudaProveedor, MovimientoFinanciero, TipoCuentaFinanciera, TipoMovimientoFinanciero } from "@/lib/tipos";
 import { saldoCuenta } from "@/lib/calculos-financieras";
 import { CATEGORIA_AJUSTE } from "@/lib/estado-cuenta";
 import { recalcularCostoEntradasContenedor } from "@/app/contenedores/[id]/actions";
@@ -1335,5 +1335,106 @@ export async function registrarAbonoProveedor(formData: FormData) {
   revalidatePath("/finanzas/proveedores");
   revalidatePath("/finanzas");
   revalidatePath("/finanzas/movimientos");
+  return { error: null };
+}
+
+/** Un movimiento de deuda con proveedor está "ligado" cuando lo generó un
+ * contenedor (cargo del crédito del proveedor → `pagos_mercancia.cargo_deuda_id`,
+ * o abono de un envío desde cuenta puente → comparte
+ * `movimiento_financiero_id` con `pagos_mercancia`). Esos se corrigen desde
+ * el contenedor, no aquí (una sola captura, nunca dos registros sueltos). */
+async function deudaProveedorLigada(supabase: Awaited<ReturnType<typeof createClient>>, mov: { id: string; movimiento_financiero_id: string | null }) {
+  const { count: porCargo } = await supabase.from("pagos_mercancia").select("id", { count: "exact", head: true }).eq("cargo_deuda_id", mov.id);
+  if (porCargo) return true;
+  if (mov.movimiento_financiero_id) {
+    const { count: porMov } = await supabase
+      .from("pagos_mercancia")
+      .select("id", { count: "exact", head: true })
+      .eq("movimiento_financiero_id", mov.movimiento_financiero_id);
+    if (porMov) return true;
+  }
+  return false;
+}
+
+/** Edita un cargo o abono de deuda con proveedor capturado a mano en
+ * Finanzas → Proveedores (Isaac, 6 oct: "no puedo editar el pago de
+ * proveedores"). Monto, fecha, notas, fecha límite (cargo) y, en abonos, la
+ * cuenta: el movimiento de Finanzas ligado se actualiza en la misma
+ * operación; "Sin cuenta" lo borra y volver a poner cuenta lo crea de cero
+ * (mismo patrón que `actualizarPagoFactura`). */
+export async function actualizarMovimientoDeudaProveedor(movId: string, formData: FormData) {
+  const supabase = await createClient();
+  const monto = Number(formData.get("monto"));
+  if (!Number.isFinite(monto) || monto <= 0) return { error: "El monto no es válido." };
+  const notas = texto(formData, "notas");
+  const cuentaId = texto(formData, "cuenta_id");
+  const fechaCampo = formData.get("fecha");
+  const fecha =
+    typeof fechaCampo === "string" && fechaCampo ? new Date(`${fechaCampo}T12:00:00`).toISOString() : new Date().toISOString();
+  const fechaLimiteCampo = formData.get("fecha_limite");
+  const fechaLimite = typeof fechaLimiteCampo === "string" && fechaLimiteCampo ? new Date(`${fechaLimiteCampo}T12:00:00`).toISOString() : null;
+
+  const { data: mov } = await supabase
+    .from("movimientos_deuda_proveedor")
+    .select("*")
+    .eq("id", movId)
+    .maybeSingle<MovimientoDeudaProveedor>();
+  if (!mov) return { error: "No se encontró el movimiento." };
+  if (await deudaProveedorLigada(supabase, mov)) return { error: "Este movimiento viene de un contenedor: corrígelo desde el contenedor." };
+
+  if (mov.tipo === "CARGO") {
+    const { error } = await supabase.from("movimientos_deuda_proveedor").update({ monto, fecha, notas, fecha_limite: fechaLimite }).eq("id", movId);
+    if (error) return { error: error.message };
+    revalidarFinanzas();
+    return { error: null };
+  }
+
+  // ABONO: sincronizar el movimiento real de Finanzas.
+  let movimientoFinancieroId = mov.movimiento_financiero_id;
+  if (mov.movimiento_financiero_id && !cuentaId) {
+    const { error } = await supabase.from("movimientos_financieros").delete().eq("id", mov.movimiento_financiero_id);
+    if (error) return { error: error.message };
+    movimientoFinancieroId = null;
+  } else if (mov.movimiento_financiero_id && cuentaId) {
+    const { error } = await supabase.from("movimientos_financieros").update({ monto, cuenta_id: cuentaId, fecha, notas }).eq("id", mov.movimiento_financiero_id);
+    if (error) return { error: error.message };
+  } else if (!mov.movimiento_financiero_id && cuentaId) {
+    const { data: categoria } = await supabase.from("categorias_financieras").select("id").eq("nombre", "Pago proveedor").maybeSingle<{ id: string }>();
+    const { data: movimiento, error } = await supabase
+      .from("movimientos_financieros")
+      .insert({ tipo: "SALIDA", cuenta_id: cuentaId, categoria_id: categoria?.id ?? null, monto, moneda: mov.moneda, fecha, contraparte: mov.proveedor, notas })
+      .select("id")
+      .single();
+    if (error || !movimiento) return { error: error?.message ?? "No se pudo guardar el movimiento." };
+    movimientoFinancieroId = movimiento.id;
+  }
+
+  const { error: errorAbono } = await supabase
+    .from("movimientos_deuda_proveedor")
+    .update({ monto, fecha, notas, cuenta_id: cuentaId || null, movimiento_financiero_id: movimientoFinancieroId })
+    .eq("id", movId);
+  if (errorAbono) return { error: errorAbono.message };
+  revalidarFinanzas();
+  return { error: null };
+}
+
+/** Quita un cargo o abono capturado a mano; si el abono tenía movimiento
+ * de Finanzas, se borra con él. */
+export async function eliminarMovimientoDeudaProveedor(movId: string) {
+  const supabase = await createClient();
+  const { data: mov } = await supabase
+    .from("movimientos_deuda_proveedor")
+    .select("*")
+    .eq("id", movId)
+    .maybeSingle<MovimientoDeudaProveedor>();
+  if (!mov) return { error: "No se encontró el movimiento." };
+  if (await deudaProveedorLigada(supabase, mov)) return { error: "Este movimiento viene de un contenedor: se quita desde el contenedor." };
+  if (mov.movimiento_financiero_id) {
+    const { error } = await supabase.from("movimientos_financieros").delete().eq("id", mov.movimiento_financiero_id);
+    if (error) return { error: error.message };
+  }
+  const { error } = await supabase.from("movimientos_deuda_proveedor").delete().eq("id", movId);
+  if (error) return { error: error.message };
+  revalidarFinanzas();
   return { error: null };
 }

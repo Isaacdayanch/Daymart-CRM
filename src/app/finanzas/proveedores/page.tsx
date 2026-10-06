@@ -4,10 +4,11 @@ import { cargosAbiertosProveedor, proveedoresConDeuda, saldoProveedor } from "@/
 import type { Contenedor, CuentaFinanciera, MovimientoDeudaProveedor } from "@/lib/tipos";
 import { FormularioProveedor } from "./formulario-proveedor";
 import { EnvioPuente } from "./envio-puente";
+import { FilaHistorial } from "./fila-historial";
 
 export default async function ProveedoresFinanzas() {
   const supabase = await createClient();
-  const [{ data: movimientos }, { data: cuentas }, { data: contenedores }, { data: abonosPendientes }] =
+  const [{ data: movimientos }, { data: cuentas }, { data: contenedores }, { data: abonosPendientes }, { data: ligas }] =
     await Promise.all([
       supabase.from("movimientos_deuda_proveedor").select("*").returns<MovimientoDeudaProveedor[]>(),
       supabase.from("cuentas_financieras").select("*").is("eliminado_en", null).returns<CuentaFinanciera[]>(),
@@ -22,7 +23,16 @@ export default async function ProveedoresFinanzas() {
         .select("id, contenedor_id, monto_dolares, fecha_limite")
         .eq("pagado", false)
         .returns<{ id: string; contenedor_id: string; monto_dolares: number; fecha_limite: string | null }[]>(),
+      // Para saber qué movimientos de deuda vienen de un contenedor (se
+      // corrigen desde ahí, no aquí).
+      supabase
+        .from("pagos_mercancia")
+        .select("cargo_deuda_id, movimiento_financiero_id")
+        .returns<{ cargo_deuda_id: string | null; movimiento_financiero_id: string | null }[]>(),
     ]);
+  const cargosLigados = new Set((ligas ?? []).map((l) => l.cargo_deuda_id).filter(Boolean));
+  const movsLigados = new Set((ligas ?? []).map((l) => l.movimiento_financiero_id).filter(Boolean));
+  const estaLigado = (m: MovimientoDeudaProveedor) => cargosLigados.has(m.id) || (m.movimiento_financiero_id !== null && movsLigados.has(m.movimiento_financiero_id));
 
   const listaMovimientos = movimientos ?? [];
   const listaCuentas = cuentas ?? [];
@@ -101,21 +111,7 @@ export default async function ProveedoresFinanzas() {
         ) : (
           <div className="divide-y divide-zinc-100">
             {historial.map((m) => (
-              <div key={m.id} className="flex items-center justify-between px-6 py-3 text-sm">
-                <div>
-                  <p className="font-medium text-zinc-900">
-                    {m.proveedor} · {m.tipo === "CARGO" ? "Cargo" : "Abono"}
-                  </p>
-                  <p className="text-xs text-zinc-500">
-                    {formatoFecha(m.fecha)} {m.notas ? `— ${m.notas}` : ""}
-                    {m.tipo === "CARGO" && m.fecha_limite ? ` · vence ${formatoFecha(m.fecha_limite)}` : ""}
-                  </p>
-                </div>
-                <p className={`font-semibold ${m.tipo === "CARGO" ? "text-red-600" : "text-emerald-600"}`}>
-                  {m.tipo === "CARGO" ? "+" : "-"}
-                  {m.moneda === "USD" ? formatoDolares(m.monto) : formatoPesos(m.monto)}
-                </p>
-              </div>
+              <FilaHistorial key={m.id} m={m} cuentas={listaCuentas} ligado={estaLigado(m)} />
             ))}
           </div>
         )}
