@@ -7,15 +7,25 @@ import { CampoMonto } from "@/components/campo-monto";
 import { CampoSugerencias } from "@/components/campo-sugerencias";
 import { Selector } from "@/components/selector";
 import type { CuentaFinanciera } from "@/lib/tipos";
+import { formatoFecha } from "@/lib/formato";
+import { claveProveedor, textoUltimoPago, type UltimosPagos } from "@/lib/ultimos-pagos";
 import { agregarCargoProveedor, registrarAbonoProveedor } from "../actions";
 
 const claseCampo =
   "mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500";
 
-export function FormularioProveedor({ proveedores, cuentas }: { proveedores: string[]; cuentas: CuentaFinanciera[] }) {
+export function FormularioProveedor({ proveedores, cuentas, ultimos = {} }: { proveedores: string[]; cuentas: CuentaFinanciera[]; ultimos?: UltimosPagos }) {
   const router = useRouter();
   const [modo, setModo] = useState<"CARGO" | "ABONO">("ABONO");
   const [proveedor, setProveedor] = useState("");
+  // Propuesta "como la última vez": al escribir/elegir un proveedor que ya
+  // tiene pagos, la cuenta y la moneda se precargan con las de su último
+  // pago (Isaac, 6 oct). Los Selector son sin controlar: el `key` los
+  // vuelve a montar con el nuevo defaultValue.
+  const sugerido = ultimos[claveProveedor(proveedor)];
+  const nombreCuenta = (id: string | null) => cuentas.find((c) => c.id === id)?.nombre ?? null;
+  const cuentaPropuesta = sugerido ? (sugerido.cuentaId ?? "") : (cuentas[0]?.id ?? "");
+  const monedaPropuesta = sugerido?.moneda ?? "USD";
   const [error, setError] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
   const hoyTexto = new Date().toISOString().slice(0, 10);
@@ -73,14 +83,16 @@ export function FormularioProveedor({ proveedores, cuentas }: { proveedores: str
             sugerencias={proveedores}
             required
           />
+          {sugerido && modo === "ABONO" && <p className="mt-1 text-xs text-emerald-700">{textoUltimoPago(sugerido, nombreCuenta, formatoFecha)}</p>}
         </div>
         {modo === "ABONO" && (
           <div>
             <label className="block text-xs font-medium text-zinc-500">Cuenta de origen</label>
             <div className="mt-1">
               <Selector
+                key={`cuenta-${cuentaPropuesta}`}
                 name="cuenta_id"
-                defaultValue={cuentas[0]?.id}
+                defaultValue={cuentaPropuesta}
                 opciones={[
                   ...cuentas.map((c) => ({ value: c.id, label: c.nombre })),
                   { value: "", label: "Sin cuenta (fue antes de usar el sistema)" },
@@ -100,8 +112,9 @@ export function FormularioProveedor({ proveedores, cuentas }: { proveedores: str
           <label className="block text-xs font-medium text-zinc-500">Moneda</label>
           <div className="mt-1">
             <Selector
+              key={`moneda-${monedaPropuesta}`}
               name="moneda"
-              defaultValue="USD"
+              defaultValue={monedaPropuesta}
               opciones={[
                 { value: "USD", label: "Dólares (USD)" },
                 { value: "MXN", label: "Pesos (MXN)" },

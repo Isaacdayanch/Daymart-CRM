@@ -6,8 +6,9 @@ import { CampoFecha } from "@/components/campo-fecha";
 import { CampoMonto } from "@/components/campo-monto";
 import { CampoSugerencias } from "@/components/campo-sugerencias";
 import { Selector } from "@/components/selector";
-import { formatoPesos } from "@/lib/formato";
+import { formatoFecha, formatoPesos } from "@/lib/formato";
 import type { CuentaFinanciera, Moneda } from "@/lib/tipos";
+import { claveProveedor, textoUltimoPago, type UltimosPagos } from "@/lib/ultimos-pagos";
 import { mandarDineroChina } from "./actions";
 import type { FacturaAbierta } from "./formulario-movimiento";
 
@@ -15,6 +16,8 @@ const claseCampo = "mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-
 
 export interface DatosChina {
   proveedores: string[];
+  /** Último pago a cada proveedor, para proponer "como la última vez". */
+  ultimos?: UltimosPagos;
   contenedores: { id: string; numero: number; proveedor: string | null }[];
   abonosPendientes: { id: string; contenedor_id: string; monto_dolares: number; fecha_limite: string | null }[];
 }
@@ -45,6 +48,30 @@ export function FormularioEnvioChina({ cuentas, datos, facturas, cuentaInicial }
   const [error, setError] = useState<string | null>(null);
   const [exito, setExito] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
+  // "Como la última vez" (Isaac, 6 oct): al elegir un proveedor con pagos
+  // previos se precargan cuenta de origen, vía, cuenta puente, moneda y %
+  // de comisión. `aplicado` es la clave del proveedor al que ya se le
+  // aplicó (para no pisar lo que Isaac cambie después) y sirve de `key`
+  // para volver a montar los Selector sin controlar.
+  const [aplicado, setAplicado] = useState("");
+  const ultimos = datos.ultimos ?? {};
+  const sugerido = ultimos[claveProveedor(proveedor)];
+  const nombreCuenta = (id: string | null) => cuentas.find((c) => c.id === id)?.nombre ?? null;
+  function alCambiarProveedor(v: string) {
+    setProveedor(v);
+    const k = claveProveedor(v);
+    const s = ultimos[k];
+    if (!s || k === aplicado) return;
+    if (s.cuentaId && cuentas.some((c) => c.id === s.cuentaId)) setCuentaOrigen(s.cuentaId);
+    setVia(s.via);
+    if (s.cuentaPuenteId && cuentas.some((c) => c.id === s.cuentaPuenteId)) setCuentaPuente(s.cuentaPuenteId);
+    setMoneda(s.moneda);
+    if (s.comisionPct) {
+      setModo("PORCENTAJE");
+      setValor(String(s.comisionPct));
+    }
+    setAplicado(k);
+  }
 
   const montoNum = Number(monto) || 0;
   const v = Number(valor) || 0;
@@ -79,7 +106,7 @@ export function FormularioEnvioChina({ cuentas, datos, facturas, cuentaInicial }
         <div>
           <label className="block text-xs font-medium text-zinc-500">¿De qué cuenta sale?</label>
           <div className="mt-1">
-            <Selector name="cuenta_origen_id" defaultValue={cuentaOrigen} onChange={setCuentaOrigen} opciones={opcionesCuentas} />
+            <Selector key={`origen-${aplicado}`} name="cuenta_origen_id" defaultValue={cuentaOrigen} onChange={setCuentaOrigen} opciones={opcionesCuentas} />
           </div>
         </div>
         <div>
@@ -95,7 +122,7 @@ export function FormularioEnvioChina({ cuentas, datos, facturas, cuentaInicial }
             </div>
             {via === "PUENTE" && (
               <div className="flex-1">
-                <Selector name="cuenta_puente_id" defaultValue={cuentaPuente} onChange={setCuentaPuente} placeholder="Cuenta puente (ej. Jaim T.)" opciones={opcionesCuentas.filter((c) => c.value !== cuentaOrigen)} />
+                <Selector key={`puente-${aplicado}`} name="cuenta_puente_id" defaultValue={cuentaPuente} onChange={setCuentaPuente} placeholder="Cuenta puente (ej. Jaim T.)" opciones={opcionesCuentas.filter((c) => c.value !== cuentaOrigen)} />
               </div>
             )}
           </div>
@@ -109,12 +136,14 @@ export function FormularioEnvioChina({ cuentas, datos, facturas, cuentaInicial }
         </div>
         <div>
           <label className="block text-xs font-medium text-zinc-500">¿Para qué proveedor?</label>
-          <CampoSugerencias name="proveedor" value={proveedor} onChange={setProveedor} sugerencias={datos.proveedores} placeholder="Ej. Joseph Senado" />
+          <CampoSugerencias name="proveedor" value={proveedor} onChange={alCambiarProveedor} sugerencias={datos.proveedores} placeholder="Ej. Joseph Senado" />
+          {sugerido && aplicado === claveProveedor(proveedor) && <p className="mt-1 text-xs text-emerald-700">{textoUltimoPago(sugerido, nombreCuenta, formatoFecha)}</p>}
         </div>
         <div>
           <label className="block text-xs font-medium text-zinc-500">Su deuda está en</label>
           <div className="mt-1">
             <Selector
+              key={`moneda-${aplicado}`}
               name="moneda_proveedor"
               defaultValue={moneda}
               onChange={(m) => setMoneda(m as Moneda)}

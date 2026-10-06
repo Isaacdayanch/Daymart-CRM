@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ultimosPagosPorProveedor } from "@/lib/ultimos-pagos";
 import { createClient } from "@/lib/supabase/server";
 import { saldosPorCuenta } from "@/lib/calculos-financieras";
 import { formatoPesos, formatoDolares, formatoFecha } from "@/lib/formato";
@@ -45,6 +46,7 @@ export default async function ResumenFinanzas({ searchParams }: { searchParams: 
   const proveedoresSugeridos = Array.from(new Set([...proveedoresConDeuda(deudaProveedores ?? []), ...(contenedores ?? []).map((c) => c.fabrica_principal).filter((x): x is string => Boolean(x))])).sort();
   const datosChina = {
     proveedores: proveedoresSugeridos,
+    ultimos: await ultimosPagosPorProveedor(supabase),
     contenedores: (contenedores ?? []).map((c) => ({ id: c.id, numero: c.numero, proveedor: c.fabrica_principal })),
     abonosPendientes: abonosPendientes ?? [],
   };

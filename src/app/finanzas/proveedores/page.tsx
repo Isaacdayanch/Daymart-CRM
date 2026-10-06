@@ -5,10 +5,11 @@ import type { Contenedor, CuentaFinanciera, MovimientoDeudaProveedor } from "@/l
 import { FormularioProveedor } from "./formulario-proveedor";
 import { EnvioPuente } from "./envio-puente";
 import { FilaHistorial } from "./fila-historial";
+import { ultimosPagosPorProveedor } from "@/lib/ultimos-pagos";
 
 export default async function ProveedoresFinanzas() {
   const supabase = await createClient();
-  const [{ data: movimientos }, { data: cuentas }, { data: contenedores }, { data: abonosPendientes }, { data: ligas }] =
+  const [{ data: movimientos }, { data: cuentas }, { data: contenedores }, { data: abonosPendientes }, { data: ligas }, ultimos] =
     await Promise.all([
       supabase.from("movimientos_deuda_proveedor").select("*").returns<MovimientoDeudaProveedor[]>(),
       supabase.from("cuentas_financieras").select("*").is("eliminado_en", null).returns<CuentaFinanciera[]>(),
@@ -29,6 +30,7 @@ export default async function ProveedoresFinanzas() {
         .from("pagos_mercancia")
         .select("cargo_deuda_id, movimiento_financiero_id")
         .returns<{ cargo_deuda_id: string | null; movimiento_financiero_id: string | null }[]>(),
+      ultimosPagosPorProveedor(supabase),
     ]);
   const cargosLigados = new Set((ligas ?? []).map((l) => l.cargo_deuda_id).filter(Boolean));
   const movsLigados = new Set((ligas ?? []).map((l) => l.movimiento_financiero_id).filter(Boolean));
@@ -89,7 +91,7 @@ export default async function ProveedoresFinanzas() {
         )}
       </div>
 
-      <FormularioProveedor proveedores={nombresProveedores} cuentas={listaCuentas} />
+      <FormularioProveedor proveedores={nombresProveedores} cuentas={listaCuentas} ultimos={ultimos} />
 
       <EnvioPuente
         cuentas={listaCuentas}

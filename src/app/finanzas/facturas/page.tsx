@@ -6,10 +6,11 @@ import { eliminarFactura } from "../actions";
 import { FormularioFactura } from "./formulario-factura";
 import { RegistrarPago } from "./registrar-pago";
 import { PagoItem } from "./pago-item";
+import { ultimosPagosPorProveedor } from "@/lib/ultimos-pagos";
 
 export default async function FacturasFinanzas() {
   const supabase = await createClient();
-  const [{ data: facturas }, { data: pagos }, { data: cuentas }, { data: categorias }] = await Promise.all([
+  const [{ data: facturas }, { data: pagos }, { data: cuentas }, { data: categorias }, ultimos] = await Promise.all([
     supabase
       .from("facturas_pendientes")
       .select("*")
@@ -18,6 +19,7 @@ export default async function FacturasFinanzas() {
     supabase.from("pagos_factura").select("*").returns<PagoFactura[]>(),
     supabase.from("cuentas_financieras").select("*").is("eliminado_en", null).returns<CuentaFinanciera[]>(),
     supabase.from("categorias_financieras").select("*").is("eliminado_en", null).returns<CategoriaFinanciera[]>(),
+    ultimosPagosPorProveedor(supabase),
   ]);
 
   const listaFacturas = facturas ?? [];
@@ -66,6 +68,7 @@ export default async function FacturasFinanzas() {
         }))}
         cuentas={listaCuentas}
         categorias={listaCategorias}
+        ultimos={ultimos}
       />
 
       <div className="rounded-2xl border border-zinc-200 bg-white shadow-sm">

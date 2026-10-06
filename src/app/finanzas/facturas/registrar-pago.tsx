@@ -6,8 +6,9 @@ import { CampoFecha } from "@/components/campo-fecha";
 import { CampoMonto } from "@/components/campo-monto";
 import { Selector } from "@/components/selector";
 import { SelectorCategoria } from "../selector-categoria";
-import { formatoDolares, formatoPesos } from "@/lib/formato";
+import { formatoDolares, formatoFecha, formatoPesos } from "@/lib/formato";
 import type { CategoriaFinanciera, CuentaFinanciera } from "@/lib/tipos";
+import { claveProveedor, textoUltimoPago, type UltimosPagos } from "@/lib/ultimos-pagos";
 import { registrarPagoFactura } from "../actions";
 
 const claseCampo =
@@ -25,13 +26,24 @@ export function RegistrarPago({
   facturas,
   cuentas,
   categorias,
+  ultimos = {},
 }: {
   facturas: FacturaOpcion[];
   cuentas: CuentaFinanciera[];
   categorias: CategoriaFinanciera[];
+  ultimos?: UltimosPagos;
 }) {
   const router = useRouter();
-  const [modo, setModo] = useState<"DIRECTO" | "PUENTE">("DIRECTO");
+  // Propuesta "como la última vez" (Isaac, 6 oct): al elegir la factura se
+  // busca el último pago a ese proveedor y se precargan modo (directo o
+  // por cuenta puente), cuenta de origen y cuenta puente.
+  const [facturaId, setFacturaId] = useState(facturas[0]?.id ?? "");
+  const sugeridoDe = (id: string) => ultimos[claveProveedor(facturas.find((f) => f.id === id)?.proveedor)];
+  const sugerido = sugeridoDe(facturaId);
+  const nombreCuenta = (id: string | null) => cuentas.find((c) => c.id === id)?.nombre ?? null;
+  const [modo, setModo] = useState<"DIRECTO" | "PUENTE">(() => sugeridoDe(facturas[0]?.id ?? "")?.via ?? "DIRECTO");
+  const cuentaPropuesta = sugerido ? (sugerido.cuentaId ?? "") : (cuentas[0]?.id ?? "");
+  const puentePropuesta = sugerido?.cuentaPuenteId ?? cuentas[1]?.id ?? cuentas[0]?.id ?? "";
   const [tieneComision, setTieneComision] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
@@ -82,6 +94,14 @@ export function RegistrarPago({
             <Selector
               name="factura_id"
               defaultValue={facturas[0]?.id}
+              onChange={(id) => {
+                setFacturaId(id);
+                const s = sugeridoDe(id);
+                if (s) {
+                  setModo(s.via);
+                  setTieneComision(false);
+                }
+              }}
               opciones={facturas.map((f) => ({
                 value: f.id,
                 label: `${f.folio ? `Folio ${f.folio} — ` : ""}${f.proveedor} — saldo: ${
@@ -90,6 +110,7 @@ export function RegistrarPago({
               }))}
             />
           </div>
+          {sugerido && <p className="mt-1 text-xs text-emerald-700">{textoUltimoPago(sugerido, nombreCuenta, formatoFecha)}</p>}
         </div>
         <div>
           <label className="block text-xs font-medium text-zinc-500">
@@ -101,8 +122,9 @@ export function RegistrarPago({
           <label className="block text-xs font-medium text-zinc-500">Cuenta de origen</label>
           <div className="mt-1">
             <Selector
+              key={`cuenta-${facturaId}-${cuentaPropuesta}`}
               name="cuenta_id"
-              defaultValue={cuentas[0]?.id}
+              defaultValue={cuentaPropuesta}
               opciones={[
                 ...cuentas.map((c) => ({ value: c.id, label: c.nombre })),
                 ...(modo === "DIRECTO" ? [{ value: "", label: "Sin cuenta (fue antes de usar el sistema)" }] : []),
@@ -115,8 +137,9 @@ export function RegistrarPago({
             <label className="block text-xs font-medium text-zinc-500">Cuenta puente destino</label>
             <div className="mt-1">
               <Selector
+                key={`puente-${facturaId}-${puentePropuesta}`}
                 name="cuenta_destino_id"
-                defaultValue={cuentas[1]?.id ?? cuentas[0]?.id}
+                defaultValue={puentePropuesta}
                 opciones={cuentas.map((c) => ({ value: c.id, label: c.nombre }))}
               />
             </div>
