@@ -12,6 +12,7 @@ import { AgregarHistorico } from "./agregar-historico";
 import { registradoEnSistema } from "@/lib/calculos-historico";
 import { EditarCostoManual } from "./editar-costo-manual";
 import { EliminarProducto } from "@/app/stock/catalogo/eliminar-producto";
+import { DesgloseStock } from "./desglose-stock";
 
 export default async function DetalleProducto({ params }: { params: Promise<{ sku: string }> }) {
   const { sku: skuCrudo } = await params;
@@ -153,8 +154,15 @@ export default async function DetalleProducto({ params }: { params: Promise<{ sk
               piezasPorCaja={piezasPorCaja}
               bodegas={bodegasConStock}
             />
-            {verDinero && historico.length === 0 && (
-              <AgregarHistorico sku={sku} stockActual={actual} manualesCargadas={manualesCargadas} registradas={registradasSinManuales} bodegas={(bodegas ?? []).map((b) => ({ id: b.id, nombre: b.nombre }))} />
+            {verDinero && (
+              <AgregarHistorico
+                sku={sku}
+                stockActual={actual}
+                manualesCargadas={manualesCargadas}
+                registradas={registradasSinManuales}
+                historicoActual={historico.length ? { entradas: historicoEntradas, salidas: historicoSalidas } : null}
+                bodegas={(bodegas ?? []).map((b) => ({ id: b.id, nombre: b.nombre }))}
+              />
             )}
           </div>
         </div>
@@ -164,6 +172,8 @@ export default async function DetalleProducto({ params }: { params: Promise<{ sk
             <span className="font-medium text-zinc-900">Antes del sistema:</span> entraron {historicoEntradas.toLocaleString("es-MX")} y salieron {historicoSalidas.toLocaleString("es-MX")} piezas (histórico de tu hoja, no cuenta para la rotación).
           </div>
         )}
+
+        <DesgloseStock movimientos={listaMovimientos} stockActual={actual} />
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <div className="rounded-xl border border-zinc-200 bg-white p-4">

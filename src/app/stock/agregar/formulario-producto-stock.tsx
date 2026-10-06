@@ -22,6 +22,9 @@ export interface ProductoExistente {
   /** Ya registrado en el sistema (sin histórico): para restar del histórico y no contar doble. */
   entradasSistema: number;
   salidasSistema: number;
+  /** Histórico ya guardado (se reemplaza si se vuelve a capturar). */
+  historicoEntradas: number;
+  historicoSalidas: number;
   imagenUrl: string | null;
   marcaId: string | null;
   categoria: string | null;
@@ -82,7 +85,8 @@ export function FormularioProductoStock({
   const haySistema = sistemaEntradas > 0 || sistemaSalidas > 0;
   const histEntradas = haySistema && restar ? Math.max(0, (Number(entradas) || 0) - sistemaEntradas) : Number(entradas) || 0;
   const histSalidas = haySistema && restar ? Math.max(0, (Number(salidas) || 0) - sistemaSalidas) : Number(salidas) || 0;
-  const quedan = (origen === "EXISTENTE" && existente ? existente.stockActual : 0) + histEntradas - histSalidas;
+  const historicoPrevio = origen === "EXISTENTE" && existente ? existente.historicoEntradas - existente.historicoSalidas : 0;
+  const quedan = (origen === "EXISTENTE" && existente ? existente.stockActual : 0) - (modo === "INICIAL" ? historicoPrevio : 0) + histEntradas - histSalidas;
   const skuFinal = origen === "EXISTENTE" ? existente?.sku ?? "" : sku;
   const nombreFinal = origen === "EXISTENTE" ? existente?.nombre ?? "" : nombre;
 
@@ -218,6 +222,11 @@ export function FormularioProductoStock({
             </button>
           ))}
         </div>
+        {modo === "INICIAL" && origen === "EXISTENTE" && existente && (existente.historicoEntradas > 0 || existente.historicoSalidas > 0) && (
+          <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            Este producto ya tiene histórico guardado (entraron {existente.historicoEntradas.toLocaleString("es-MX")} y salieron {existente.historicoSalidas.toLocaleString("es-MX")}). Lo que captures aquí lo <strong>reemplaza</strong>, no se suma encima.
+          </p>
+        )}
         {modo === "INICIAL" ? (
           <div className="mt-3 grid gap-3 sm:grid-cols-3">
             <div>

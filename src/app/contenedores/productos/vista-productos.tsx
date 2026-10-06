@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { cartones, cbmProducto, costoFinalPorPieza } from "@/lib/calculos";
+import { cartones, cbmProducto, costoFinalPorPieza, pesoProducto } from "@/lib/calculos";
 import { ESTILO_ESTADO, formatoCajas, formatoPesos } from "@/lib/formato";
 import { ESTADOS_CONTENEDOR, type Contenedor, type Producto } from "@/lib/tipos";
 
@@ -24,6 +24,7 @@ export function VistaProductos({ grupos, verDinero }: { grupos: Grupo[]; verDine
   const totalProductos = grupos.reduce((s, g) => s + g.productos.length, 0);
   const totalPiezas = grupos.reduce((s, g) => s + g.productos.reduce((a, p) => a + p.cantidad, 0), 0);
   const totalCbm = grupos.reduce((s, g) => s + g.productos.reduce((a, p) => a + cbmProducto(p), 0), 0);
+  const totalPeso = grupos.reduce((s, g) => s + g.productos.reduce((a, p) => a + pesoProducto(p), 0), 0);
 
   if (totalProductos === 0) {
     return (
@@ -40,7 +41,8 @@ export function VistaProductos({ grupos, verDinero }: { grupos: Grupo[]; verDine
         <p className="text-sm text-zinc-500">
           <span className="font-semibold text-zinc-900">{totalProductos}</span> productos ·{" "}
           <span className="font-semibold text-zinc-900">{totalPiezas.toLocaleString("es-MX")}</span> piezas ·{" "}
-          <span className="font-semibold text-zinc-900">{totalCbm.toFixed(2)}</span> m³ en {grupos.length}{" "}
+          <span className="font-semibold text-zinc-900">{totalCbm.toFixed(2)}</span> m³ ·{" "}
+          <span className="font-semibold text-zinc-900">{Math.round(totalPeso).toLocaleString("es-MX")}</span> kg en {grupos.length}{" "}
           {grupos.length === 1 ? "contenedor" : "contenedores"}
         </p>
         <div className="flex overflow-hidden rounded-lg border border-zinc-300 text-xs">
@@ -66,6 +68,8 @@ export function VistaProductos({ grupos, verDinero }: { grupos: Grupo[]; verDine
         .map(({ contenedor, productos, costoPorCbm, tipoCambioMercancia }) => {
           const piezas = productos.reduce((s, p) => s + p.cantidad, 0);
           const cbm = productos.reduce((s, p) => s + cbmProducto(p), 0);
+          const peso = productos.reduce((s, p) => s + pesoProducto(p), 0);
+          const sinPeso = productos.filter((p) => p.cantidad > 0 && !(Number(p.peso_kg) > 0)).length;
           return (
             <section key={contenedor.id} className="rounded-2xl border border-zinc-200 bg-white shadow-sm">
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-100 px-5 py-4">
@@ -84,7 +88,8 @@ export function VistaProductos({ grupos, verDinero }: { grupos: Grupo[]; verDine
                 </div>
                 <p className="text-xs text-zinc-500">
                   {productos.length} {productos.length === 1 ? "producto" : "productos"} · {piezas.toLocaleString("es-MX")} pzas ·{" "}
-                  {cbm.toFixed(2)} m³
+                  {cbm.toFixed(2)} m³ · {Math.round(peso).toLocaleString("es-MX")} kg
+                  {sinPeso > 0 && <span className="text-amber-600"> ({sinPeso} sin peso)</span>}
                 </p>
               </div>
 
@@ -100,6 +105,7 @@ export function VistaProductos({ grupos, verDinero }: { grupos: Grupo[]; verDine
                         <th className="px-3 py-2 text-right font-medium">Piezas</th>
                         <th className="px-3 py-2 text-right font-medium">Cajas</th>
                         <th className="px-3 py-2 text-right font-medium">CBM</th>
+                        <th className="px-3 py-2 text-right font-medium">Peso</th>
                         {verDinero && <th className="px-3 py-2 text-right font-medium">Costo/pza</th>}
                       </tr>
                     </thead>
@@ -124,6 +130,9 @@ export function VistaProductos({ grupos, verDinero }: { grupos: Grupo[]; verDine
                           <td className="px-3 py-2 text-right font-semibold text-zinc-900">{p.cantidad.toLocaleString("es-MX")}</td>
                           <td className="px-3 py-2 text-right text-xs text-zinc-500">{formatoCajas(cartones(p))}</td>
                           <td className="px-3 py-2 text-right text-xs text-zinc-500">{cbmProducto(p).toFixed(3)}</td>
+                          <td className="px-3 py-2 text-right text-xs text-zinc-500 whitespace-nowrap">
+                            {p.peso_kg ? `${Math.round(pesoProducto(p)).toLocaleString("es-MX")} kg` : <span className="text-amber-600">sin peso</span>}
+                          </td>
                           {verDinero && (
                             <td className="px-3 py-2 text-right text-zinc-700">
                               {formatoPesos(costoFinalPorPieza(p, costoPorCbm, tipoCambioMercancia))}

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { cartones, cbmProducto, cbmTotalContenedor, costoFinalPorPieza, costoPorCbmContenedor, tipoCambioPromedioMercancia } from "@/lib/calculos";
+import { cartones, cbmProducto, cbmTotalContenedor, costoFinalPorPieza, costoPorCbmContenedor, pesoProducto, pesoTotalContenedor, tipoCambioPromedioMercancia } from "@/lib/calculos";
 import { formatoFecha, formatoPesos } from "@/lib/formato";
 import type { Contenedor, PagoMercancia, Producto } from "@/lib/tipos";
 import { BotonImprimir } from "./boton-imprimir";
@@ -39,6 +39,7 @@ export default async function ImprimirContenedor({
   const tipoCambioMercancia = tipoCambioPromedioMercancia(listaAbonos);
   const cbmTotal = cbmTotalContenedor(listaProductos);
   const cantidadTotal = listaProductos.reduce((suma, p) => suma + p.cantidad, 0);
+  const pesoTotal = pesoTotalContenedor(listaProductos);
 
   return (
     <div className="min-h-screen bg-zinc-50 print:bg-white">
@@ -92,6 +93,7 @@ export default async function ImprimirContenedor({
               <th className="py-2 pr-2 font-medium text-right">Ctns.</th>
               <th className="py-2 pr-2 font-medium text-right">Medidas (cm)</th>
               <th className="py-2 pr-2 font-medium text-right">CBM</th>
+              <th className="py-2 pr-2 font-medium text-right">Peso (kg)</th>
               {conPrecios && <th className="py-2 pr-2 font-medium text-right">Precio USD</th>}
               {conPrecios && <th className="py-2 pr-2 font-medium text-right">Costo final/pieza</th>}
             </tr>
@@ -120,6 +122,16 @@ export default async function ImprimirContenedor({
                   {producto.largo_cm}×{producto.ancho_cm}×{producto.alto_cm}
                 </td>
                 <td className="py-2 pr-2 text-right">{cbmProducto(producto).toFixed(3)}</td>
+                <td className="py-2 pr-2 text-right">
+                  {producto.peso_kg ? (
+                    <>
+                      {Math.round(pesoProducto(producto)).toLocaleString("es-MX")}
+                      <span className="block text-[10px] text-zinc-400">{Number(producto.peso_kg)}/pza</span>
+                    </>
+                  ) : (
+                    "—"
+                  )}
+                </td>
                 {conPrecios && <td className="py-2 pr-2 text-right">${producto.precio_dolares}</td>}
                 {conPrecios && (
                   <td className="py-2 pr-2 text-right font-medium">
@@ -138,6 +150,7 @@ export default async function ImprimirContenedor({
               <td className="py-2 pr-2"></td>
               <td className="py-2 pr-2"></td>
               <td className="py-2 pr-2 text-right">{cbmTotal.toFixed(2)}</td>
+              <td className="py-2 pr-2 text-right">{Math.round(pesoTotal).toLocaleString("es-MX")}</td>
               {conPrecios && <td className="py-2 pr-2" colSpan={2}></td>}
             </tr>
           </tfoot>

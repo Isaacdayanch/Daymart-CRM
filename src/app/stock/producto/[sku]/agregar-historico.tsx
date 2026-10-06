@@ -18,6 +18,7 @@ export function AgregarHistorico({
   stockActual,
   manualesCargadas,
   registradas,
+  historicoActual = null,
   bodegas,
 }: {
   sku: string;
@@ -27,13 +28,20 @@ export function AgregarHistorico({
   /** Ya registrado en el sistema (sin histórico ni manuales): entradas de
    * contenedores/ajustes que suman, y salidas/ajustes que restan. */
   registradas: { entradas: number; salidas: number };
+  /** Histórico que ya está guardado (null = todavía no hay). Si existe, el
+   * nuevo lo REEMPLAZA en vez de sumarse encima. */
+  historicoActual?: { entradas: number; salidas: number } | null;
   bodegas: { id: string; nombre: string }[];
 }) {
   const router = useRouter();
   const hoyTexto = new Date().toISOString().slice(0, 10);
   const [abierto, setAbierto] = useState(false);
-  const [entradas, setEntradas] = useState("");
-  const [salidas, setSalidas] = useState("");
+  const corrigiendo = Boolean(historicoActual);
+  // Al corregir se precarga lo YA guardado (que ya es neto): por eso la
+  // casilla "réstalo" arranca apagada — si Isaac vuelve a escribir los
+  // totales de su hoja, la marca él.
+  const [entradas, setEntradas] = useState(historicoActual ? String(historicoActual.entradas) : "");
+  const [salidas, setSalidas] = useState(historicoActual ? String(historicoActual.salidas) : "");
   const [reemplazar, setReemplazar] = useState(manualesCargadas > 0);
   const [error, setError] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
@@ -41,17 +49,19 @@ export function AgregarHistorico({
   const sistemaEntradas = registradas.entradas + (reemplazar ? 0 : manualesCargadas);
   const sistemaSalidas = registradas.salidas;
   const haySistema = sistemaEntradas > 0 || sistemaSalidas > 0;
-  const [restar, setRestar] = useState(haySistema);
+  const [restar, setRestar] = useState(haySistema && !corrigiendo);
   const totalEntradas = Number(entradas) || 0;
   const totalSalidas = Number(salidas) || 0;
   const histEntradas = restar ? Math.max(0, totalEntradas - sistemaEntradas) : totalEntradas;
   const histSalidas = restar ? Math.max(0, totalSalidas - sistemaSalidas) : totalSalidas;
-  const quedara = stockActual - (reemplazar ? manualesCargadas : 0) + histEntradas - histSalidas;
+  // Si ya hay histórico, se quita el anterior antes de sumar el nuevo.
+  const historicoPrevioNeto = historicoActual ? historicoActual.entradas - historicoActual.salidas : 0;
+  const quedara = stockActual - historicoPrevioNeto - (reemplazar ? manualesCargadas : 0) + histEntradas - histSalidas;
 
   if (!abierto) {
     return (
       <button type="button" onClick={() => setAbierto(true)} className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50">
-        Agregar histórico de antes del sistema
+        {corrigiendo ? "Corregir histórico de antes del sistema" : "Agregar histórico de antes del sistema"}
       </button>
     );
   }
@@ -73,6 +83,11 @@ export function AgregarHistorico({
       }}
       className="w-full rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4 text-left"
     >
+      {corrigiendo && historicoActual && (
+        <p className="mb-2 rounded-lg bg-white/70 px-3 py-2 text-xs text-emerald-900">
+          Ya hay un histórico guardado: entraron <strong>{historicoActual.entradas.toLocaleString("es-MX")}</strong> y salieron <strong>{historicoActual.salidas.toLocaleString("es-MX")}</strong>. Lo que guardes aquí lo <strong>reemplaza</strong> (no se suma encima).
+        </p>
+      )}
       <p className="text-sm font-semibold text-zinc-900">Histórico de antes del sistema</p>
       <p className="mt-0.5 text-xs text-zinc-600">De tu Google Sheets: cuántas piezas han entrado y salido en total de este producto.</p>
       <div className="mt-3 grid gap-3 sm:grid-cols-3">

@@ -218,6 +218,11 @@ export async function registrarProductoStock(formData: FormData) {
     if (entradas <= 0 && salidas <= 0) return { error: "Después de restar lo que ya está en el sistema no queda nada por registrar." };
     if (entradas > 0) filas.push({ ...base, tipo: "ENTRADA", cantidad: entradas, referencia: "Histórico de antes del sistema (entradas)", historico: true });
     if (salidas > 0) filas.push({ ...base, tipo: "SALIDA", cantidad: salidas, destino: "Histórico", referencia: "Histórico de antes del sistema (salidas)", historico: true });
+    // El histórico es UNA foto de antes del sistema: si ya había uno para
+    // este SKU se reemplaza, no se apila (capturarlo dos veces duplicaba el
+    // stock — caso real de los yoga blocks, 6 oct).
+    const { error: errorBorrar } = await supabase.from("movimientos_stock").delete().eq("sku", sku).eq("historico", true);
+    if (errorBorrar && !/historico/.test(errorBorrar.message)) return { error: `No se pudo reemplazar el histórico anterior: ${errorBorrar.message}` };
   } else {
     const cantidad = Number(formData.get("cantidad")) || 0;
     if (cantidad <= 0) return { error: "Pon la cantidad que entra." };
@@ -272,6 +277,13 @@ export async function agregarHistoricoProducto(sku: string, formData: FormData) 
   // (ej. el último contenedor): se guarda solo la diferencia.
   const { entradas, salidas } = historicoNeto(totales, registradoEnSistema(todos ?? [], reemplazar), restar);
   if (entradas <= 0 && salidas <= 0) return { error: "Después de restar lo que ya está en el sistema no queda nada por registrar." };
+
+  // Si ya había histórico, se reemplaza (una sola foto de antes del sistema).
+  const historicoPrevio = (todos ?? []).filter((m) => m.historico);
+  if (historicoPrevio.length) {
+    const { error: errorBorrar } = await supabase.from("movimientos_stock").delete().in("id", historicoPrevio.map((m) => m.id));
+    if (errorBorrar) return { error: `No se pudo reemplazar el histórico anterior: ${errorBorrar.message}` };
+  }
 
   const fechaCampo = texto(formData, "fecha");
   const creadoEn = fechaCampo ? new Date(`${fechaCampo}T12:00:00`).toISOString() : new Date().toISOString();

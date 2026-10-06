@@ -32,8 +32,13 @@ export default async function AgregarProductoStock() {
     .map((sku) => {
       const ficha = fichaPorSku.get(sku);
       const r = stockPorSku.get(sku);
-      const registrado = registradoEnSistema(movimientosPorSku.get(sku) ?? []);
+      const movs = movimientosPorSku.get(sku) ?? [];
+      const registrado = registradoEnSistema(movs);
+      const historicoEntradas = movs.filter((m) => m.historico && m.tipo === "ENTRADA").reduce((s, m) => s + m.cantidad, 0);
+      const historicoSalidas = movs.filter((m) => m.historico && m.tipo === "SALIDA").reduce((s, m) => s + m.cantidad, 0);
       return {
+        historicoEntradas,
+        historicoSalidas,
         sku,
         nombre: ficha?.nombre ?? r?.nombre ?? sku,
         stockActual: r?.stockActual ?? 0,
