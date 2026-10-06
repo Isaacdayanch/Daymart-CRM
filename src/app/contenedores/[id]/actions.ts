@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import {
+  CAPACIDAD_CBM_DEFAULT,
+  LIMITE_PESO_KG_DEFAULT,
   costoFinalPorPieza,
   costoPorCbmContenedor,
   skuLibre,
@@ -448,6 +450,15 @@ export async function actualizarContenedor(contenedorId: string, formData: FormD
       otros_gastos_estimado: formData.get("otros_gastos_estimado") === "true",
     })
     .eq("id", contenedorId);
+  // Límite de peso y capacidad (migración 0047), aparte para que sin el SQL
+  // el resto del contenedor se guarde igual.
+  await supabase
+    .from("contenedores")
+    .update({
+      limite_peso_kg: numero(formData, "limite_peso_kg") || LIMITE_PESO_KG_DEFAULT,
+      capacidad_cbm: numero(formData, "capacidad_cbm") || CAPACIDAD_CBM_DEFAULT,
+    })
+    .eq("id", contenedorId);
 
   await aplicarCreditoProveedor(supabase, contenedorId);
   await recalcularCostoEntradasContenedor(contenedorId);
@@ -699,20 +710,22 @@ export async function agregarProducto(contenedorId: string, formData: FormData) 
     ancho_cm: numero(formData, "ancho_cm"),
     alto_cm: numero(formData, "alto_cm"),
   };
+  const pesoKg = numero(formData, "peso_kg") || null;
   let { error: errorProducto } = await supabase.from("productos").insert({
     contenedor_id: contenedorId,
     ...datosProducto,
     marca_id: marcaId,
+    peso_kg: pesoKg,
     orden: (ultimo?.orden ?? 0) + 1,
   });
-  // Si todavía no se corrió el SQL 0038 (no existe marca_id), se guarda sin marca.
-  if (errorProducto && /marca_id/.test(errorProducto.message)) {
+  // Si todavía no se corrió el SQL 0038 (marca_id) o 0047 (peso_kg), se guarda sin esas columnas.
+  if (errorProducto && /marca_id|peso_kg/.test(errorProducto.message)) {
     ({ error: errorProducto } = await supabase.from("productos").insert({ contenedor_id: contenedorId, ...datosProducto, orden: (ultimo?.orden ?? 0) + 1 }));
   }
   if (errorProducto) return { error: `No se pudo guardar el producto: ${errorProducto.message}` };
 
   // La ficha del producto vive en el catálogo (un registro por SKU).
-  await guardarEnCatalogo(supabase, { ...datosProducto, marca_id: marcaId });
+  await guardarEnCatalogo(supabase, { ...datosProducto, marca_id: marcaId, peso_kg: pesoKg });
 
   await resolverPendienteChinaSiAplica(supabase, contenedorId, formData, cantidad);
 
@@ -759,12 +772,13 @@ export async function actualizarProducto(contenedorId: string, productoId: strin
     ancho_cm: numero(formData, "ancho_cm"),
     alto_cm: numero(formData, "alto_cm"),
   };
-  let { error: errorProducto } = await supabase.from("productos").update({ ...cambios, marca_id: marcaId }).eq("id", productoId);
-  if (errorProducto && /marca_id/.test(errorProducto.message)) {
+  const pesoKg = numero(formData, "peso_kg") || null;
+  let { error: errorProducto } = await supabase.from("productos").update({ ...cambios, marca_id: marcaId, peso_kg: pesoKg }).eq("id", productoId);
+  if (errorProducto && /marca_id|peso_kg/.test(errorProducto.message)) {
     ({ error: errorProducto } = await supabase.from("productos").update(cambios).eq("id", productoId));
   }
   if (errorProducto) return { error: `No se pudo guardar el producto: ${errorProducto.message}` };
-  await guardarEnCatalogo(supabase, { ...cambios, imagen_url: imagenUrl ?? undefined, marca_id: marcaId });
+  await guardarEnCatalogo(supabase, { ...cambios, imagen_url: imagenUrl ?? undefined, marca_id: marcaId, peso_kg: pesoKg });
 
   // El SKU/nombre también viven copiados en cada movimiento de stock (para
   // no depender de un join). Si se corrige el SKU aquí (ej. dos variantes

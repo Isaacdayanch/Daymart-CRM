@@ -26,6 +26,7 @@ export interface DatosCatalogo {
   ancho_cm?: number | null;
   alto_cm?: number | null;
   memo?: string | null;
+  peso_kg?: number | null;
 }
 
 /** Crea o actualiza la ficha del producto. Solo pisa los campos que vienen
@@ -36,14 +37,19 @@ export async function guardarEnCatalogo(supabase: SupabaseClient, datos: DatosCa
   // `eliminado_en: null` revive la ficha si el SKU se había quitado de Stock
   // y se vuelve a dar de alta.
   const fila: Record<string, unknown> = { sku: datos.sku, nombre: datos.nombre, actualizado_en: new Date().toISOString(), eliminado_en: null };
-  const opcionales: (keyof DatosCatalogo)[] = ["marca_id", "linea", "categoria", "imagen_url", "piezas_por_caja", "largo_cm", "ancho_cm", "alto_cm", "memo"];
+  const opcionales: (keyof DatosCatalogo)[] = ["marca_id", "linea", "categoria", "imagen_url", "piezas_por_caja", "largo_cm", "ancho_cm", "alto_cm", "memo", "peso_kg"];
   for (const campo of opcionales) {
     const v = datos[campo];
     if (v === undefined || v === null || v === "") continue;
     if (typeof v === "number" && v === 0 && campo !== "piezas_por_caja") continue;
     fila[campo] = v;
   }
-  const { error } = await supabase.from("productos_catalogo").upsert(fila, { onConflict: "sku" });
+  let { error } = await supabase.from("productos_catalogo").upsert(fila, { onConflict: "sku" });
+  // Sin el SQL 0047 (peso_kg) la ficha se guarda igual, solo sin peso.
+  if (error && /peso_kg/.test(error.message) && "peso_kg" in fila) {
+    delete fila.peso_kg;
+    ({ error } = await supabase.from("productos_catalogo").upsert(fila, { onConflict: "sku" }));
+  }
   return { error: error?.message ?? null };
 }
 

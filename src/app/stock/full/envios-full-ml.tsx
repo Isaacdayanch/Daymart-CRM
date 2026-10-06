@@ -15,6 +15,8 @@ export interface LineaParaPantalla extends LineaAgrupada {
   nombreCrm: string | null;
   stockBodega: number | null;
   piezasPorCaja: number | null;
+  /** Piezas del CRM por unidad de ML (2 = un par de mancuernas). */
+  factor: number;
 }
 
 export interface EnvioParaPantalla {
@@ -172,7 +174,8 @@ export function TarjetaEnvioMl({ datos, bodegas }: { datos: EnvioParaPantalla; b
   const { envio, lineas } = datos;
   const porConfirmar = (envio.estado === "RECIBIDO" || envio.estado === "CONTADO") && !envio.confirmado_en && !envio.ignorado_en;
   const [abierto, setAbierto] = useState(false);
-  const [cantidades, setCantidades] = useState<Record<string, string>>(() => Object.fromEntries(lineas.map((l) => [l.clave, String(l.recibidas || l.planeadas || 0)])));
+  // "salen" se propone en piezas del CRM: lo que ML recibió × piezas por unidad.
+  const [cantidades, setCantidades] = useState<Record<string, string>>(() => Object.fromEntries(lineas.map((l) => [l.clave, String((l.recibidas || l.planeadas || 0) * (l.factor || 1))])));
   const [incluir, setIncluir] = useState<Record<string, boolean>>(() => Object.fromEntries(lineas.map((l) => [l.clave, Boolean(l.sku)])));
   const [bodegaId, setBodegaId] = useState(bodegas[0]?.id ?? "");
   const [enviando, setEnviando] = useState(false);
@@ -252,6 +255,7 @@ export function TarjetaEnvioMl({ datos, bodegas }: { datos: EnvioParaPantalla; b
                 )}
                 <span className="text-zinc-500">
                   recibidas <strong className="text-emerald-700">{l.recibidas}</strong>
+                  {l.factor > 1 && <span className="text-violet-700"> × {l.factor} = {(l.recibidas * l.factor).toLocaleString("es-MX")} pzas</span>}
                 </span>
                 {abierto && porConfirmar && (
                   <label className="flex items-center gap-1 text-zinc-600">

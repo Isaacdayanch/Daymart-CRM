@@ -79,6 +79,27 @@ export function FormularioContenedor({
       </div>
 
       <div className="border-t border-zinc-100 pt-4">
+        <p className="text-sm font-medium text-zinc-700">Peso y espacio</p>
+        <p className="text-xs text-zinc-500">
+          21,000 kg es el máximo en carretera en México para un 40 pies; 23,000 con sobrecargo, 26,000 por tren. Capacidad útil de un 40 pies alto ≈ 68 m³.
+        </p>
+        <div className="mt-2 grid grid-cols-2 gap-4">
+          <div>
+            <label htmlFor="limite_peso_kg" className="block text-xs font-medium text-zinc-500">
+              Límite de peso (kg)
+            </label>
+            <CampoNumero id="limite_peso_kg" name="limite_peso_kg" defaultValue={Number(contenedor.limite_peso_kg) || 21000} className={claseCampo} />
+          </div>
+          <div>
+            <label htmlFor="capacidad_cbm" className="block text-xs font-medium text-zinc-500">
+              Capacidad (m³)
+            </label>
+            <CampoNumero id="capacidad_cbm" name="capacidad_cbm" defaultValue={Number(contenedor.capacidad_cbm) || 68} className={claseCampo} />
+          </div>
+        </div>
+      </div>
+
+      <div className="border-t border-zinc-100 pt-4">
         <p className="text-sm font-medium text-zinc-700">Flete (dólares)</p>
         <div className="mt-2 grid grid-cols-2 gap-4">
           <div>

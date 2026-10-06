@@ -5,6 +5,8 @@ import { obtenerEstadoSync } from "@/lib/mercadolibre-ordenes";
 import {
   claveVinculo,
   ESTADOS_PUBLICACION,
+  factorDePublicacion,
+  factoresVinculos,
   obtenerPublicaciones,
   obtenerVinculos,
   resumenFull,
@@ -79,18 +81,20 @@ export default async function StockMercadoLibre({
 
   let publicaciones: PublicacionMl[] = [];
   let vinculos = new Map<string, string>();
+  let factores = new Map<string, number>();
   let sync = null;
   let errorLectura: string | null = null;
   try {
     const [pubs, vins] = await Promise.all([obtenerPublicaciones(), obtenerVinculos()]);
     publicaciones = pubs;
     vinculos = new Map(vins.map((v) => [claveVinculo(v.item_id, v.variation_id), v.sku_crm]));
+    factores = factoresVinculos(vins);
     sync = await obtenerEstadoSync();
   } catch (e) {
     errorLectura = e instanceof Error ? e.message : "No se pudieron leer las publicaciones.";
   }
 
-  const full = resumenFull(publicaciones, vinculos, skusCrm, costoPorSku);
+  const full = resumenFull(publicaciones, vinculos, skusCrm, costoPorSku, factores);
 
   // Un renglón por PRODUCTO, no por publicación: la tradicional y su
   // publicación de catálogo comparten el mismo stock (mismo inventory_id en
@@ -257,6 +261,7 @@ export default async function StockMercadoLibre({
                     sku={liga.sku}
                     origen={liga.origen}
                     nombre={liga.sku ? (nombrePorSku.get(liga.sku) ?? null) : null}
+                    piezasPorUnidad={factorDePublicacion(liga.de.item_id, liga.de.variation_id, factores)}
                     opciones={opcionesProducto}
                     datosMl={{
                       itemId: liga.de.item_id,

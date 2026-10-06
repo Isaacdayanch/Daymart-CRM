@@ -14,7 +14,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createServiceClient } from "./supabase/servicio";
-import { claveVinculo, obtenerPublicaciones, obtenerVinculos, resumenFull, skuCrmDe, type PublicacionMl } from "./mercadolibre-stock";
+import { claveVinculo, factorDePublicacion, factoresVinculos, obtenerPublicaciones, obtenerVinculos, resumenFull, skuCrmDe, type PublicacionMl } from "./mercadolibre-stock";
 import { itemsDeOrdenes, type OrdenItemMl } from "./mercadolibre-ordenes";
 import { resumenPorSku } from "./calculos-stock";
 import { obtenerPiezasPorCajaPorSku } from "./productos-stock";
@@ -145,10 +145,11 @@ export async function analisisVentasMl(supabase: SupabaseClient, desde: Date, ha
   ]);
   const diasEspera = configuracion?.dias_espera ?? 60;
   const mapaVinculos = new Map(vinculos.map((v) => [claveVinculo(v.item_id, v.variation_id), v.sku_crm]));
+  const factores = factoresVinculos(vinculos);
   const resumenes = resumenPorSku(movimientos ?? [], diasEspera, piezasPorCajaPorSku);
   const skusCrm = new Set(resumenes.map((r) => r.sku));
   const stockBodegaPorSku = new Map(resumenes.map((r) => [r.sku, r.stockActual]));
-  const full = resumenFull(publicaciones, mapaVinculos, skusCrm, new Map());
+  const full = resumenFull(publicaciones, mapaVinculos, skusCrm, new Map(), factores);
 
   // Tramos del historial que tocan el periodo.
   let tramos: Tramo[] = [];
@@ -185,12 +186,32 @@ export async function analisisVentasMl(supabase: SupabaseClient, desde: Date, ha
   const items: OrdenItemMl[] = ordenes.length ? await itemsDeOrdenes(ordenes.map((o) => o.id), "orden_id, item_id, variation_id, titulo, cantidad, imagen_url, variacion") : [];
 
   // Agrupación: por producto del CRM si está ligado; si no, por inventario
-  // de Full; si no, por publicación.
-  const claveGrupoDe = (p: PublicacionMl) => {
-    const { sku } = skuCrmDe(p, mapaVinculos, skusCrm);
-    if (sku) return `sku:${sku}`;
+  // de Full (o relación tradicional↔catálogo); si no, por publicación.
+  // OJO (Isaac, 6 oct: "publicaciones que ya están ligadas las veo sin
+  // ligar"): la liga se guarda en UNA publicación del grupo (la tradicional)
+  // y su publicación de catálogo comparte el stock — aquí hereda la liga de
+  // cualquier publicación con la que comparta inventario/relación, igual
+  // que en la pantalla de Publicaciones.
+  const claveCompartida = (p: PublicacionMl) => {
     if (p.inventory_id) return `inv:${p.inventory_id}`;
+    if (p.relacion_item_id) return `rel:${[p.item_id, p.relacion_item_id].sort().join("|")}|${p.variation_id ?? 0}`;
     return `pub:${claveVinculo(p.item_id, p.variation_id)}`;
+  };
+  const ligaCompartida = new Map<string, { sku: string; factor: number }>();
+  for (const p of publicaciones) {
+    const { sku } = skuCrmDe(p, mapaVinculos, skusCrm);
+    if (!sku) continue;
+    const k = claveCompartida(p);
+    if (!ligaCompartida.has(k)) ligaCompartida.set(k, { sku, factor: factorDePublicacion(p.item_id, p.variation_id, factores) });
+  }
+  const ligaDe = (p: PublicacionMl): { sku: string | null; factor: number } => {
+    const directa = skuCrmDe(p, mapaVinculos, skusCrm).sku;
+    if (directa) return { sku: directa, factor: factorDePublicacion(p.item_id, p.variation_id, factores) };
+    return ligaCompartida.get(claveCompartida(p)) ?? { sku: null, factor: 1 };
+  };
+  const claveGrupoDe = (p: PublicacionMl) => {
+    const { sku } = ligaDe(p);
+    return sku ? `sku:${sku}` : claveCompartida(p);
   };
   interface Grupo {
     clave: string;
@@ -215,9 +236,12 @@ export async function analisisVentasMl(supabase: SupabaseClient, desde: Date, ha
     return g;
   };
   const pubAGrupo = new Map<string, string>();
+  // Piezas del CRM por unidad vendida en ML (un par = 2 piezas).
+  const factorPub = new Map<string, number>();
   for (const p of publicaciones) {
     const clave = claveGrupoDe(p);
-    const { sku } = skuCrmDe(p, mapaVinculos, skusCrm);
+    const { sku, factor } = ligaDe(p);
+    factorPub.set(claveVinculo(p.item_id, p.variation_id), factor);
     const g = grupoDe(clave, { sku, titulo: p.titulo ?? sku ?? p.item_id, variacion: p.variacion, imagenUrl: p.imagen_url });
     // La tradicional manda sobre la de catálogo para el título/foto.
     if (!p.catalogo && g.pubs.some((x) => x.catalogo)) {
@@ -249,8 +273,10 @@ export async function analisisVentasMl(supabase: SupabaseClient, desde: Date, ha
     const fecha = fechaOrden.get(it.orden_id);
     if (!fecha) continue;
     const dia = fechaTextoMx(new Date(fecha));
-    g.ventasPorDia.set(dia, (g.ventasPorDia.get(dia) ?? 0) + (Number(it.cantidad) || 0));
-    g.piezas += Number(it.cantidad) || 0;
+    const factor = factorPub.get(claveVinculo(it.item_id, it.variation_id)) ?? factorPub.get(claveVinculo(it.item_id, null)) ?? 1;
+    const piezas = (Number(it.cantidad) || 0) * factor;
+    g.ventasPorDia.set(dia, (g.ventasPorDia.get(dia) ?? 0) + piezas);
+    g.piezas += piezas;
   }
 
   // Días del periodo (calendario CDMX).

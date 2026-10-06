@@ -44,6 +44,10 @@ export interface Contenedor {
   flete_estimado: boolean;
   aduana_estimada: boolean;
   otros_gastos_estimado: boolean;
+  /** Límite de peso de carga (kg) y capacidad útil (m³) del contenedor
+   * (migración 0047). 21,000 kg = carretera México; 68 m³ = 40' alto. */
+  limite_peso_kg?: number | null;
+  capacidad_cbm?: number | null;
   eliminado_en: string | null;
   stock_generado_en: string | null;
   creado_en: string;
@@ -125,6 +129,8 @@ export interface ProductoCatalogo {
   ancho_cm: number;
   alto_cm: number;
   memo: string | null;
+  /** Peso por pieza en kg (migración 0047). */
+  peso_kg?: number | null;
   /** Descripción / medidas de la PIEZA (no de la caja), para el catálogo de
    * vendedores. Migración 0043. */
   descripcion?: string | null;
@@ -191,6 +197,8 @@ export interface Producto {
   largo_cm: number;
   ancho_cm: number;
   alto_cm: number;
+  /** Peso por pieza en kg (migración 0047); null = no capturado. */
+  peso_kg?: number | null;
   orden: number;
   creado_en: string;
   actualizado_en: string;

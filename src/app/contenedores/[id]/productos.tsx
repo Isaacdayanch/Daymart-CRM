@@ -3,11 +3,11 @@
 import { useState } from "react";
 import Image from "next/image";
 import { formatoPesos } from "@/lib/formato";
-import { cartones, cbmProducto, costoFinalPorPieza } from "@/lib/calculos";
+import { cartones, cbmProducto, costoFinalPorPieza, pesoProducto } from "@/lib/calculos";
 import { Selector } from "@/components/selector";
 import type { Marca, PendienteChina, Producto } from "@/lib/tipos";
 import { agregarProducto, actualizarProducto, eliminarProducto, moverProducto } from "./actions";
-import { CamposProducto } from "./campos-producto";
+import { CamposProducto, type OcupacionActual } from "./campos-producto";
 
 export function Productos({
   contenedorId,
@@ -24,6 +24,7 @@ export function Productos({
   marcas = [],
   soloLectura = false,
   contenedorRecibido = false,
+  ocupacion,
 }: {
   contenedorId: string;
   productos: Producto[];
@@ -42,6 +43,8 @@ export function Productos({
    * deja tocar la cantidad aquí (eso no movería el stock) — se manda a
    * "Editar recepción", que sí genera el ajuste real. */
   contenedorRecibido?: boolean;
+  /** Peso/espacio ya ocupados y sus límites, para la proyección en vivo al agregar. */
+  ocupacion?: OcupacionActual;
 }) {
   const [vista, setVista] = useState<"tabla" | "galeria">("tabla");
   const [editandoId, setEditandoId] = useState<string | null>(null);
@@ -111,6 +114,7 @@ export function Productos({
                 <th className="py-2 pr-3 font-medium">Producto</th>
                 <th className="py-2 pr-3 font-medium">Cant.</th>
                 <th className="py-2 pr-3 font-medium">CBM</th>
+                <th className="py-2 pr-3 font-medium">Peso</th>
                 {!soloLectura && <th className="py-2 pr-3 font-medium">Costo final/pieza</th>}
                 {!soloLectura && <th className="py-2 pr-3 font-medium"></th>}
               </tr>
@@ -119,7 +123,7 @@ export function Productos({
               {productos.map((producto, i) =>
                 editandoId === producto.id ? (
                   <tr key={producto.id}>
-                    <td colSpan={8} className="py-3">
+                    <td colSpan={9} className="py-3">
                       <form
                         action={async (formData) => {
                           const resultado = await actualizarProducto(contenedorId, producto.id, formData);
@@ -202,6 +206,16 @@ export function Productos({
                       <span className="text-xs text-zinc-400">({cartones(producto).toFixed(1)} ctn)</span>
                     </td>
                     <td className="py-2 pr-3">{cbmProducto(producto).toFixed(3)}</td>
+                    <td className="py-2 pr-3 whitespace-nowrap">
+                      {producto.peso_kg ? (
+                        <>
+                          {Math.round(pesoProducto(producto)).toLocaleString("es-MX")} kg{" "}
+                          <span className="text-xs text-zinc-400">({Number(producto.peso_kg)}/pza)</span>
+                        </>
+                      ) : (
+                        <span className="text-xs text-amber-600">sin peso</span>
+                      )}
+                    </td>
                     {!soloLectura && (
                       <td className="py-2 pr-3 font-medium text-zinc-900">
                         {formatoPesos(costoFinalPorPieza(producto, costoPorCbm, tipoCambioMercancia))}
@@ -398,6 +412,7 @@ export function Productos({
           fabricas={fabricasSugeridas}
           proveedores={proveedoresSugeridos}
           marcas={marcas}
+          ocupacion={ocupacion}
         />
 
         {pendientesChina.length > 0 && (

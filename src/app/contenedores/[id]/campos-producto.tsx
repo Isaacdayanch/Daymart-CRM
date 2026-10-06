@@ -9,6 +9,21 @@ import { Selector } from "@/components/selector";
 import { skuNuevo, skuSugerido } from "@/lib/calculos";
 import type { Marca, Producto } from "@/lib/tipos";
 
+/** Cómo va el contenedor HOY (sin esta línea), para decir en vivo cuánto
+ * peso y espacio quedan después de agregar el producto. */
+export interface OcupacionActual {
+  pesoKg: number;
+  limitePesoKg: number;
+  cbm: number;
+  capacidadCbm: number;
+}
+
+function colorPct(pct: number) {
+  if (pct > 100) return "text-red-700";
+  if (pct >= 90) return "text-amber-700";
+  return "text-zinc-600";
+}
+
 const claseCampo =
   "mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500";
 
@@ -24,6 +39,7 @@ export function CamposProducto({
   marcas = [],
   esRestock = false,
   contenedorRecibido = false,
+  ocupacion,
 }: {
   inicial?: Partial<Producto>;
   fabricaPorDefecto?: string | null;
@@ -45,7 +61,26 @@ export function CamposProducto({
    * corrige el dato del pedido, sin mover el stock), se usa "Editar
    * recepción" para eso, que sí ajusta el stock de verdad. */
   contenedorRecibido?: boolean;
+  /** Solo al AGREGAR: peso/espacio ya ocupados, para la proyección en vivo. */
+  ocupacion?: OcupacionActual;
 }) {
+  // Cantidad, peso y medidas en vivo, para decir cuánto pesa y ocupa esta
+  // línea antes de guardar (Isaac, 6 oct: las mancuernas llenan el peso
+  // mucho antes que el espacio).
+  const [cantidadTxt, setCantidadTxt] = useState(esRestock || contenedorRecibido ? (contenedorRecibido ? String(inicial?.cantidad ?? 0) : "") : String(inicial?.cantidad ?? ""));
+  const [pesoTxt, setPesoTxt] = useState(inicial?.peso_kg ? String(inicial.peso_kg) : "");
+  const [piezasCajaTxt, setPiezasCajaTxt] = useState(inicial?.piezas_por_caja ? String(inicial.piezas_por_caja) : "");
+  const [largoTxt, setLargoTxt] = useState(inicial?.largo_cm ? String(inicial.largo_cm) : "");
+  const [anchoTxt, setAnchoTxt] = useState(inicial?.ancho_cm ? String(inicial.ancho_cm) : "");
+  const [altoTxt, setAltoTxt] = useState(inicial?.alto_cm ? String(inicial.alto_cm) : "");
+  const cantidadNum = Number(cantidadTxt) || 0;
+  const pesoLinea = (Number(pesoTxt) || 0) * cantidadNum;
+  const piezasCaja = Number(piezasCajaTxt) || 0;
+  const cbmLinea = piezasCaja > 0 ? ((Number(largoTxt) || 0) * (Number(anchoTxt) || 0) * (Number(altoTxt) || 0) / 1_000_000) * (cantidadNum / piezasCaja) : 0;
+  const pesoDespues = ocupacion ? ocupacion.pesoKg + pesoLinea : 0;
+  const cbmDespues = ocupacion ? ocupacion.cbm + cbmLinea : 0;
+  const pctPeso = ocupacion && ocupacion.limitePesoKg ? (pesoDespues / ocupacion.limitePesoKg) * 100 : 0;
+  const pctCbm = ocupacion && ocupacion.capacidadCbm ? (cbmDespues / ocupacion.capacidadCbm) * 100 : 0;
   const [categoria, setCategoria] = useState(inicial?.categoria ?? categoriaPorDefecto ?? "");
   const [fabrica, setFabrica] = useState(inicial?.fabrica ?? fabricaPorDefecto ?? "");
   const [proveedor, setProveedor] = useState(inicial?.proveedor ?? proveedorPorDefecto ?? "");
@@ -216,6 +251,7 @@ export function CamposProducto({
             <CampoNumero
               name="cantidad"
               defaultValue={esRestock ? undefined : inicial?.cantidad}
+              onChange={setCantidadTxt}
               className={claseCampo}
             />
           )}
@@ -226,24 +262,57 @@ export function CamposProducto({
         </div>
         <div>
           <label className="block text-xs font-medium text-zinc-500">Piezas por caja</label>
-          <CampoNumero name="piezas_por_caja" defaultValue={inicial?.piezas_por_caja} className={claseCampo} />
+          <CampoNumero name="piezas_por_caja" defaultValue={inicial?.piezas_por_caja} onChange={setPiezasCajaTxt} className={claseCampo} />
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-4 gap-3">
         <div>
           <label className="block text-xs font-medium text-zinc-500">Largo (cm)</label>
-          <CampoNumero name="largo_cm" defaultValue={inicial?.largo_cm} className={claseCampo} />
+          <CampoNumero name="largo_cm" defaultValue={inicial?.largo_cm} onChange={setLargoTxt} className={claseCampo} />
         </div>
         <div>
           <label className="block text-xs font-medium text-zinc-500">Ancho (cm)</label>
-          <CampoNumero name="ancho_cm" defaultValue={inicial?.ancho_cm} className={claseCampo} />
+          <CampoNumero name="ancho_cm" defaultValue={inicial?.ancho_cm} onChange={setAnchoTxt} className={claseCampo} />
         </div>
         <div>
           <label className="block text-xs font-medium text-zinc-500">Alto (cm)</label>
-          <CampoNumero name="alto_cm" defaultValue={inicial?.alto_cm} className={claseCampo} />
+          <CampoNumero name="alto_cm" defaultValue={inicial?.alto_cm} onChange={setAltoTxt} className={claseCampo} />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-zinc-500">Peso por pieza (kg)</label>
+          <CampoNumero name="peso_kg" defaultValue={inicial?.peso_kg ?? undefined} onChange={setPesoTxt} className={claseCampo} />
         </div>
       </div>
+
+      {(pesoLinea > 0 || cbmLinea > 0) && (
+        <div className="rounded-lg bg-zinc-50 px-3 py-2 text-xs text-zinc-600">
+          <p>
+            Esta línea: <strong className="text-zinc-900">{Math.round(pesoLinea).toLocaleString("es-MX")} kg</strong> · {cbmLinea.toFixed(2)} m³
+            {!pesoTxt && cantidadNum > 0 && <span className="text-amber-700"> · sin peso capturado</span>}
+          </p>
+          {ocupacion && (
+            <p className="mt-0.5">
+              Con ella el contenedor queda en{" "}
+              <span className={`font-semibold ${colorPct(pctPeso)}`}>
+                {Math.round(pesoDespues).toLocaleString("es-MX")} de {ocupacion.limitePesoKg.toLocaleString("es-MX")} kg ({Math.round(pctPeso)}%)
+              </span>{" "}
+              y{" "}
+              <span className={`font-semibold ${colorPct(pctCbm)}`}>
+                {cbmDespues.toFixed(1)} de {ocupacion.capacidadCbm} m³ ({Math.round(pctCbm)}%)
+              </span>
+              {pctPeso > 100 && <span className="text-red-700"> — te pasas de peso</span>}
+              {pctPeso <= 100 && pctCbm > 100 && <span className="text-red-700"> — te pasas de espacio</span>}
+              {pctPeso <= 100 && pctCbm <= 100 && (
+                <span className="text-zinc-500">
+                  {" "}
+                  · te quedan {Math.round(ocupacion.limitePesoKg - pesoDespues).toLocaleString("es-MX")} kg y {(ocupacion.capacidadCbm - cbmDespues).toFixed(1)} m³
+                </span>
+              )}
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

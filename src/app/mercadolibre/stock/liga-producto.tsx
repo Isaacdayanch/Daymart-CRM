@@ -24,12 +24,15 @@ export function LigaProducto({
   opciones,
   datosMl,
   catalogo,
+  piezasPorUnidad = 1,
 }: {
   itemId: string;
   variationId: number | null;
   sku: string | null;
   origen: "auto" | "manual" | null;
   nombre: string | null;
+  /** Piezas del CRM que son UNA unidad de esta publicación (2 = un par). */
+  piezasPorUnidad?: number;
   opciones: Opcion[];
   /** Para "Nuevo producto con estos datos" (Fase C). */
   datosMl?: DatosMlParaProducto;
@@ -39,6 +42,7 @@ export function LigaProducto({
   const [editando, setEditando] = useState(false);
   const [creando, setCreando] = useState(false);
   const [elegido, setElegido] = useState(sku ?? "");
+  const [factor, setFactor] = useState(String(piezasPorUnidad || 1));
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -53,6 +57,11 @@ export function LigaProducto({
             (que en compu mide 14rem): si no, la lista salía recortada y
             "corta y chiquita" (Isaac, 5 oct). */}
         <SelectorProducto opciones={opciones} value={elegido} onChange={setElegido} panelClase="right-0 w-full lg:w-[30rem]" />
+        <label className="flex items-center gap-2 text-[11px] text-zinc-600">
+          Piezas del CRM por unidad de ML
+          <input type="number" min={1} step={1} value={factor} onChange={(e) => setFactor(e.target.value)} className="w-14 rounded-lg border border-zinc-300 px-2 py-1 text-xs" />
+        </label>
+        <p className="text-[10px] text-zinc-400">1 normal; 2 si en ML se vende por PAR y en tu bodega cuentas piezas sueltas (mancuernas).</p>
         <div className="flex items-center gap-2 text-xs">
           <button
             type="button"
@@ -60,7 +69,7 @@ export function LigaProducto({
             onClick={async () => {
               setGuardando(true);
               setError(null);
-              const r = await vincularPublicacion(itemId, variationId, elegido);
+              const r = await vincularPublicacion(itemId, variationId, elegido, Number(factor) || 1);
               setGuardando(false);
               if (r.error) {
                 setError(r.error);
@@ -101,6 +110,7 @@ export function LigaProducto({
         <p className="text-zinc-400">
           <span className="font-mono">{sku}</span>
           {origen === "auto" ? " · por SKU" : " · manual"}
+          {piezasPorUnidad > 1 && <span className="font-medium text-violet-700"> · {piezasPorUnidad} pzas por unidad</span>}
           {" · "}
           <button type="button" onClick={() => setEditando(true)} className="text-zinc-500 hover:text-zinc-900">
             cambiar

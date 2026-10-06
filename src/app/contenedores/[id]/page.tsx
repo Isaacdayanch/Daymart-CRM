@@ -5,6 +5,7 @@ import {
   cbmTotalContenedor,
   costoPorCbmContenedor,
   costoTotalContenedor,
+  ocupacionContenedor,
   tipoCambioPromedioMercancia,
 } from "@/lib/calculos";
 import { reconciliacionContenedor } from "@/lib/calculos-stock";
@@ -27,6 +28,7 @@ import {
 import { FormularioContenedor } from "./formulario-contenedor";
 import { Abonos } from "./abonos";
 import { Productos } from "./productos";
+import { TarjetaOcupacion } from "./ocupacion-contenedor";
 import { Documentos } from "./documentos";
 import { TarjetaEstado } from "./tarjeta-estado";
 import { BotonRecalcularCosto } from "./boton-recalcular-costo";
@@ -125,6 +127,7 @@ export default async function DetalleContenedor({
   const marcas = await obtenerMarcas(supabase).catch(() => []);
 
   const cbmTotal = cbmTotalContenedor(listaProductos);
+  const ocupacion = ocupacionContenedor(contenedor, listaProductos);
   const costoPorCbm = costoPorCbmContenedor(contenedor, listaProductos);
   const tipoCambioMercancia = tipoCambioPromedioMercancia(listaAbonos);
   const costoTotal = costoTotalContenedor(contenedor, listaAbonos);
@@ -181,6 +184,8 @@ export default async function DetalleContenedor({
             </div>
           )}
         </div>
+
+        <TarjetaOcupacion ocupacion={ocupacion} />
 
         {verDinero && hayEstimados && (
           <p className="-mt-3 text-xs text-amber-800">
@@ -314,6 +319,7 @@ export default async function DetalleContenedor({
           marcas={marcas}
           soloLectura={!verDinero}
           contenedorRecibido={Boolean(contenedor.stock_generado_en)}
+          ocupacion={{ pesoKg: ocupacion.pesoKg, limitePesoKg: ocupacion.limitePesoKg, cbm: ocupacion.cbm, capacidadCbm: ocupacion.capacidadCbm }}
         />
 
         <div className="flex justify-end">

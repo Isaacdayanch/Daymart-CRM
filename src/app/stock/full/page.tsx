@@ -57,7 +57,7 @@ export default async function FullYMercadoLibre() {
       lineas: agruparLineas(lineas).map((l) => {
         const sku = resolvedor.skuDe(l.item_id, l.variation_id, l.seller_sku);
         const r = sku ? stockPorSku.get(sku) : undefined;
-        return { ...l, sku, nombreCrm: r?.nombre ?? null, stockBodega: r?.stockActual ?? null, piezasPorCaja: r?.piezasPorCaja ?? null };
+        return { ...l, sku, nombreCrm: r?.nombre ?? null, stockBodega: r?.stockActual ?? null, piezasPorCaja: r?.piezasPorCaja ?? null, factor: resolvedor.factorDe(l.item_id, l.variation_id) };
       }),
     }));
   } catch (e) {

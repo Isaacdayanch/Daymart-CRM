@@ -23,6 +23,92 @@ export function cbmTotalContenedor(productos: Producto[]) {
   return productos.reduce((suma, p) => suma + cbmProducto(p), 0);
 }
 
+// --- Peso del contenedor (migración 0047) ---------------------------------
+// El límite que importa no es el del contenedor (~26,500 kg físicos) sino el
+// de la carretera en México: carga neta máxima de un 40' = 21,000 kg en
+// camión normal, 23,000 con sobrecargo, 26,000 por tren (NOM-012 / navieras).
+
+export const LIMITE_PESO_KG_DEFAULT = 21000;
+/** Capacidad útil aproximada de un contenedor de 40' alto, en m³. */
+export const CAPACIDAD_CBM_DEFAULT = 68;
+
+export function pesoProducto(producto: Pick<Producto, "peso_kg" | "cantidad">) {
+  return (Number(producto.peso_kg) || 0) * producto.cantidad;
+}
+
+export function pesoTotalContenedor(productos: Pick<Producto, "peso_kg" | "cantidad">[]) {
+  return productos.reduce((suma, p) => suma + pesoProducto(p), 0);
+}
+
+export interface OcupacionContenedor {
+  pesoKg: number;
+  limitePesoKg: number;
+  pctPeso: number;
+  cbm: number;
+  capacidadCbm: number;
+  pctCbm: number;
+  pesoRestanteKg: number;
+  cbmRestante: number;
+  /** Productos con cantidad pero sin peso capturado (el total está incompleto). */
+  sinPeso: number;
+  /** Lectura en una línea de cómo va la combinación peso / espacio. */
+  aviso: string;
+  nivel: "ok" | "atencion" | "excedido";
+}
+
+function kg(n: number) {
+  return `${Math.round(n).toLocaleString("es-MX")} kg`;
+}
+function m3(n: number) {
+  return `${n.toFixed(1)} m³`;
+}
+
+/** Cómo va el contenedor en peso y en espacio, y qué conviene meter
+ * todavía: si sobra espacio pero falta peso, carga ligera; si sobra peso
+ * pero falta espacio, carga densa. */
+export function ocupacionContenedor(
+  contenedor: Pick<Contenedor, "limite_peso_kg" | "capacidad_cbm">,
+  productos: Producto[],
+): OcupacionContenedor {
+  const limitePesoKg = Number(contenedor.limite_peso_kg) || LIMITE_PESO_KG_DEFAULT;
+  const capacidadCbm = Number(contenedor.capacidad_cbm) || CAPACIDAD_CBM_DEFAULT;
+  const pesoKg = pesoTotalContenedor(productos);
+  const cbm = cbmTotalContenedor(productos);
+  const pctPeso = limitePesoKg ? (pesoKg / limitePesoKg) * 100 : 0;
+  const pctCbm = capacidadCbm ? (cbm / capacidadCbm) * 100 : 0;
+  const pesoRestanteKg = limitePesoKg - pesoKg;
+  const cbmRestante = capacidadCbm - cbm;
+  const sinPeso = productos.filter((p) => p.cantidad > 0 && !(Number(p.peso_kg) > 0)).length;
+
+  let nivel: OcupacionContenedor["nivel"] = "ok";
+  let aviso: string;
+  if (pctPeso > 100 && pctCbm > 100) {
+    nivel = "excedido";
+    aviso = `Te pasas de peso por ${kg(-pesoRestanteKg)} y de espacio por ${m3(-cbmRestante)}.`;
+  } else if (pctPeso > 100) {
+    nivel = "excedido";
+    aviso = `Te pasas de peso por ${kg(-pesoRestanteKg)} aunque te sobren ${m3(Math.max(cbmRestante, 0))}: quita carga pesada o pide autorización de más peso (23,000 kg con sobrecargo).`;
+  } else if (pctCbm > 100) {
+    nivel = "excedido";
+    aviso = `Te pasas de espacio por ${m3(-cbmRestante)} aunque te sobren ${kg(pesoRestanteKg)} de peso.`;
+  } else if (pesoKg === 0 && cbm === 0) {
+    aviso = "Todavía no hay productos.";
+  } else if (pctPeso >= pctCbm + 10) {
+    // El peso se acaba antes que el espacio: lo que falte debe ser ligero.
+    nivel = pctPeso >= 90 ? "atencion" : "ok";
+    const densidadMax = cbmRestante > 0 ? pesoRestanteKg / cbmRestante : 0;
+    aviso = `Te sobra espacio pero te falta peso: te quedan ${m3(cbmRestante)} y solo ${kg(pesoRestanteKg)}. Lo que agregues tiene que ser ligero (máx. ${Math.round(densidadMax).toLocaleString("es-MX")} kg por m³, ej. espejos, yoga, hogar).`;
+  } else if (pctCbm >= pctPeso + 10) {
+    nivel = pctCbm >= 90 ? "atencion" : "ok";
+    aviso = `Te sobra peso pero te falta espacio: te quedan ${kg(pesoRestanteKg)} y solo ${m3(cbmRestante)}. Conviene llenar con carga densa (ej. mancuernas, discos).`;
+  } else {
+    nivel = pctPeso >= 90 || pctCbm >= 90 ? "atencion" : "ok";
+    aviso = `Peso y espacio van parejos: te quedan ${kg(pesoRestanteKg)} y ${m3(cbmRestante)}.`;
+  }
+  if (sinPeso > 0) aviso += ` Ojo: ${sinPeso} producto(s) sin peso capturado — el total real es mayor.`;
+  return { pesoKg, limitePesoKg, pctPeso, cbm, capacidadCbm, pctCbm, pesoRestanteKg, cbmRestante, sinPeso, aviso, nivel };
+}
+
 /** Flete convertido a pesos con su propio tipo de cambio. */
 export function fletePesos(contenedor: Pick<Contenedor, "flete_dolares" | "flete_tipo_cambio">) {
   return contenedor.flete_dolares * contenedor.flete_tipo_cambio;

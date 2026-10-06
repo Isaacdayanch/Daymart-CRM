@@ -114,18 +114,30 @@ export async function terminarSyncStock(inicioIso?: string) {
 }
 
 /** Liga (o cambia la liga de) una publicación de ML con un SKU del CRM. */
-export async function vincularPublicacion(itemId: string, variationId: number | null, skuCrm: string) {
+/** Liga una publicación con un producto del CRM. `piezasPorUnidad` =
+ * cuántas piezas del CRM son UNA unidad de ML (1 normal; 2 para un par de
+ * mancuernas, migración 0047): se aplica a envíos a Full, ventas que salen
+ * de bodega, valor en Full y Análisis de venta. */
+export async function vincularPublicacion(itemId: string, variationId: number | null, skuCrm: string, piezasPorUnidad = 1) {
   if (!(await soloDueno())) return { error: "Solo el dueño puede hacer esto." };
   if (!skuCrm) return { error: "Elige el producto del CRM." };
+  const factor = Math.round(Number(piezasPorUnidad) || 1);
+  if (factor < 1) return { error: "Las piezas por unidad deben ser 1 o más." };
   const { createServiceClient } = await import("@/lib/supabase/servicio");
   const supabase = createServiceClient();
   let consulta = supabase.from("mercadolibre_vinculos").delete().eq("item_id", itemId);
   consulta = variationId === null ? consulta.is("variation_id", null) : consulta.eq("variation_id", variationId);
   await consulta;
-  const { error } = await supabase.from("mercadolibre_vinculos").insert({ item_id: itemId, variation_id: variationId, sku_crm: skuCrm });
+  let { error } = await supabase.from("mercadolibre_vinculos").insert({ item_id: itemId, variation_id: variationId, sku_crm: skuCrm, piezas_por_unidad: factor });
+  if (error && /piezas_por_unidad/.test(error.message)) {
+    if (factor > 1) return { error: "Para usar piezas por unidad distintas de 1 falta correr el SQL 0047 en Supabase." };
+    ({ error } = await supabase.from("mercadolibre_vinculos").insert({ item_id: itemId, variation_id: variationId, sku_crm: skuCrm }));
+  }
   if (error) return { error: error.message };
   revalidatePath("/mercadolibre/stock");
+  revalidatePath("/mercadolibre/analisis");
   revalidatePath("/stock");
+  revalidatePath("/stock/full");
   revalidatePath("/");
   return { error: null };
 }
@@ -357,13 +369,15 @@ export async function agregarRestockDesdeAnalisis(sku: string, cantidad: number)
     ancho_cm: Number(base.ancho_cm) || 0,
     alto_cm: Number(base.alto_cm) || 0,
     marca_id: (previo?.marca_id as string | null) ?? ((ficha?.marca_id as string | null) ?? null),
+    peso_kg: Number(previo?.peso_kg ?? ficha?.peso_kg) || null,
     orden: (ultimo?.orden ?? 0) + 1,
   };
   let { error } = await supabase.from("productos").insert(fila);
-  if (error && /marca_id/.test(error.message)) {
-    const { marca_id: _m, ...sinMarca } = fila;
+  if (error && /marca_id|peso_kg/.test(error.message)) {
+    const { marca_id: _m, peso_kg: _p, ...sinExtras } = fila;
     void _m;
-    ({ error } = await supabase.from("productos").insert(sinMarca));
+    void _p;
+    ({ error } = await supabase.from("productos").insert(sinExtras));
   }
   if (error) return { error: error.message, numero: null };
   revalidatePath(`/contenedores/${contenedor.id}`);

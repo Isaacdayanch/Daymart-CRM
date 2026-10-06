@@ -38,6 +38,21 @@ export interface VinculoMl {
   item_id: string;
   variation_id: number | null;
   sku_crm: string;
+  /** Piezas del CRM que son UNA unidad de esta publicación (migración 0047):
+   * 1 normal, 2 para un par de mancuernas. */
+  piezas_por_unidad?: number | null;
+}
+
+/** Mapa clave de publicación → piezas del CRM por unidad de ML (≥ 1). */
+export function factoresVinculos(vinculos: VinculoMl[]): Map<string, number> {
+  return new Map(vinculos.map((v) => [claveVinculo(v.item_id, v.variation_id), Math.max(1, Math.round(Number(v.piezas_por_unidad) || 1))]));
+}
+
+/** Factor de una publicación: el de su liga manual (o el de su item sin
+ * variación); sin liga manual = 1. */
+export function factorDePublicacion(itemId: string, variationId: number | null, factores: Map<string, number> | undefined) {
+  if (!factores) return 1;
+  return factores.get(claveVinculo(itemId, variationId)) ?? (variationId !== null ? factores.get(claveVinculo(itemId, null)) : undefined) ?? 1;
 }
 
 interface ItemApi {
@@ -482,6 +497,8 @@ export function resumenFull(
   vinculos: Map<string, string>,
   skusCrm: Set<string>,
   costoPorSku: Map<string, number>,
+  /** Piezas del CRM por unidad de ML (migración 0047); sin él, 1. */
+  factores?: Map<string, number>,
 ): ResumenFull {
   const vistos = new Set<string>();
   const r: ResumenFull = { piezas: 0, noDisponibles: 0, valor: 0, inventariosSinLigar: 0, porSku: new Map() };
@@ -495,8 +512,10 @@ export function resumenFull(
     r.noDisponibles += p.full_no_disponible ?? 0;
     const { sku } = skuCrmDe(p, vinculos, skusCrm);
     if (sku) {
-      r.valor += p.full_disponible * (costoPorSku.get(sku) ?? 0);
-      r.porSku.set(sku, (r.porSku.get(sku) ?? 0) + p.full_disponible);
+      // En piezas del CRM: un "par" en Full son 2 piezas en bodega.
+      const piezasCrm = p.full_disponible * factorDePublicacion(p.item_id, p.variation_id, factores);
+      r.valor += piezasCrm * (costoPorSku.get(sku) ?? 0);
+      r.porSku.set(sku, (r.porSku.get(sku) ?? 0) + piezasCrm);
     } else if (p.full_disponible > 0) {
       r.inventariosSinLigar++;
     }
@@ -516,6 +535,7 @@ export async function obtenerResumenFull(resumenes: { sku: string; costoPromedio
       new Map(vinculos.map((v) => [claveVinculo(v.item_id, v.variation_id), v.sku_crm])),
       new Set(resumenes.map((r) => r.sku)),
       new Map(resumenes.map((r) => [r.sku, r.costoPromedio])),
+      factoresVinculos(vinculos),
     );
   } catch {
     return null;

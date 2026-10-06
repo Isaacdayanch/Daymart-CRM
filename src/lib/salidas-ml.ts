@@ -7,7 +7,7 @@
 import { createServiceClient } from "@/lib/supabase/servicio";
 import { insertarMovimientosStock } from "@/lib/movimientos-stock";
 import { costoPromedioPonderado } from "@/lib/calculos-stock";
-import { claveVinculo, obtenerPublicaciones, obtenerVinculos, skuCrmDe, type PublicacionMl } from "@/lib/mercadolibre-stock";
+import { claveVinculo, factorDePublicacion, factoresVinculos, obtenerPublicaciones, obtenerVinculos, skuCrmDe, type PublicacionMl } from "@/lib/mercadolibre-stock";
 import type { OrdenItemMl, OrdenMl } from "@/lib/mercadolibre-ordenes";
 import type { Bodega, EnvioFull, EnvioFullLinea, MovimientoStock, RecepcionFull } from "@/lib/tipos";
 
@@ -31,10 +31,17 @@ export async function resolvedorSku() {
     supabase.from("movimientos_stock").select("sku").returns<{ sku: string }[]>(),
   ]);
   const mapaVinculos = new Map(vinculos.map((v) => [claveVinculo(v.item_id, v.variation_id), v.sku_crm]));
+  const factores = factoresVinculos(vinculos);
   const skusCrm = new Set((skus ?? []).map((s) => s.sku));
   const porClave = new Map(publicaciones.map((p) => [claveVinculo(p.item_id, p.variation_id), p]));
   return {
     publicaciones,
+    factores,
+    /** Piezas del CRM por unidad de ML (1 normal, 2 para un par). */
+    factorDe(itemId: string | null, variationId: number | null): number {
+      if (!itemId) return 1;
+      return factorDePublicacion(itemId, variationId, factores);
+    },
     skuDe(itemId: string | null, variationId: number | null, sellerSku: string | null): string | null {
       if (!itemId) return null;
       const manual = mapaVinculos.get(claveVinculo(itemId, variationId)) ?? (variationId !== null ? mapaVinculos.get(claveVinculo(itemId, null)) : undefined);
@@ -81,7 +88,7 @@ export async function registrarHistorialFull(publicaciones?: PublicacionMl[]) {
   const ultimaPor = new Map<string, { total: number; disponible: number }>();
   for (const u of ultimas ?? []) if (!ultimaPor.has(u.inventory_id)) ultimaPor.set(u.inventory_id, u);
 
-  const { skuDe } = await resolvedorSku();
+  const { skuDe, factorDe } = await resolvedorSku();
   const ahora = new Date().toISOString();
   const historial: Record<string, unknown>[] = [];
   const recepciones: Record<string, unknown>[] = [];
@@ -98,7 +105,9 @@ export async function registrarHistorialFull(publicaciones?: PublicacionMl[]) {
         variation_id: p.variation_id,
         titulo: [p.titulo, p.variacion].filter(Boolean).join(" · "),
         sku_crm: skuDe(p.item_id, p.variation_id, p.seller_sku),
-        cantidad: total - previa.total,
+        // En piezas del CRM (un par en Full = 2 piezas), para que "ML detectó
+        // N" y la salida propuesta ya vengan convertidas.
+        cantidad: (total - previa.total) * factorDe(p.item_id, p.variation_id),
         total_antes: previa.total,
         total_despues: total,
         detectado_en: ahora,
@@ -398,7 +407,7 @@ export async function procesarVentasMl(): Promise<{ generadas: number; pendiente
   if (!bodega) return { generadas: 0, pendientes: [], desde, devolucionesNuevas: 0 };
 
   const { ordenes, itemsPorOrden } = await ordenesCandidatas(desde);
-  const { skuDe } = await resolvedorSku();
+  const { skuDe, factorDe } = await resolvedorSku();
 
   // Nombre/foto/piezas por caja de cada SKU (de su último movimiento).
   const skusNecesarios = new Set<string>();
@@ -436,17 +445,19 @@ export async function procesarVentasMl(): Promise<{ generadas: number; pendiente
   for (const plan of planes) {
     const filas = plan.lineas.map(({ sku, item }) => {
       const d = datosSku.get(sku);
+      const factor = factorDe(item.item_id, item.variation_id);
       return {
         tipo: "SALIDA",
         sku,
         nombre: d?.nombre ?? item.titulo ?? sku,
         bodega_id: bodega.id,
-        cantidad: item.cantidad,
+        // Un "par" vendido en ML son 2 piezas que salen de bodega.
+        cantidad: item.cantidad * factor,
         piezas_por_caja: d?.piezas_por_caja ?? 1,
         imagen_url: d?.imagen_url ?? item.imagen_url ?? null,
         costo_unitario_pesos: 0,
         destino: "Mercado Libre",
-        referencia: `Venta ML #${plan.orden.id} · ${plan.orden.logistica}`,
+        referencia: `Venta ML #${plan.orden.id} · ${plan.orden.logistica}${factor > 1 ? ` · ${item.cantidad} × ${factor} pzas` : ""}`,
         orden_ml_id: plan.orden.id,
         creado_en: plan.orden.fecha_creacion,
       };

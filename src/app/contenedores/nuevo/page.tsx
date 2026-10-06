@@ -102,6 +102,27 @@ export default async function NuevoContenedor({
           </div>
 
           <div className="border-t border-zinc-100 pt-4">
+            <p className="text-sm font-medium text-zinc-700">Peso y espacio</p>
+            <p className="text-xs text-zinc-500">
+              Para avisarte cuando el contenedor se llene de peso antes que de espacio (ej. mancuernas). 21,000 kg es el máximo en carretera en México para un 40 pies; 23,000 con sobrecargo, 26,000 por tren.
+            </p>
+            <div className="mt-2 grid grid-cols-2 gap-4">
+              <div>
+                <label htmlFor="limite_peso_kg" className="block text-xs font-medium text-zinc-500">
+                  Límite de peso (kg)
+                </label>
+                <CampoNumero id="limite_peso_kg" name="limite_peso_kg" defaultValue={21000} className={claseCampo} />
+              </div>
+              <div>
+                <label htmlFor="capacidad_cbm" className="block text-xs font-medium text-zinc-500">
+                  Capacidad (m³)
+                </label>
+                <CampoNumero id="capacidad_cbm" name="capacidad_cbm" defaultValue={68} className={claseCampo} />
+              </div>
+            </div>
+          </div>
+
+          <div className="border-t border-zinc-100 pt-4">
             <p className="text-sm font-medium text-zinc-700">Flete (dólares)</p>
             <p className="text-xs text-zinc-500">Se paga de una sola vez, con su propio tipo de cambio.</p>
             <div className="mt-2 grid grid-cols-2 gap-4">

@@ -1,5 +1,7 @@
 "use server";
 
+import { CAPACIDAD_CBM_DEFAULT, LIMITE_PESO_KG_DEFAULT } from "@/lib/calculos";
+
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { numero, texto } from "@/lib/form-helpers";
@@ -8,9 +10,7 @@ import type { EstadoContenedor } from "@/lib/tipos";
 export async function crearContenedor(formData: FormData) {
   const supabase = await createClient();
 
-  const { data: contenedor, error } = await supabase
-    .from("contenedores")
-    .insert({
+  const filaContenedor = {
       numero: numero(formData, "numero"),
       booking: texto(formData, "booking"),
       estado: formData.get("estado") as EstadoContenedor,
@@ -25,9 +25,20 @@ export async function crearContenedor(formData: FormData) {
       flete_estimado: formData.get("flete_estimado") === "true",
       aduana_estimada: formData.get("aduana_estimada") === "true",
       otros_gastos_estimado: formData.get("otros_gastos_estimado") === "true",
+  };
+  let { data: contenedor, error } = await supabase
+    .from("contenedores")
+    .insert({
+      ...filaContenedor,
+      limite_peso_kg: numero(formData, "limite_peso_kg") || LIMITE_PESO_KG_DEFAULT,
+      capacidad_cbm: numero(formData, "capacidad_cbm") || CAPACIDAD_CBM_DEFAULT,
     })
     .select("id")
     .single();
+  // Sin el SQL 0047 (límite de peso) se crea igual, con los valores por defecto.
+  if (error && /limite_peso_kg|capacidad_cbm/.test(error.message)) {
+    ({ data: contenedor, error } = await supabase.from("contenedores").insert(filaContenedor).select("id").single());
+  }
 
   if (error || !contenedor) {
     redirect(`/contenedores/nuevo?error=${encodeURIComponent(error?.message ?? "error desconocido")}`);
