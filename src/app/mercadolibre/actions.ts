@@ -311,3 +311,63 @@ export async function crearProductoDesdeMl(formData: FormData) {
   revalidatePath("/");
   return { error: null, sku };
 }
+
+/** Botón "+ Al contenedor #N" del Análisis de venta (Isaac, 6 oct): agrega
+ * el producto (restock) al contenedor más reciente que esté
+ * "Configurándose", copiando la ficha del último producto con ese SKU en
+ * cualquier contenedor (o del catálogo si nunca ha venido en uno). */
+export async function agregarRestockDesdeAnalisis(sku: string, cantidad: number) {
+  if (!(await soloDueno())) return { error: "Solo el dueño puede hacer esto.", numero: null };
+  if (!sku || !Number.isFinite(cantidad) || cantidad <= 0) return { error: "Cantidad inválida.", numero: null };
+  const { createClient } = await import("@/lib/supabase/server");
+  const supabase = await createClient();
+  const { data: contenedor } = await supabase
+    .from("contenedores")
+    .select("id, numero, fabrica_principal, proveedor_principal")
+    .eq("estado", "CONFIGURANDOSE")
+    .is("eliminado_en", null)
+    .order("numero", { ascending: false })
+    .limit(1)
+    .maybeSingle<{ id: string; numero: number; fabrica_principal: string | null; proveedor_principal: string | null }>();
+  if (!contenedor) return { error: "No hay ningún contenedor en \"Configurándose\". Crea uno en Contenedores y vuelve a intentar.", numero: null };
+
+  const { data: yaEsta } = await supabase.from("productos").select("id").eq("contenedor_id", contenedor.id).eq("sku", sku).limit(1).maybeSingle<{ id: string }>();
+  if (yaEsta) return { error: `Ese producto ya está en el contenedor #${contenedor.numero}; cámbiale la cantidad desde el contenedor.`, numero: null };
+
+  const [{ data: previo }, { data: ficha }, { data: ultimo }] = await Promise.all([
+    supabase.from("productos").select("*").eq("sku", sku).order("creado_en", { ascending: false }).limit(1).maybeSingle<Record<string, unknown>>(),
+    supabase.from("productos_catalogo").select("*").eq("sku", sku).maybeSingle<Record<string, unknown>>(),
+    supabase.from("productos").select("orden").eq("contenedor_id", contenedor.id).order("orden", { ascending: false }).limit(1).maybeSingle<{ orden: number }>(),
+  ]);
+  if (!previo && !ficha) return { error: "No encontré ese SKU en contenedores ni en el catálogo.", numero: null };
+  const base = (previo ?? ficha)!;
+  const fila: Record<string, unknown> = {
+    contenedor_id: contenedor.id,
+    categoria: (base.categoria as string | null) ?? "",
+    fabrica: (previo?.fabrica as string | null) ?? contenedor.fabrica_principal,
+    proveedor: (previo?.proveedor as string | null) ?? contenedor.proveedor_principal,
+    imagen_url: (base.imagen_url as string | null) ?? null,
+    sku,
+    nombre: (base.nombre as string) ?? sku,
+    memo: (previo?.memo as string | null) ?? ((ficha?.memo as string | null) ?? null),
+    cantidad: Math.round(cantidad),
+    precio_dolares: Number(previo?.precio_dolares) || 0,
+    piezas_por_caja: Number(base.piezas_por_caja) || 1,
+    largo_cm: Number(base.largo_cm) || 0,
+    ancho_cm: Number(base.ancho_cm) || 0,
+    alto_cm: Number(base.alto_cm) || 0,
+    marca_id: (previo?.marca_id as string | null) ?? ((ficha?.marca_id as string | null) ?? null),
+    orden: (ultimo?.orden ?? 0) + 1,
+  };
+  let { error } = await supabase.from("productos").insert(fila);
+  if (error && /marca_id/.test(error.message)) {
+    const { marca_id: _m, ...sinMarca } = fila;
+    void _m;
+    ({ error } = await supabase.from("productos").insert(sinMarca));
+  }
+  if (error) return { error: error.message, numero: null };
+  revalidatePath(`/contenedores/${contenedor.id}`);
+  revalidatePath("/contenedores");
+  revalidatePath("/mercadolibre/analisis");
+  return { error: null, numero: contenedor.numero, precioCero: !previo };
+}

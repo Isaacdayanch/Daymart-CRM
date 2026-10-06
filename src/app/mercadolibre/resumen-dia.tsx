@@ -10,6 +10,7 @@ import { resumenPorSku } from "@/lib/calculos-stock";
 import { obtenerPiezasPorCajaPorSku } from "@/lib/productos-stock";
 import { formatoPesos } from "@/lib/formato";
 import type { ConfiguracionStock, MovimientoStock } from "@/lib/tipos";
+import { analisisVentasMl, type FilaAnalisis } from "@/lib/mercadolibre-analisis";
 
 const DIA_MS = 86400000;
 /** Se avisa cuando el stock en Full alcanza para menos de estos días. */
@@ -134,7 +135,19 @@ export async function ResumenDia() {
     .filter((x): x is { p: PublicacionMl; m: ReturnType<typeof margenPublicacion> } => x !== null)
     .sort((a, b) => a.m.pct - b.m.pct);
 
-  const nada = porAcabarse.length === 0 && sinVentas.length === 0 && abajoMargen.length === 0 && !preguntas;
+  // 4) Se acaba antes de que llegue un pedido nuevo (Análisis de venta, 30
+  //    días): ventas por día disponible contra stock bodega + Full.
+  let porPedir: FilaAnalisis[] = [];
+  let diasEspera = configuracion?.dias_espera ?? 60;
+  try {
+    const analisis = await analisisVentasMl(supabase, new Date(haceDias(30)), new Date());
+    diasEspera = analisis.diasEspera;
+    porPedir = analisis.filas.filter((f) => f.sku && f.sugeridoPedir > 0 && f.diasAlcanza !== null && f.diasAlcanza < analisis.diasEspera).slice(0, 6);
+  } catch {
+    porPedir = [];
+  }
+
+  const nada = porAcabarse.length === 0 && sinVentas.length === 0 && abajoMargen.length === 0 && !preguntas && porPedir.length === 0;
   if (nada) return null;
 
   return (
@@ -188,6 +201,30 @@ export async function ResumenDia() {
             ))}
             <Link href="/mercadolibre/promociones" className="block pt-1 text-[11px] text-amber-800 underline-offset-2 hover:underline">
               Bajar precio o promocionar →
+            </Link>
+          </Tarjeta>
+        )}
+        {porPedir.length > 0 && (
+          <Tarjeta titulo={<span className="text-orange-800">Se acaba antes del próximo pedido ({porPedir.length})</span>} color="border-orange-200 bg-orange-50">
+            {porPedir.map((f) => (
+              <div key={f.clave} className="flex items-center gap-2 text-xs">
+                {f.imagenUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- miniatura de Mercado Libre
+                  <img src={f.imagenUrl} alt="" className="h-7 w-7 shrink-0 rounded-md object-cover" />
+                ) : (
+                  <div className="h-7 w-7 shrink-0 rounded-md bg-white/60" />
+                )}
+                <p className="min-w-0 flex-1 truncate text-zinc-800" title={f.titulo}>
+                  {f.titulo}
+                </p>
+                <p className="shrink-0 text-right font-medium text-zinc-900">
+                  {f.ventasPorDia?.toLocaleString("es-MX", { maximumFractionDigits: 1 })}/día · alcanza {Math.floor(f.diasAlcanza ?? 0)} d
+                  <span className="block text-[10px] font-normal text-orange-800">pedir {f.sugeridoPedir.toLocaleString("es-MX")}</span>
+                </p>
+              </div>
+            ))}
+            <Link href="/mercadolibre/analisis" className="block pt-1 text-[11px] text-orange-800 underline-offset-2 hover:underline">
+              Ver análisis de venta (tiempo de espera: {diasEspera} días) →
             </Link>
           </Tarjeta>
         )}

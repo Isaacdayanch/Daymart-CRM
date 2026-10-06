@@ -288,11 +288,79 @@ export async function sincronizarLotePublicaciones(ids: string[]) {
         if (error2) throw new Error(error2.message);
       }
     }
+    // Foto para el Análisis de venta (migración 0046). Si falla (ej. SQL sin
+    // correr), no detiene la sincronización.
+    try {
+      await registrarFotoPublicaciones(filas);
+    } catch {
+      // se ignora a propósito
+    }
     return filas.length;
   } catch (e) {
     const mensaje = e instanceof Error ? e.message : "Error desconocido";
     await supabase.from("mercadolibre_sync").upsert({ id: 1, ultimo_error_stock: mensaje });
     throw e;
+  }
+}
+
+/** Historial por tramos (migración 0046): mientras la publicación siga
+ * igual (activa / con stock) se alarga `hasta` del tramo abierto; si cambió,
+ * se cierra y se abre uno nuevo. Pocas llamadas por lote: una lectura, un
+ * update de los que siguen igual, un update de los que cambiaron y un
+ * insert de los tramos nuevos. */
+async function registrarFotoPublicaciones(filas: Record<string, unknown>[]) {
+  if (!filas.length) return;
+  const supabase = createServiceClient();
+  const ahora = new Date().toISOString();
+  const ids = Array.from(new Set(filas.map((f) => f.item_id as string)));
+  const { data: abiertos, error } = await supabase
+    .from("mercadolibre_publicaciones_historial")
+    .select("id, item_id, variation_id, activa, con_stock")
+    .in("item_id", ids)
+    .eq("abierto", true)
+    .returns<{ id: string; item_id: string; variation_id: number | null; activa: boolean; con_stock: boolean }[]>();
+  if (error) throw new Error(error.message);
+  const abiertoPor = new Map((abiertos ?? []).map((a) => [claveVinculo(a.item_id, a.variation_id), a]));
+
+  const iguales: string[] = [];
+  const cambiados: string[] = [];
+  const nuevos: Record<string, unknown>[] = [];
+  const vistos = new Set<string>();
+  for (const f of filas) {
+    const clave = claveVinculo(f.item_id as string, (f.variation_id as number | null) ?? null);
+    if (vistos.has(clave)) continue;
+    vistos.add(clave);
+    const activa = f.estado === "active";
+    const disponibles = f.logistica === "Full" ? ((f.full_disponible as number | null) ?? 0) : ((f.cantidad_publicada as number | null) ?? 0);
+    const conStock = disponibles > 0;
+    const previo = abiertoPor.get(clave);
+    if (previo && previo.activa === activa && previo.con_stock === conStock) {
+      iguales.push(previo.id);
+      continue;
+    }
+    if (previo) cambiados.push(previo.id);
+    nuevos.push({
+      item_id: f.item_id,
+      variation_id: f.variation_id ?? null,
+      inventory_id: f.inventory_id ?? null,
+      activa,
+      con_stock: conStock,
+      disponibles,
+      precio: f.precio ?? null,
+      desde: ahora,
+      hasta: ahora,
+      abierto: true,
+    });
+  }
+  // Publicaciones que ML ya no devolvió en este lote pero tenían tramo abierto:
+  // se cierran (ya no existen / no se vieron).
+  const desaparecidos = (abiertos ?? []).filter((a) => !vistos.has(claveVinculo(a.item_id, a.variation_id))).map((a) => a.id);
+  if (iguales.length) await supabase.from("mercadolibre_publicaciones_historial").update({ hasta: ahora }).in("id", iguales);
+  const cerrar = [...cambiados, ...desaparecidos];
+  if (cerrar.length) await supabase.from("mercadolibre_publicaciones_historial").update({ hasta: ahora, abierto: false }).in("id", cerrar);
+  if (nuevos.length) {
+    const { error: errorInsert } = await supabase.from("mercadolibre_publicaciones_historial").insert(nuevos);
+    if (errorInsert) throw new Error(errorInsert.message);
   }
 }
 

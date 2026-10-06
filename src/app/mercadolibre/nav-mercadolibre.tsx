@@ -7,6 +7,7 @@ const PESTANAS = [
   { href: "/mercadolibre", etiqueta: "Ventas" },
   { href: "/mercadolibre/stock", etiqueta: "Publicaciones" },
   { href: "/mercadolibre/promociones", etiqueta: "Promociones" },
+  { href: "/mercadolibre/analisis", etiqueta: "Análisis de venta" },
   { href: "/mercadolibre/conexion", etiqueta: "Conexión" },
 ];
 
