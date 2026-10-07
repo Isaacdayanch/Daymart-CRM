@@ -14,7 +14,7 @@ import { agruparLineas, diagnosticoEnviosFull, enviosPorConfirmar, obtenerEnvios
 import { resolvedorSku } from "@/lib/salidas-ml";
 import { obtenerConexion } from "@/lib/mercadolibre-auth";
 import { formatoFechaHoraMx } from "@/lib/fechas-mx";
-import { BotonActualizarEnviosMl, BuscarEnvioMl, ProbarEnvioMl, TarjetaEnvioMl, type EnvioParaPantalla } from "./envios-full-ml";
+import { BotonActualizarEnviosMl, BuscarEnvioMl, CapturarEnvioMl, ProbarEnvioMl, TarjetaEnvioMl, type EnvioParaPantalla } from "./envios-full-ml";
 
 export const maxDuration = 60;
 
@@ -95,11 +95,17 @@ export default async function FullYMercadoLibre() {
           <div>
             <h2 className="text-lg font-semibold text-zinc-900">Envíos a Full</h2>
             <p className="text-sm text-zinc-500">
-              Busca el envío por su número de Mercado Libre: te lo armo con los productos que subieron en Full, lo revisas y confirmas la salida de tu bodega con un clic — nada se descuenta sin tu confirmación.
+              Copia la tabla del envío desde tu panel de Mercado Libre y pégala aquí: queda con las cantidades exactas por producto; tú confirmas la salida de tu bodega con un clic — nada se descuenta sin tu confirmación.
             </p>
           </div>
         </div>
-        <BuscarEnvioMl />
+        <CapturarEnvioMl />
+        <details className="rounded-2xl border border-zinc-200 bg-white px-4 py-2">
+          <summary className="cursor-pointer text-xs text-zinc-500 hover:text-zinc-800">Estimar por lo que subió en Full (si no puedes copiar la tabla)</summary>
+          <div className="pb-2 pt-2">
+            <BuscarEnvioMl />
+          </div>
+        </details>
         {errorEnviosMl && <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{errorEnviosMl} — si dice que falta una tabla, corre el SQL 0042 en Supabase.</div>}
         <details className="group rounded-2xl border border-zinc-200 bg-zinc-50/60">
           <summary className="cursor-pointer select-none px-5 py-3 text-sm text-zinc-500 hover:text-zinc-800">

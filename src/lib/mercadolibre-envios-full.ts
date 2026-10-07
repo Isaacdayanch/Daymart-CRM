@@ -706,6 +706,117 @@ export function agruparLineas(lineas: EnvioFullMlLinea[]): LineaAgrupada[] {
 // sincronización de publicaciones). Isaac revisa las cantidades y confirma.
 // ---------------------------------------------------------------------------
 
+export interface LineaPanelMl {
+  /** "Código ML" del panel = inventory_id de Full. */
+  inventoryId: string;
+  titulo: string;
+  declaradas: number;
+  recibidas: number;
+}
+
+/** Lee el texto copiado del panel "Gestión de envíos Full" de Mercado
+ * Libre (Isaac selecciona la tabla, copia y pega). Cada producto empieza
+ * con "Código ML: XXXX" (= inventory_id) y trae las columnas Declaradas,
+ * Procesadas, Diferencias y Aptas para Full como "150 u."; se toma Aptas
+ * (lo que de verdad quedó en Full). Puro, sin base de datos. */
+export function parsearPanelEnvioMl(texto: string): LineaPanelMl[] {
+  const partes = texto.split(/c[oó]digo\s*ml\s*:?\s*/i);
+  const lineas: LineaPanelMl[] = [];
+  for (const parte of partes.slice(1)) {
+    const codigo = parte.match(/^\s*([A-Z0-9]{6,12})/i)?.[1]?.toUpperCase();
+    if (!codigo) continue;
+    const resto = parte.slice(parte.indexOf(codigo) + codigo.length);
+    const numeros = Array.from(resto.matchAll(/(\d[\d,.]*)\s*u\b/gi)).map((m) => Number(m[1].replace(/,/g, "")));
+    if (!numeros.length) continue;
+    // Declaradas, Procesadas, Diferencias, Aptas (+ a veces "1 u. menos de las declaradas").
+    const recibidas = numeros[Math.min(numeros.length, 4) - 1];
+    const titulo =
+      resto
+        .replace(/^\s*\+\d+/, "")
+        .split(/\r?\n|\t/)
+        .map((t) => t.trim())
+        .find((t) => t && !/cm\s*3|cm³|^\d[\d,.]*\s*u\b/i.test(t)) ?? codigo;
+    lineas.push({ inventoryId: codigo, titulo, declaradas: numeros[0], recibidas: Number.isFinite(recibidas) ? recibidas : numeros[0] });
+  }
+  // Un mismo código repetido (ej. pegó dos veces) se queda con el último.
+  const porCodigo = new Map(lineas.map((l) => [l.inventoryId, l]));
+  return Array.from(porCodigo.values());
+}
+
+/** PLAN B definitivo (7 oct; Isaac: "está todo mal la compilación de las
+ * salidas de Full"): el envío se captura con las cantidades EXACTAS del
+ * panel de ML pegado como texto, no con estimaciones por subidas en Full.
+ * Reemplaza las líneas que tuviera ese número. */
+export async function capturarEnvioDesdePanel(numero: string, texto: string): Promise<{ error: string | null; productos: number; piezas: number; sinPublicacion: string[] }> {
+  const supabase = createServiceClient();
+  const inboundId = numero.trim().replace(/^#/, "").replace(/[^0-9A-Za-z_-]/g, "");
+  if (!inboundId) return { error: "Escribe el número del envío tal como sale en tu panel (ej. 77396369).", productos: 0, piezas: 0, sinPublicacion: [] };
+  const lineasPanel = parsearPanelEnvioMl(texto);
+  if (!lineasPanel.length) {
+    return { error: "No encontré productos en lo que pegaste. Copia la tabla del envío en Mercado Libre (desde \"Código ML:\" hasta los totales) y vuelve a pegarla.", productos: 0, piezas: 0, sinPublicacion: [] };
+  }
+  const { data: existente } = await supabase.from("mercadolibre_envios_full").select("confirmado_en").eq("inbound_id", inboundId).maybeSingle<{ confirmado_en: string | null }>();
+  if (existente?.confirmado_en) return { error: `El envío ${inboundId} ya está confirmado (ya salió de bodega). Si te equivocaste, ábrelo abajo y dale "deshacer".`, productos: 0, piezas: 0, sinPublicacion: [] };
+
+  const publicaciones = await obtenerPublicaciones().catch(() => [] as PublicacionMl[]);
+  const porInventario = new Map<string, PublicacionMl>();
+  for (const p of publicaciones) if (p.inventory_id && (!porInventario.has(p.inventory_id) || (porInventario.get(p.inventory_id)!.catalogo && !p.catalogo))) porInventario.set(p.inventory_id, p);
+
+  const ahora = new Date().toISOString();
+  const sinPublicacion: string[] = [];
+  const lineas = lineasPanel.map((l) => {
+    const pub = porInventario.get(l.inventoryId);
+    if (!pub) sinPublicacion.push(`${l.inventoryId} (${l.titulo})`);
+    return {
+      inbound_id: inboundId,
+      operacion_id: `manual:${inboundId}:${l.inventoryId}`,
+      inventory_id: l.inventoryId,
+      item_id: pub?.item_id ?? null,
+      variation_id: pub?.variation_id ?? null,
+      titulo: pub ? [pub.titulo, pub.variacion].filter(Boolean).join(" · ") : l.titulo,
+      seller_sku: pub?.seller_sku ?? null,
+      imagen_url: pub?.imagen_url ?? null,
+      cantidad_planeada: l.declaradas,
+      cantidad_recibida: l.recibidas,
+      fecha: ahora,
+      crudo: { origen: "pegado del panel de ML", declaradas: l.declaradas, aptas: l.recibidas, tituloPanel: l.titulo },
+    };
+  });
+  const piezas = lineas.reduce((s, l) => s + l.cantidad_recibida, 0);
+  const fila = {
+    inbound_id: inboundId,
+    estado: "RECIBIDO",
+    estado_ml: "capturado del panel de ML (cantidades exactas)",
+    fecha_creacion: ahora,
+    fecha_recepcion: ahora,
+    piezas_planeadas: lineas.reduce((s, l) => s + (l.cantidad_planeada ?? 0), 0),
+    piezas_recibidas: piezas,
+    origen: "manual",
+    crudo: { numero: inboundId, nota: "Capturado pegando la tabla del panel de ML. Cantidades = columna 'Aptas para Full'." },
+    confirmado_en: null,
+    ignorado_en: null,
+    actualizado_en: ahora,
+  };
+  const { error: errorEnvio } = await supabase.from("mercadolibre_envios_full").upsert(fila, { onConflict: "inbound_id" });
+  if (errorEnvio) return { error: `No se pudo guardar el envío (¿falta el SQL 0042?): ${errorEnvio.message}`, productos: 0, piezas: 0, sinPublicacion };
+  await supabase.from("mercadolibre_envios_full_lineas").delete().eq("inbound_id", inboundId);
+  const { error: errorLineas } = await supabase.from("mercadolibre_envios_full_lineas").insert(lineas);
+  if (errorLineas) return { error: `No se pudieron guardar los productos: ${errorLineas.message}`, productos: 0, piezas: 0, sinPublicacion };
+  return { error: null, productos: lineas.length, piezas, sinPublicacion };
+}
+
+/** Quita un envío capturado a mano que todavía no se confirmó (con sus líneas). */
+export async function eliminarEnvioFullMlManual(inboundId: string) {
+  const supabase = createServiceClient();
+  const { data } = await supabase.from("mercadolibre_envios_full").select("origen, confirmado_en").eq("inbound_id", inboundId).maybeSingle<{ origen: string | null; confirmado_en: string | null }>();
+  if (!data) return { error: "No se encontró el envío." };
+  if (data.confirmado_en) return { error: "Este envío ya se confirmó: primero dale \"deshacer\"." };
+  if (data.origen !== "manual") return { error: "Solo se pueden quitar los envíos capturados a mano." };
+  await supabase.from("mercadolibre_envios_full_lineas").delete().eq("inbound_id", inboundId);
+  const { error } = await supabase.from("mercadolibre_envios_full").delete().eq("inbound_id", inboundId);
+  return { error: error?.message ?? null };
+}
+
 export async function armarEnvioDesdeRecepciones(numero: string, desdeIso: string): Promise<{ error: string | null; productos: number; piezas: number }> {
   const supabase = createServiceClient();
   const inboundId = numero.trim().replace(/^#/, "").replace(/[^0-9A-Za-z_-]/g, "");
@@ -729,8 +840,19 @@ export async function armarEnvioDesdeRecepciones(numero: string, desdeIso: strin
   const porInventario = new Map<string, PublicacionMl>();
   for (const p of publicaciones) if (p.inventory_id && (!porInventario.has(p.inventory_id) || (porInventario.get(p.inventory_id)!.catalogo && !p.catalogo))) porInventario.set(p.inventory_id, p);
 
+  // Las subidas que ya están asignadas a OTRO envío armado a mano (sin
+  // confirmar) no se vuelven a usar: antes, buscar dos números seguidos
+  // ponía los mismos productos en los dos envíos (caso real, 7 oct).
+  const { data: otrosEnvios } = await supabase.from("mercadolibre_envios_full").select("inbound_id").eq("origen", "manual").neq("inbound_id", inboundId).is("confirmado_en", null).is("ignorado_en", null).returns<{ inbound_id: string }[]>();
+  const yaAsignados = new Set<string>();
+  if (otrosEnvios?.length) {
+    const { data: lineasOtros } = await supabase.from("mercadolibre_envios_full_lineas").select("inventory_id").in("inbound_id", otrosEnvios.map((e) => e.inbound_id)).returns<{ inventory_id: string | null }[]>();
+    for (const l of lineasOtros ?? []) if (l.inventory_id) yaAsignados.add(l.inventory_id);
+  }
+
   const porInv = new Map<string, { cantidad: number; item_id: string | null; variation_id: number | null; titulo: string | null; fecha: string }>();
   for (const r of recepciones ?? []) {
+    if (yaAsignados.has(r.inventory_id)) continue;
     const g = porInv.get(r.inventory_id) ?? { cantidad: 0, item_id: r.item_id, variation_id: r.variation_id, titulo: r.titulo, fecha: r.detectado_en };
     g.cantidad += Number(r.cantidad) || 0;
     porInv.set(r.inventory_id, g);

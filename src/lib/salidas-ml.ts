@@ -34,17 +34,27 @@ export async function resolvedorSku() {
   const factores = factoresVinculos(vinculos);
   const skusCrm = new Set((skus ?? []).map((s) => s.sku));
   const porClave = new Map(publicaciones.map((p) => [claveVinculo(p.item_id, p.variation_id), p]));
+  // Items que tienen variantes (color, talla…): una liga guardada "al item"
+  // sin variante NO se hereda a sus variantes — cada color es un producto
+  // distinto del CRM (caso real, 7 oct: el yoga block Gris salía ligado al
+  // SKU del Negro).
+  const conVariantes = new Set(publicaciones.filter((p) => p.variation_id !== null).map((p) => p.item_id));
+  const ligaItem = (itemId: string, variationId: number | null) =>
+    variationId !== null && !conVariantes.has(itemId) ? mapaVinculos.get(claveVinculo(itemId, null)) : undefined;
   return {
     publicaciones,
     factores,
     /** Piezas del CRM por unidad de ML (1 normal, 2 para un par). */
     factorDe(itemId: string | null, variationId: number | null): number {
       if (!itemId) return 1;
+      const directo = factores.get(claveVinculo(itemId, variationId));
+      if (directo !== undefined) return directo;
+      if (variationId !== null && conVariantes.has(itemId)) return 1;
       return factorDePublicacion(itemId, variationId, factores);
     },
     skuDe(itemId: string | null, variationId: number | null, sellerSku: string | null): string | null {
       if (!itemId) return null;
-      const manual = mapaVinculos.get(claveVinculo(itemId, variationId)) ?? (variationId !== null ? mapaVinculos.get(claveVinculo(itemId, null)) : undefined);
+      const manual = mapaVinculos.get(claveVinculo(itemId, variationId)) ?? ligaItem(itemId, variationId);
       if (manual) return manual;
       const pub = porClave.get(claveVinculo(itemId, variationId));
       if (pub) {

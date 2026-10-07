@@ -215,3 +215,22 @@ export async function buscarEnvioMl(numero: string, desdeFecha: string) {
   refrescar();
   return r;
 }
+
+/** Captura un envío a Full con las cantidades exactas del panel de ML
+ * (texto copiado y pegado). Reemplaza lo que tuviera ese número. */
+export async function capturarEnvioMl(numero: string, textoPanel: string) {
+  if (!(await conSesion())) return { error: "Inicia sesión.", productos: 0, piezas: 0, sinPublicacion: [] as string[] };
+  const { capturarEnvioDesdePanel } = await import("@/lib/mercadolibre-envios-full");
+  const r = await capturarEnvioDesdePanel(numero, textoPanel);
+  refrescar();
+  return r;
+}
+
+/** Quita un envío capturado a mano que todavía no se confirmó. */
+export async function quitarEnvioMl(inboundId: string) {
+  if (!(await conSesion())) return { error: "Inicia sesión." };
+  const { eliminarEnvioFullMlManual } = await import("@/lib/mercadolibre-envios-full");
+  const r = await eliminarEnvioFullMlManual(inboundId);
+  refrescar();
+  return r;
+}

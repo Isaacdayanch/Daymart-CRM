@@ -7,7 +7,7 @@ import { formatoFechaHoraMx } from "@/lib/fechas-mx";
 import { ETIQUETA_ESTADO_ENVIO_ML, type EnvioFullMl, type LineaAgrupada } from "@/lib/mercadolibre-envios-full";
 import { Selector } from "@/components/selector";
 import { CampoFecha } from "@/components/campo-fecha";
-import { buscarEnvioMl, confirmarEnvioMl, deshacerConfirmacionMl, ignorarEnvioMl, probarEnvioMl, sincronizarEnviosFullAhora } from "./actions";
+import { buscarEnvioMl, capturarEnvioMl, confirmarEnvioMl, deshacerConfirmacionMl, ignorarEnvioMl, probarEnvioMl, quitarEnvioMl, sincronizarEnviosFullAhora } from "./actions";
 
 export interface LineaParaPantalla extends LineaAgrupada {
   /** Producto del CRM resuelto por la liga (null = sin ligar). */
@@ -69,6 +69,70 @@ export function BotonActualizarEnviosMl({ conectado }: { conectado: boolean }) {
  * panel de ML y desde cuándo empezó a llegar; el sistema arma el envío con
  * los productos que subieron en Full desde esa fecha y lo deja listo para
  * revisar y confirmar. */
+/** Capturar un envío pegando la tabla del panel de ML: cantidades exactas
+ * por producto (el "Código ML" del panel es el inventario de Full, así que
+ * cada renglón cae en su publicación sin adivinar). */
+export function CapturarEnvioMl() {
+  const router = useRouter();
+  const [numero, setNumero] = useState("");
+  const [textoPanel, setTextoPanel] = useState("");
+  const [cargando, setCargando] = useState(false);
+  const [mensaje, setMensaje] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <form
+      onSubmit={async (e) => {
+        e.preventDefault();
+        setCargando(true);
+        setError(null);
+        setMensaje(null);
+        const r = await capturarEnvioMl(numero, textoPanel);
+        setCargando(false);
+        if (r.error) setError(r.error);
+        else {
+          setMensaje(
+            `Listo: el envío ${numero.trim()} quedó abajo con ${r.productos} producto(s) y ${r.piezas.toLocaleString("es-MX")} piezas, tal como dice tu panel. Revísalo y confirma la salida.` +
+              (r.sinPublicacion.length ? ` Ojo: ${r.sinPublicacion.length} código(s) no están en tus publicaciones sincronizadas (${r.sinPublicacion.join(", ")}): dale "Actualizar" en Publicaciones y vuelve a pegar.` : ""),
+          );
+          setNumero("");
+          setTextoPanel("");
+        }
+        router.refresh();
+      }}
+      className="rounded-2xl border border-emerald-300 bg-emerald-50/60 p-4 sm:p-5"
+    >
+      <p className="text-sm font-semibold text-zinc-900">Capturar un envío desde tu panel de Mercado Libre (cantidades exactas)</p>
+      <ol className="mt-1 list-decimal space-y-0.5 pl-4 text-xs text-zinc-600">
+        <li>En Mercado Libre abre el envío (Gestión de envíos Full → el número).</li>
+        <li>Selecciona con el mouse toda la tabla de productos (desde el primer “Código ML:” hasta la fila “Total”) y cópiala (Ctrl+C / Cmd+C).</li>
+        <li>Pégala aquí y pon el número del envío. Se toma la columna “Aptas para Full”.</li>
+      </ol>
+      <div className="mt-3 flex flex-wrap items-end gap-3">
+        <div>
+          <label className="block text-[11px] font-medium text-zinc-500">Número de envío</label>
+          <input type="text" value={numero} onChange={(e) => setNumero(e.target.value)} placeholder="77396369" required className="mt-1 w-44 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm" />
+        </div>
+      </div>
+      <textarea
+        value={textoPanel}
+        onChange={(e) => setTextoPanel(e.target.value)}
+        required
+        rows={6}
+        placeholder={"Código ML: IBHA96856 +2\n2 Piezas - Bloques De Yoga Cómodos Y Fuertes Daymart Color Azul Claro\n5,619.74 cm3\n150 u.\n149 u.\n1 u.\n(de menos)\n149 u.\n…"}
+        className="mt-2 block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 font-mono text-xs"
+      />
+      <div className="mt-2 flex items-center gap-3">
+        <button type="submit" disabled={cargando || !numero.trim() || !textoPanel.trim()} className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50">
+          {cargando ? "Leyendo…" : "Capturar envío"}
+        </button>
+        <span className="text-[11px] text-zinc-500">Si el número ya existe abajo, se reemplazan sus productos con lo que pegues.</span>
+      </div>
+      {mensaje && <p className="mt-2 text-xs text-emerald-700">{mensaje}</p>}
+      {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+    </form>
+  );
+}
+
 export function BuscarEnvioMl() {
   const router = useRouter();
   const hoy = new Date();
@@ -97,9 +161,9 @@ export function BuscarEnvioMl() {
       }}
       className="rounded-2xl border border-[#2D3277]/20 bg-[#2D3277]/5 p-4 sm:p-5"
     >
-      <p className="text-sm font-semibold text-zinc-900">Buscar un envío por su número</p>
+      <p className="text-sm font-semibold text-zinc-900">Estimar un envío por lo que subió en Full (menos exacto)</p>
       <p className="mt-0.5 text-xs text-zinc-600">
-        Pega el número tal como sale en tu panel de Mercado Libre (“Gestión de envíos Full”) y desde qué día empezó a llegar. Te armo el envío con los productos que subieron en Full desde esa fecha; tú revisas las piezas y confirmas la salida de bodega.
+        Solo si no puedes copiar la tabla del panel: te armo el envío con lo que subió en Full desde esa fecha. Si ese día recibiste dos envíos, las cantidades salen mezcladas — mejor usa la captura de arriba.
       </p>
       <div className="mt-3 flex flex-wrap items-end gap-3">
         <div>
@@ -285,6 +349,20 @@ export function TarjetaEnvioMl({ datos, bodegas }: { datos: EnvioParaPantalla; b
             >
               No salió de mi bodega
             </button>
+            {envio.origen === "manual" && (
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!window.confirm(`¿Quitar el envío ${envio.inbound_id} capturado a mano? Lo puedes volver a capturar pegando la tabla del panel.`)) return;
+                  const r = await quitarEnvioMl(envio.inbound_id);
+                  if (r.error) setError(r.error);
+                  router.refresh();
+                }}
+                className="text-xs text-zinc-400 hover:text-red-600 hover:underline"
+              >
+                quitar este envío
+              </button>
+            )}
             {sinLigar > 0 && <span className="text-xs text-amber-700">{sinLigar} producto(s) sin ligar: ligarlos primero para que salgan de bodega.</span>}
           </div>
         )}
