@@ -88,16 +88,18 @@ export function factoresVinculos(vinculos: VinculoMl[]): Map<string, number> {
   return new Map(vinculos.map((v) => [claveVinculo(v.item_id, v.variation_id), Math.max(1, Math.round(Number(v.piezas_por_unidad) || 1))]));
 }
 
-/** Factor de una publicación, en el mismo orden que la liga: por SKU de
- * ML → por publicación (o su item sin variación) → 1. */
+/** Factor de una publicación, en el mismo orden que la liga: por
+ * publicación/variante → por SKU de ML → item sin variación → 1. */
 export function factorDePublicacion(itemId: string, variationId: number | null, factores: Map<string, number> | undefined, sellerSku?: string | null) {
   if (!factores) return 1;
+  const propio = factores.get(claveVinculo(itemId, variationId));
+  if (propio !== undefined) return propio;
   const porSku = normalizarSellerSku(sellerSku);
   if (porSku) {
     const f = factores.get(claveLigaSku(porSku));
     if (f !== undefined) return f;
   }
-  return factores.get(claveVinculo(itemId, variationId)) ?? (variationId !== null ? factores.get(claveVinculo(itemId, null)) : undefined) ?? 1;
+  return (variationId !== null ? factores.get(claveVinculo(itemId, null)) : undefined) ?? 1;
 }
 
 interface ItemApi {
@@ -237,9 +239,9 @@ export async function listarIdsPublicaciones() {
  * item_id), así la tabla nunca se queda vacía a media sincronización — al
  * final, `terminarSyncPublicaciones(inicio)` borra las que ML ya no tiene.
  * Las ligas viven en otra tabla, no se pierden. */
-export async function sincronizarLotePublicaciones(ids: string[]) {
+export async function sincronizarLotePublicaciones(ids: string[]): Promise<{ renglones: number; fallidos: string[] }> {
   const supabase = createServiceClient();
-  if (!ids.length) return 0;
+  if (!ids.length) return { renglones: 0, fallidos: [] };
   try {
     const cacheFull = new Map<string, StockFullApi | null>();
     const cacheComision = new Map<string, { pct: number; fija: number } | null>();
@@ -253,6 +255,28 @@ export async function sincronizarLotePublicaciones(ids: string[]) {
       lotes.map((lote) => mercadolibreGet<{ code: number; body: ItemApi }[]>(`/items?ids=${lote.join(",")}&attributes=${atributos}`)),
     );
     const items = respuestas.flat().filter((r) => r.code === 200 && r.body).map((r) => r.body);
+    // Las que ML no contestó bien (429 por cuota, 403, etc.) se reintentan
+    // UNA vez; las que sigan fallando NO se borran de la copia local (antes
+    // se borraban en silencio y "desaparecían" del sistema — caso real, 7 oct).
+    const leidos = new Set(items.map((b) => b.id));
+    let fallidos = ids.filter((id) => !leidos.has(id));
+    if (fallidos.length) {
+      await new Promise((r) => setTimeout(r, 1200));
+      const reintento = await Promise.all(
+        (() => {
+          const l: string[][] = [];
+          for (let i = 0; i < fallidos.length; i += 20) l.push(fallidos.slice(i, i + 20));
+          return l;
+        })().map((lote) => mercadolibreGet<{ code: number; body: ItemApi }[]>(`/items?ids=${lote.join(",")}&attributes=${atributos}`).catch(() => [] as { code: number; body: ItemApi }[])),
+      );
+      for (const r of reintento.flat()) {
+        if (r.code === 200 && r.body && !leidos.has(r.body.id)) {
+          items.push(r.body);
+          leidos.add(r.body.id);
+        }
+      }
+      fallidos = ids.filter((id) => !leidos.has(id));
+    }
 
     // Stock en Full: todos los inventarios distintos, en paralelo.
     const inventarios = new Set<string>();
@@ -336,7 +360,9 @@ export async function sincronizarLotePublicaciones(ids: string[]) {
       }
     }
 
-    const { error: errorBorrar } = await supabase.from("mercadolibre_publicaciones").delete().in("item_id", ids);
+    // Solo se reemplazan las publicaciones que SÍ se leyeron; las fallidas
+    // conservan su copia anterior.
+    const { error: errorBorrar } = await supabase.from("mercadolibre_publicaciones").delete().in("item_id", Array.from(leidos));
     if (errorBorrar) throw new Error(errorBorrar.message);
     if (filas.length) {
       const { error } = await supabase.from("mercadolibre_publicaciones").insert(filas);
@@ -355,7 +381,10 @@ export async function sincronizarLotePublicaciones(ids: string[]) {
     } catch {
       // se ignora a propósito
     }
-    return filas.length;
+    if (fallidos.length) {
+      await supabase.from("mercadolibre_sync").upsert({ id: 1, ultimo_error_stock: `${fallidos.length} publicación(es) no se pudieron leer de ML en el último lote (se conservó su copia anterior): ${fallidos.slice(0, 5).join(", ")}${fallidos.length > 5 ? "…" : ""}` });
+    }
+    return { renglones: filas.length, fallidos };
   } catch (e) {
     const mensaje = e instanceof Error ? e.message : "Error desconocido";
     await supabase.from("mercadolibre_sync").upsert({ id: 1, ultimo_error_stock: mensaje });
@@ -425,11 +454,13 @@ async function registrarFotoPublicaciones(filas: Record<string, unknown>[]) {
 }
 
 /** Paso 3: borra las publicaciones que no se volvieron a ver en esta pasada
- * (ML ya no las tiene) y marca la sincronización como terminada. */
-export async function terminarSyncPublicaciones(inicioIso?: string) {
+ * (ML ya no las tiene) y marca la sincronización como terminada.
+ * `conservarNoVistas` = true cuando algún lote falló: entonces NO se borra
+ * nada (lo que no se vio puede ser una publicación que ML sí tiene). */
+export async function terminarSyncPublicaciones(inicioIso?: string, conservarNoVistas = false) {
   const supabase = createServiceClient();
-  if (inicioIso) await supabase.from("mercadolibre_publicaciones").delete().lt("actualizado_en", inicioIso);
-  await supabase.from("mercadolibre_sync").upsert({ id: 1, ultima_sync_stock: new Date().toISOString(), ultimo_error_stock: null });
+  if (inicioIso && !conservarNoVistas) await supabase.from("mercadolibre_publicaciones").delete().lt("actualizado_en", inicioIso);
+  await supabase.from("mercadolibre_sync").upsert({ id: 1, ultima_sync_stock: new Date().toISOString(), ...(conservarNoVistas ? {} : { ultimo_error_stock: null }) });
   // Con la copia fresca, se anota el historial de Full y se detectan
   // recepciones (el total de un inventario subió). Si la tabla no existe
   // todavía (SQL 0035 sin correr), no debe tumbar la sincronización.
@@ -452,6 +483,8 @@ interface CursorStock {
   ids: string[];
   indice: number;
   inicio: string;
+  /** Publicaciones que no se pudieron leer en esta pasada (no se borran). */
+  fallidos?: number;
 }
 
 const TAMANO_LOTE_AUTO = 40;
@@ -485,13 +518,20 @@ export async function avanzarSyncPublicaciones(opciones: { presupuestoMs?: numbe
   }
 
   while (cursor.indice < cursor.ids.length && Date.now() - inicioLlamada < presupuestoMs) {
-    await sincronizarLotePublicaciones(cursor.ids.slice(cursor.indice, cursor.indice + TAMANO_LOTE_AUTO));
-    cursor = { ...cursor, indice: cursor.indice + TAMANO_LOTE_AUTO };
+    const lote: string[] = cursor.ids.slice(cursor.indice, cursor.indice + TAMANO_LOTE_AUTO);
+    let fallidosLote: number = lote.length;
+    try {
+      const r: { renglones: number; fallidos: string[] } = await sincronizarLotePublicaciones(lote);
+      fallidosLote = r.fallidos.length;
+    } catch {
+      // el lote completo falló: se conserva su copia anterior y se sigue
+    }
+    cursor = { ...cursor, indice: cursor.indice + TAMANO_LOTE_AUTO, fallidos: (cursor.fallidos ?? 0) + fallidosLote };
     await guardarCursor(cursor);
   }
 
   if (cursor.indice >= cursor.ids.length) {
-    await terminarSyncPublicaciones(cursor.inicio);
+    await terminarSyncPublicaciones(cursor.inicio, (cursor.fallidos ?? 0) > 0);
     await guardarCursor(null);
     return { estado: "termino" as const, procesadas: cursor.ids.length, total: cursor.ids.length };
   }
@@ -519,10 +559,14 @@ export function claveVinculo(itemId: string, variationId: number | null) {
 
 /** SKU del CRM de cada publicación: la liga manual manda; si no hay,
  * coincidencia automática cuando el SKU de ML es igual a un SKU del CRM. */
-/** Orden de resolución (Isaac, 7 oct: "todo sobre ese SKU"): 1) liga por
- * SKU de ML, 2) el SKU de ML es igual a uno del CRM, 3) liga por
- * publicación (para las que no traen SKU en ML). */
+/** Orden de resolución (Isaac, 7 oct: "todo sobre ese SKU", y luego "cada
+ * color de una misma publicación es un producto distinto"): 1) liga de ESA
+ * publicación/variante (lo más específico gana: así cuatro colores con el
+ * mismo SKU en ML pueden ir a cuatro productos), 2) liga por SKU de ML,
+ * 3) el SKU de ML es igual a uno del CRM. */
 export function skuCrmDe(pub: Pick<PublicacionMl, "item_id" | "variation_id" | "seller_sku">, vinculos: Map<string, string>, skusCrm: Set<string>) {
+  const manual = vinculos.get(claveVinculo(pub.item_id, pub.variation_id));
+  if (manual) return { sku: manual, origen: "manual" as const };
   const sellerSku = normalizarSellerSku(pub.seller_sku);
   if (sellerSku) {
     const porSku = vinculos.get(claveLigaSku(sellerSku));
@@ -530,8 +574,6 @@ export function skuCrmDe(pub: Pick<PublicacionMl, "item_id" | "variation_id" | "
     if (skusCrm.has(sellerSku)) return { sku: sellerSku, origen: "auto" as const };
     if (pub.seller_sku && skusCrm.has(pub.seller_sku)) return { sku: pub.seller_sku, origen: "auto" as const };
   }
-  const manual = vinculos.get(claveVinculo(pub.item_id, pub.variation_id));
-  if (manual) return { sku: manual, origen: "manual" as const };
   return { sku: null, origen: null };
 }
 

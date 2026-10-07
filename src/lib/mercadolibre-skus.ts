@@ -4,8 +4,7 @@
 // resuelven a un producto del CRM y cuáles están pendientes, y para las
 // pendientes propone el producto más parecido por nombre.
 
-import { claveVinculo, normalizarSellerSku, skuCrmDe, type OrigenLiga, type PublicacionMl, type VinculoMl } from "./mercadolibre-stock";
-import { factoresVinculos, factorDePublicacion } from "./mercadolibre-stock";
+import { claveLigaSku, claveVinculo, factorDePublicacion, factoresVinculos, normalizarSellerSku, skuCrmDe, type OrigenLiga, type PublicacionMl, type VinculoMl } from "./mercadolibre-stock";
 
 export interface ProductoCrmResumen {
   sku: string;
@@ -23,6 +22,13 @@ export interface PublicacionResumen {
   imagen_url: string | null;
   estado: string | null;
   logistica: string | null;
+  /** Cómo resuelve ESTA publicación hoy. */
+  skuCrm: string | null;
+  nombreCrm: string | null;
+  origen: OrigenLiga;
+  factor: number;
+  /** Propuesta por nombre parecido (incluye el color/variante). */
+  sugerencia: { sku: string; nombre: string; puntos: number } | null;
 }
 
 export interface GrupoSkuMl {
@@ -35,6 +41,8 @@ export interface GrupoSkuMl {
   /** Propuesta por nombre parecido (solo pendientes). */
   sugerencia: { sku: string; nombre: string; puntos: number } | null;
   activa: boolean;
+  /** true si trae varias variantes (colores/tallas): cada una puede ligarse aparte. */
+  conVariantes: boolean;
 }
 
 const VACIAS = new Set(["DE", "DEL", "LA", "EL", "LOS", "LAS", "PARA", "CON", "Y", "O", "EN", "UN", "UNA", "POR", "A", "AL", "COLOR", "DAYMART", "GYM", "CASA", "PIEZAS", "PZAS", "KG", "CM", "MM"]);
@@ -80,7 +88,25 @@ export function agruparPorSkuMl(publicaciones: PublicacionMl[], vinculos: Vincul
   const nombrePorSku = new Map(productos.map((p) => [p.sku, p.nombre]));
   const porSku = new Map<string, PublicacionMl[]>();
   const sinSku: PublicacionResumen[] = [];
-  const resumen = (p: PublicacionMl): PublicacionResumen => ({ id: p.id, item_id: p.item_id, variation_id: p.variation_id, titulo: p.titulo, variacion: p.variacion, imagen_url: p.imagen_url, estado: p.estado, logistica: p.logistica });
+  const resumen = (p: PublicacionMl): PublicacionResumen => {
+    const liga = skuCrmDe(p, mapaVinculos, skusCrm);
+    const sellerSku = normalizarSellerSku(p.seller_sku) ?? "";
+    return {
+      id: p.id,
+      item_id: p.item_id,
+      variation_id: p.variation_id,
+      titulo: p.titulo,
+      variacion: p.variacion,
+      imagen_url: p.imagen_url,
+      estado: p.estado,
+      logistica: p.logistica,
+      skuCrm: liga.sku,
+      nombreCrm: liga.sku ? (nombrePorSku.get(liga.sku) ?? null) : null,
+      origen: liga.origen,
+      factor: factorDePublicacion(p.item_id, p.variation_id, factores, p.seller_sku),
+      sugerencia: liga.sku ? null : sugerirProducto({ titulo: p.titulo, variacion: p.variacion, sellerSku }, productos),
+    };
+  };
   for (const p of publicaciones) {
     const k = normalizarSellerSku(p.seller_sku);
     if (!k) {
@@ -92,23 +118,29 @@ export function agruparPorSkuMl(publicaciones: PublicacionMl[], vinculos: Vincul
   const grupos: GrupoSkuMl[] = [];
   for (const [sellerSku, pubs] of porSku) {
     const principal = [...pubs].sort((a, b) => Number(a.catalogo) - Number(b.catalogo) || Number(b.estado === "active") - Number(a.estado === "active"))[0];
-    const liga = skuCrmDe({ item_id: principal.item_id, variation_id: principal.variation_id, seller_sku: sellerSku }, mapaVinculos, skusCrm);
-    const origen: OrigenLiga = liga.origen;
-    const estado: GrupoSkuMl["estado"] = origen === "sku" ? "ligado" : origen === "auto" ? "igual" : "pendiente";
+    const resumenes = pubs.map(resumen);
+    // Liga del SKU en sí (sin contar ligas propias de cada variante).
+    const ligaSku = mapaVinculos.get(claveLigaSku(sellerSku)) ?? (skusCrm.has(sellerSku) ? sellerSku : null);
+    const origenSku: OrigenLiga = mapaVinculos.get(claveLigaSku(sellerSku)) ? "sku" : ligaSku ? "auto" : null;
+    // Pendiente si CUALQUIER publicación del grupo no resuelve a un producto.
+    const estado: GrupoSkuMl["estado"] = resumenes.some((r) => !r.skuCrm) ? "pendiente" : origenSku === "auto" && resumenes.every((r) => r.origen === "auto") ? "igual" : "ligado";
+    const variantes = new Set(pubs.filter((p) => p.variation_id !== null).map((p) => p.variacion ?? String(p.variation_id)));
     grupos.push({
       sellerSku,
-      publicaciones: pubs.map(resumen),
+      publicaciones: resumenes,
       estado,
-      skuCrm: estado === "pendiente" ? null : liga.sku,
-      nombreCrm: liga.sku ? (nombrePorSku.get(liga.sku) ?? null) : null,
+      skuCrm: ligaSku,
+      nombreCrm: ligaSku ? (nombrePorSku.get(ligaSku) ?? null) : null,
       factor: factorDePublicacion(principal.item_id, principal.variation_id, factores, sellerSku),
       sugerencia: estado === "pendiente" ? sugerirProducto({ titulo: principal.titulo, variacion: principal.variacion, sellerSku }, productos) : null,
       activa: pubs.some((p) => p.estado === "active"),
+      conVariantes: variantes.size >= 2,
     });
   }
   const orden = { pendiente: 0, ligado: 1, igual: 2 };
   grupos.sort((a, b) => orden[a.estado] - orden[b.estado] || Number(b.activa) - Number(a.activa) || a.sellerSku.localeCompare(b.sellerSku));
-  // Publicaciones sin SKU: solo las que tampoco tienen liga por publicación.
-  const sinSkuPendientes = sinSku.filter((p) => !mapaVinculos.get(claveVinculo(p.item_id, p.variation_id)));
-  return { grupos, sinSku: sinSkuPendientes };
+  // Publicaciones sin SKU en ML: todas (ligadas por publicación o no), las
+  // pendientes primero, para que ninguna "desaparezca" de esta pantalla.
+  sinSku.sort((a, b) => Number(Boolean(a.skuCrm)) - Number(Boolean(b.skuCrm)) || (a.titulo ?? "").localeCompare(b.titulo ?? "", "es"));
+  return { grupos, sinSku };
 }

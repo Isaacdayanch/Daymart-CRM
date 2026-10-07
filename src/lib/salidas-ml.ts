@@ -46,19 +46,26 @@ export async function resolvedorSku() {
     factores,
     /** Piezas del CRM por unidad de ML (1 normal, 2 para un par). */
     factorDe(itemId: string | null, variationId: number | null, sellerSku?: string | null): number {
+      if (itemId) {
+        const directo = factores.get(claveVinculo(itemId, variationId));
+        if (directo !== undefined) return directo;
+      }
       const porSku = normalizarSellerSku(sellerSku ?? (itemId ? porClave.get(claveVinculo(itemId, variationId))?.seller_sku : null));
       if (porSku) {
         const f = factores.get(claveLigaSku(porSku));
         if (f !== undefined) return f;
       }
       if (!itemId) return 1;
-      const directo = factores.get(claveVinculo(itemId, variationId));
-      if (directo !== undefined) return directo;
       if (variationId !== null && conVariantes.has(itemId)) return 1;
       return factorDePublicacion(itemId, variationId, factores);
     },
     skuDe(itemId: string | null, variationId: number | null, sellerSku: string | null): string | null {
-      // 1) Liga por SKU de ML (o SKU igual), con el SKU de la orden/envío o el de la publicación.
+      // 1) Liga de ESA publicación/variante (lo más específico).
+      if (itemId) {
+        const propia = mapaVinculos.get(claveVinculo(itemId, variationId));
+        if (propia) return propia;
+      }
+      // 2) Liga por SKU de ML (o SKU igual), con el SKU de la orden/envío o el de la publicación.
       const sku1 = normalizarSellerSku(sellerSku ?? (itemId ? porClave.get(claveVinculo(itemId, variationId))?.seller_sku : null));
       if (sku1) {
         const porSku = mapaVinculos.get(claveLigaSku(sku1));
@@ -66,7 +73,7 @@ export async function resolvedorSku() {
         if (skusCrm.has(sku1)) return sku1;
       }
       if (!itemId) return null;
-      const manual = mapaVinculos.get(claveVinculo(itemId, variationId)) ?? ligaItem(itemId, variationId);
+      const manual = ligaItem(itemId, variationId);
       if (manual) return manual;
       const pub = porClave.get(claveVinculo(itemId, variationId));
       if (pub) {

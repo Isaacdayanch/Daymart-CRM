@@ -5,17 +5,23 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { SelectorProducto } from "@/app/stock/salidas/selector-producto";
 import type { GrupoSkuMl, ProductoCrmResumen, PublicacionResumen } from "@/lib/mercadolibre-skus";
-import { ligarSkuMl, quitarLigaSkuMl } from "../actions";
+import { desvincularPublicacion, ligarSkuMl, ligarVariante, quitarLigaSkuMl } from "../actions";
+
+type Opcion = { sku: string; nombre: string; stockActual: number; imagenUrl: string | null };
+
+function Foto({ p }: { p: PublicacionResumen }) {
+  return p.imagen_url ? (
+    // eslint-disable-next-line @next/next/no-img-element -- miniatura
+    <img src={p.imagen_url} alt="" className="h-9 w-9 shrink-0 rounded-md object-cover" />
+  ) : (
+    <span className="h-9 w-9 shrink-0 rounded-md bg-zinc-100" />
+  );
+}
 
 function Publicacion({ p }: { p: PublicacionResumen }) {
   return (
     <li className="flex items-center gap-2 text-xs text-zinc-600">
-      {p.imagen_url ? (
-        // eslint-disable-next-line @next/next/no-img-element -- miniatura
-        <img src={p.imagen_url} alt="" className="h-8 w-8 shrink-0 rounded-md object-cover" />
-      ) : (
-        <span className="h-8 w-8 shrink-0 rounded-md bg-zinc-100" />
-      )}
+      <Foto p={p} />
       <span className="min-w-0">
         <span className="block truncate text-zinc-800">
           {p.titulo ?? p.item_id}
@@ -31,8 +37,108 @@ function Publicacion({ p }: { p: PublicacionResumen }) {
   );
 }
 
-function FilaGrupo({ g, opciones }: { g: GrupoSkuMl; opciones: { sku: string; nombre: string; stockActual: number; imagenUrl: string | null }[] }) {
+function CampoFactor({ valor, onChange }: { valor: string; onChange: (v: string) => void }) {
+  return (
+    <label className="flex flex-wrap items-center gap-2 text-[11px] text-zinc-600">
+      Piezas del CRM por unidad de ML
+      <input type="number" min={1} step={1} value={valor} onChange={(e) => onChange(e.target.value)} className="w-14 rounded-lg border border-zinc-300 px-2 py-1 text-xs" />
+      <span className="text-zinc-400">(solo si en tu bodega cuentas piezas sueltas y ML lo vende en paquete, ej. mancuernas = 2; si en tu stock ya cuentas el paquete, ej. yoga blocks en par, déjalo en 1)</span>
+    </label>
+  );
+}
+
+/** Una variante (color/talla) ligada por su cuenta. */
+function FilaVariante({ p, opciones }: { p: PublicacionResumen; opciones: Opcion[] }) {
   const router = useRouter();
+  const propia = p.origen === "manual";
+  const [editando, setEditando] = useState(!p.skuCrm);
+  const [elegido, setElegido] = useState(p.skuCrm ?? p.sugerencia?.sku ?? "");
+  const [factor, setFactor] = useState(String(p.factor || 1));
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function guardar() {
+    setGuardando(true);
+    setError(null);
+    const r = await ligarVariante(p.item_id, p.variation_id, elegido, Number(factor) || 1);
+    setGuardando(false);
+    if (r.error) setError(r.error);
+    else {
+      setEditando(false);
+      router.refresh();
+    }
+  }
+
+  return (
+    <li className={`rounded-lg border p-3 ${p.skuCrm ? "border-zinc-200 bg-white" : "border-amber-200 bg-amber-50/60"}`}>
+      <div className="flex items-start gap-2">
+        <Foto p={p} />
+        <div className="min-w-0 flex-1">
+          <p className="text-xs text-zinc-800">
+            {p.titulo ?? p.item_id}
+            {p.variacion && <strong className="text-zinc-900"> · {p.variacion}</strong>}
+          </p>
+          <p className="font-mono text-[10px] text-zinc-400">{p.item_id}</p>
+          {editando ? (
+            <div className="mt-2 space-y-2">
+              {p.sugerencia && (
+                <p className="text-xs text-zinc-700">
+                  Creo que es <strong>{p.sugerencia.nombre}</strong> <span className="font-mono text-zinc-500">({p.sugerencia.sku})</span>. ¿Es correcto?
+                </p>
+              )}
+              <SelectorProducto opciones={opciones} value={elegido} onChange={setElegido} panelClase="left-0 w-full" />
+              <CampoFactor valor={factor} onChange={setFactor} />
+              <div className="flex items-center gap-2 text-xs">
+                <button type="button" disabled={!elegido || guardando} onClick={guardar} className="rounded-lg bg-zinc-900 px-3 py-1.5 font-medium text-white hover:bg-zinc-700 disabled:opacity-50">
+                  {guardando ? "…" : p.sugerencia && elegido === p.sugerencia.sku ? "Sí, ligar esta variante" : "Ligar esta variante"}
+                </button>
+                {p.skuCrm && (
+                  <button type="button" onClick={() => setEditando(false)} className="text-zinc-500 hover:text-zinc-900">
+                    Cancelar
+                  </button>
+                )}
+              </div>
+              {error && <p className="text-xs text-red-600">{error}</p>}
+            </div>
+          ) : (
+            <p className="mt-1 text-xs text-zinc-600">
+              → <span className="font-medium text-zinc-900">{p.nombreCrm ?? p.skuCrm}</span> <span className="font-mono text-zinc-400">{p.skuCrm}</span>
+              {propia ? <span className="text-zinc-400"> · liga propia de esta variante</span> : p.origen === "sku" ? <span className="text-zinc-400"> · hereda la liga del SKU</span> : <span className="text-zinc-400"> · mismo SKU</span>}
+              {p.factor > 1 && <span className="font-medium text-violet-700"> · {p.factor} pzas por unidad</span>}
+              {" · "}
+              <button type="button" onClick={() => setEditando(true)} className="text-zinc-500 hover:text-zinc-900 hover:underline">
+                cambiar
+              </button>
+              {propia && (
+                <>
+                  {" · "}
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const r = await desvincularPublicacion(p.item_id, p.variation_id);
+                      if (r.error) setError(r.error);
+                      router.refresh();
+                    }}
+                    className="text-zinc-400 hover:text-red-600 hover:underline"
+                  >
+                    quitar liga propia
+                  </button>
+                </>
+              )}
+              {error && <span className="block text-red-600">{error}</span>}
+            </p>
+          )}
+        </div>
+      </div>
+    </li>
+  );
+}
+
+function FilaGrupo({ g, opciones }: { g: GrupoSkuMl; opciones: Opcion[] }) {
+  const router = useRouter();
+  const tienePropias = g.publicaciones.some((p) => p.origen === "manual");
+  // Con variantes (colores/tallas) se liga cada una por separado por defecto.
+  const [porVariante, setPorVariante] = useState(g.conVariantes);
   const [editando, setEditando] = useState(g.estado === "pendiente");
   const [elegido, setElegido] = useState(g.skuCrm ?? g.sugerencia?.sku ?? "");
   const [factor, setFactor] = useState(String(g.factor || 1));
@@ -52,21 +158,45 @@ function FilaGrupo({ g, opciones }: { g: GrupoSkuMl; opciones: { sku: string; no
   }
 
   const borde = g.estado === "pendiente" ? "border-amber-200 bg-amber-50/40" : "border-zinc-200 bg-white";
+  const encabezado = (
+    <p className="flex flex-wrap items-center gap-2">
+      <span className="rounded-md bg-zinc-900 px-2 py-0.5 font-mono text-xs font-semibold text-white">{g.sellerSku}</span>
+      <span className="text-[11px] text-zinc-400">
+        {g.publicaciones.length} publicación(es){!g.activa && " · ninguna activa"}
+      </span>
+      {g.conVariantes && (
+        <button type="button" onClick={() => setPorVariante((v) => !v)} className="text-[11px] text-[#2D3277] underline-offset-2 hover:underline">
+          {porVariante ? "ligar todo el SKU a un solo producto" : "ligar cada variante por separado"}
+        </button>
+      )}
+    </p>
+  );
+
+  if (porVariante) {
+    return (
+      <li className={`rounded-xl border p-4 ${borde}`}>
+        {encabezado}
+        <p className="mt-1 text-[11px] text-zinc-500">Cada color/variante se liga a su propio producto del CRM. Esa liga manda sobre la del SKU.</p>
+        <ul className="mt-2 space-y-2">
+          {g.publicaciones.map((p) => (
+            <FilaVariante key={p.id} p={p} opciones={opciones} />
+          ))}
+        </ul>
+      </li>
+    );
+  }
+
   return (
     <li className={`rounded-xl border p-4 ${borde}`}>
       <div className="grid gap-3 lg:grid-cols-[1fr_1fr]">
         <div className="min-w-0">
-          <p className="flex flex-wrap items-center gap-2">
-            <span className="rounded-md bg-zinc-900 px-2 py-0.5 font-mono text-xs font-semibold text-white">{g.sellerSku}</span>
-            <span className="text-[11px] text-zinc-400">
-              {g.publicaciones.length} publicación(es){!g.activa && " · ninguna activa"}
-            </span>
-          </p>
+          {encabezado}
           <ul className="mt-2 space-y-1.5">
             {g.publicaciones.map((p) => (
               <Publicacion key={p.id} p={p} />
             ))}
           </ul>
+          {tienePropias && <p className="mt-2 text-[11px] text-amber-700">Algunas variantes tienen liga propia: esas mandan sobre la liga del SKU.</p>}
         </div>
         <div className="min-w-0">
           {editando ? (
@@ -81,11 +211,7 @@ function FilaGrupo({ g, opciones }: { g: GrupoSkuMl; opciones: { sku: string; no
                 )}
               </p>
               <SelectorProducto opciones={opciones} value={elegido} onChange={setElegido} panelClase="left-0 w-full" />
-              <label className="flex items-center gap-2 text-[11px] text-zinc-600">
-                Piezas del CRM por unidad de ML
-                <input type="number" min={1} step={1} value={factor} onChange={(e) => setFactor(e.target.value)} className="w-14 rounded-lg border border-zinc-300 px-2 py-1 text-xs" />
-                <span className="text-zinc-400">(solo si en tu bodega cuentas piezas sueltas y ML lo vende en paquete, ej. mancuernas = 2; si en tu stock ya cuentas el paquete, ej. yoga blocks en par, déjalo en 1)</span>
-              </label>
+              <CampoFactor valor={factor} onChange={setFactor} />
               <div className="flex items-center gap-2 text-xs">
                 <button type="button" disabled={!elegido || guardando} onClick={guardar} className="rounded-lg bg-zinc-900 px-3 py-1.5 font-medium text-white hover:bg-zinc-700 disabled:opacity-50">
                   {guardando ? "…" : g.sugerencia && elegido === g.sugerencia.sku ? "Sí, ligar con ese" : "Ligar"}
@@ -101,7 +227,7 @@ function FilaGrupo({ g, opciones }: { g: GrupoSkuMl; opciones: { sku: string; no
           ) : (
             <div className="text-xs">
               <p className="text-[11px] uppercase tracking-wide text-zinc-400">Producto del CRM</p>
-              <p className="font-medium text-zinc-900">{g.nombreCrm ?? g.skuCrm}</p>
+              <p className="font-medium text-zinc-900">{g.nombreCrm ?? g.skuCrm ?? "—"}</p>
               <p className="text-zinc-500">
                 <span className="font-mono">{g.skuCrm}</span>
                 {g.estado === "igual" ? " · mismo SKU en los dos lados" : " · ligado a mano"}
@@ -111,7 +237,7 @@ function FilaGrupo({ g, opciones }: { g: GrupoSkuMl; opciones: { sku: string; no
                 <button type="button" onClick={() => setEditando(true)} className="text-zinc-500 hover:text-zinc-900 hover:underline">
                   cambiar
                 </button>
-                {g.estado === "ligado" && (
+                {g.estado === "ligado" && g.skuCrm && (
                   <button
                     type="button"
                     onClick={async () => {
@@ -138,11 +264,11 @@ function FilaGrupo({ g, opciones }: { g: GrupoSkuMl; opciones: { sku: string; no
 export function TablaSkus({ grupos, sinSku, productos, pendientes }: { grupos: GrupoSkuMl[]; sinSku: PublicacionResumen[]; productos: ProductoCrmResumen[]; pendientes: number }) {
   const [filtro, setFiltro] = useState<"pendientes" | "todos">(pendientes > 0 ? "pendientes" : "todos");
   const [q, setQ] = useState("");
-  const opciones = productos.map((p) => ({ sku: p.sku, nombre: p.nombre, stockActual: p.stockActual, imagenUrl: p.imagenUrl }));
+  const opciones: Opcion[] = productos.map((p) => ({ sku: p.sku, nombre: p.nombre, stockActual: p.stockActual, imagenUrl: p.imagenUrl }));
   const texto = q.trim().toLowerCase();
   const visibles = grupos
     .filter((g) => filtro === "todos" || g.estado === "pendiente")
-    .filter((g) => !texto || [g.sellerSku, g.skuCrm, g.nombreCrm, ...g.publicaciones.map((p) => `${p.titulo ?? ""} ${p.variacion ?? ""} ${p.item_id}`)].some((t) => t?.toLowerCase().includes(texto)));
+    .filter((g) => !texto || [g.sellerSku, g.skuCrm, g.nombreCrm, ...g.publicaciones.map((p) => `${p.titulo ?? ""} ${p.variacion ?? ""} ${p.item_id} ${p.skuCrm ?? ""}`)].some((t) => t?.toLowerCase().includes(texto)));
   const ligados = grupos.filter((g) => g.estado === "ligado").length;
   const iguales = grupos.filter((g) => g.estado === "igual").length;
 
@@ -167,7 +293,7 @@ export function TablaSkus({ grupos, sinSku, productos, pendientes }: { grupos: G
 
       {pendientes > 0 && filtro === "pendientes" && (
         <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          Estos {pendientes} SKU(s) de Mercado Libre no coinciden con ningún producto del CRM. Te propongo el más parecido; confirma o elige el correcto.
+          Estos {pendientes} SKU(s) de Mercado Libre tienen publicaciones que no resuelven a ningún producto del CRM. Te propongo el más parecido; confirma o elige el correcto. Si una publicación trae varios colores, cada color se liga por separado.
         </p>
       )}
 
@@ -181,20 +307,23 @@ export function TablaSkus({ grupos, sinSku, productos, pendientes }: { grupos: G
       {sinSku.length > 0 && (
         <details className="rounded-xl border border-zinc-200 bg-white px-4 py-3">
           <summary className="cursor-pointer text-sm font-medium text-zinc-800">
-            Publicaciones sin SKU en Mercado Libre y sin liga ({sinSku.length})
+            Publicaciones sin SKU en Mercado Libre ({sinSku.length}; {sinSku.filter((p) => !p.skuCrm).length} sin ligar)
           </summary>
           <p className="mt-1 text-xs text-zinc-500">
-            Lo mejor es ponerles su SKU en Mercado Libre (el mismo del CRM, uno por color/variante) y quedan ligadas solas al sincronizar. Mientras, se pueden ligar una por una en{" "}
+            Lo mejor es ponerles su SKU en Mercado Libre (el mismo del CRM, uno por color/variante) y quedan ligadas solas al sincronizar. Mientras, se pueden ligar una por una aquí mismo.
+          </p>
+          <ul className="mt-2 space-y-2">
+            {sinSku.map((p) => (
+              <FilaVariante key={p.id} p={p} opciones={opciones} />
+            ))}
+          </ul>
+          <p className="mt-2 text-[11px] text-zinc-400">
+            También puedes ligarlas desde{" "}
             <Link href="/mercadolibre/stock?filtro=sinligar" className="underline-offset-2 hover:underline">
               Publicaciones
             </Link>
             .
           </p>
-          <ul className="mt-2 space-y-1.5">
-            {sinSku.map((p) => (
-              <Publicacion key={p.id} p={p} />
-            ))}
-          </ul>
         </details>
       )}
     </div>

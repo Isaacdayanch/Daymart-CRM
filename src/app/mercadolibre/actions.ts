@@ -94,20 +94,22 @@ export async function iniciarSyncStock() {
 }
 
 export async function sincronizarLoteStock(ids: string[]) {
-  if (!(await soloDueno())) return { error: "Solo el dueño puede hacer esto.", renglones: 0 };
+  if (!(await soloDueno())) return { error: "Solo el dueño puede hacer esto.", renglones: 0, fallidos: ids.length };
   try {
     const { sincronizarLotePublicaciones } = await import("@/lib/mercadolibre-stock");
-    return { error: null, renglones: await sincronizarLotePublicaciones(ids) };
+    const r = await sincronizarLotePublicaciones(ids);
+    return { error: null, renglones: r.renglones, fallidos: r.fallidos.length };
   } catch (e) {
-    return { error: e instanceof Error ? e.message : "Falló la sincronización.", renglones: 0 };
+    return { error: e instanceof Error ? e.message : "Falló la sincronización.", renglones: 0, fallidos: ids.length };
   }
 }
 
-export async function terminarSyncStock(inicioIso?: string) {
+export async function terminarSyncStock(inicioIso?: string, conservarNoVistas = false) {
   if (!(await soloDueno())) return { error: "Solo el dueño puede hacer esto." };
   const { terminarSyncPublicaciones } = await import("@/lib/mercadolibre-stock");
-  await terminarSyncPublicaciones(inicioIso);
+  await terminarSyncPublicaciones(inicioIso, conservarNoVistas);
   revalidatePath("/mercadolibre/stock");
+  revalidatePath("/mercadolibre/skus");
   revalidatePath("/stock");
   revalidatePath("/");
   return { error: null };
@@ -156,6 +158,33 @@ function revalidarLigas() {
   for (const ruta of ["/mercadolibre/skus", "/mercadolibre/stock", "/mercadolibre/analisis", "/mercadolibre/promociones", "/mercadolibre", "/stock", "/stock/full", "/"]) revalidatePath(ruta);
 }
 
+/** Liga UNA publicación/variante a un producto, sin pasar por el SKU de ML
+ * (Isaac, 7 oct: "cuatro colores en una publicación, que pueda ligar la azul
+ * a la azul y la rosa a la rosa"). Esta liga manda sobre la del SKU. */
+export async function ligarVariante(itemId: string, variationId: number | null, skuCrm: string, piezasPorUnidad = 1) {
+  if (!(await soloDueno())) return { error: "Solo el dueño puede hacer esto." };
+  if (!skuCrm) return { error: "Elige el producto del CRM." };
+  const factor = Math.round(Number(piezasPorUnidad) || 1);
+  if (factor < 1) return { error: "Las piezas por unidad deben ser 1 o más." };
+  return ligarPorPublicacion(itemId, variationId, skuCrm, factor);
+}
+
+async function ligarPorPublicacion(itemId: string, variationId: number | null, skuCrm: string, factor: number) {
+  const { createServiceClient } = await import("@/lib/supabase/servicio");
+  const supabase = createServiceClient();
+  let consulta = supabase.from("mercadolibre_vinculos").delete().eq("item_id", itemId);
+  consulta = variationId === null ? consulta.is("variation_id", null) : consulta.eq("variation_id", variationId);
+  await consulta;
+  let { error } = await supabase.from("mercadolibre_vinculos").insert({ item_id: itemId, variation_id: variationId, sku_crm: skuCrm, piezas_por_unidad: factor });
+  if (error && /piezas_por_unidad/.test(error.message)) {
+    if (factor > 1) return { error: "Para usar piezas por unidad distintas de 1 falta correr el SQL 0047 en Supabase." };
+    ({ error } = await supabase.from("mercadolibre_vinculos").insert({ item_id: itemId, variation_id: variationId, sku_crm: skuCrm }));
+  }
+  if (error) return { error: error.message };
+  revalidarLigas();
+  return { error: null };
+}
+
 export async function vincularPublicacion(itemId: string, variationId: number | null, skuCrm: string, piezasPorUnidad = 1) {
   if (!(await soloDueno())) return { error: "Solo el dueño puede hacer esto." };
   if (!skuCrm) return { error: "Elige el producto del CRM." };
@@ -175,21 +204,7 @@ export async function vincularPublicacion(itemId: string, variationId: number | 
     if (!r.error) return r;
     // sin el SQL 0048 se cae a la liga por publicación
   }
-  let consulta = supabase.from("mercadolibre_vinculos").delete().eq("item_id", itemId);
-  consulta = variationId === null ? consulta.is("variation_id", null) : consulta.eq("variation_id", variationId);
-  await consulta;
-  let { error } = await supabase.from("mercadolibre_vinculos").insert({ item_id: itemId, variation_id: variationId, sku_crm: skuCrm, piezas_por_unidad: factor });
-  if (error && /piezas_por_unidad/.test(error.message)) {
-    if (factor > 1) return { error: "Para usar piezas por unidad distintas de 1 falta correr el SQL 0047 en Supabase." };
-    ({ error } = await supabase.from("mercadolibre_vinculos").insert({ item_id: itemId, variation_id: variationId, sku_crm: skuCrm }));
-  }
-  if (error) return { error: error.message };
-  revalidatePath("/mercadolibre/stock");
-  revalidatePath("/mercadolibre/analisis");
-  revalidatePath("/stock");
-  revalidatePath("/stock/full");
-  revalidatePath("/");
-  return { error: null };
+  return ligarPorPublicacion(itemId, variationId, skuCrm, factor);
 }
 
 export async function desvincularPublicacion(itemId: string, variationId: number | null) {
@@ -201,6 +216,7 @@ export async function desvincularPublicacion(itemId: string, variationId: number
   const { error } = await consulta;
   if (error) return { error: error.message };
   revalidatePath("/mercadolibre/stock");
+  revalidatePath("/mercadolibre/skus");
   revalidatePath("/stock");
   revalidatePath("/");
   return { error: null };

@@ -26,22 +26,26 @@ export function BotonSincronizarStock({ conectado }: { conectado: boolean }) {
     }
     const ids = inicio.ids;
     let renglones = 0;
+    let fallidos = 0;
     for (let i = 0; i < ids.length; i += TAMANO_LOTE) {
       setAvance(`Publicaciones ${Math.min(i + TAMANO_LOTE, ids.length)} de ${ids.length}…`);
       const r = await sincronizarLoteStock(ids.slice(i, i + TAMANO_LOTE));
       if (r.error) {
-        setMensaje(`Error: ${r.error}`);
-        setCargando(false);
-        setAvance(null);
-        router.refresh();
-        return;
+        // Un lote que falla no detiene la pasada: se conserva su copia anterior y se sigue.
+        fallidos += r.fallidos;
+        continue;
       }
       renglones += r.renglones;
+      fallidos += r.fallidos;
     }
-    await terminarSyncStock(inicio.inicioIso);
+    await terminarSyncStock(inicio.inicioIso, fallidos > 0);
     setCargando(false);
     setAvance(null);
-    setMensaje(`Listo: ${ids.length} publicaciones, ${renglones} renglones (con variantes).`);
+    setMensaje(
+      fallidos > 0
+        ? `Listo: ${ids.length - fallidos} de ${ids.length} publicaciones actualizadas (${renglones} renglones). ${fallidos} no se pudieron leer de Mercado Libre (cuota o permiso): se conservó su copia anterior, vuelve a darle "Actualizar" en un minuto.`
+        : `Listo: ${ids.length} publicaciones, ${renglones} renglones (con variantes).`,
+    );
     router.refresh();
   }
 
