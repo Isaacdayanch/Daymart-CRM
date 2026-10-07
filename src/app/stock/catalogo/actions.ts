@@ -168,7 +168,9 @@ export async function eliminarProductoStock(sku: string, formData: FormData) {
   // servidor con la service role key).
   try {
     const { createServiceClient } = await import("@/lib/supabase/servicio");
-    await createServiceClient().from("mercadolibre_vinculos").delete().eq("sku_crm", sku);
+    const servicio = createServiceClient();
+    await servicio.from("mercadolibre_vinculos").delete().eq("sku_crm", sku);
+    await servicio.from("mercadolibre_sku_vinculos").delete().eq("sku_crm", sku);
   } catch {
     // sin service role key (entorno local) — la liga se queda, no estorba
   }

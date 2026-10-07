@@ -50,10 +50,14 @@ export function NuevoProductoMl({ datos, catalogo, alCerrar }: { datos: DatosMlP
 
   const marca = catalogo.marcas.find((m) => m.id === marcaId);
   // El SKU se arma en vivo (marca + nombre + variante) hasta que Isaac lo edita a mano.
+  // Un solo SKU en los dos lados (Isaac, 7 oct): si la publicación ya trae
+  // SKU en ML y está libre en el CRM, ese se propone; si no, se arma.
   const skuAuto = useMemo(() => {
+    const deMl = (datos.sellerSku ?? "").trim().toUpperCase();
+    if (deMl && !existentes.has(deMl)) return deMl;
     const base = marca ? skuNuevo(marca.codigo, nombre, variante) : skuSugerido(categoria, nombre);
     return base ? skuLibre(base, existentes) : "";
-  }, [marca, nombre, variante, categoria, existentes]);
+  }, [marca, nombre, variante, categoria, existentes, datos.sellerSku]);
   const sku = skuManual ?? skuAuto;
 
   const quedan = (Number(entradas) || 0) - (Number(salidas) || 0);
@@ -64,6 +68,7 @@ export function NuevoProductoMl({ datos, catalogo, alCerrar }: { datos: DatosMlP
         setEnviando(true);
         setError(null);
         fd.set("item_id", datos.itemId);
+        fd.set("seller_sku", datos.sellerSku ?? "");
         fd.set("variation_id", datos.variationId === null ? "" : String(datos.variationId));
         fd.set("otras", JSON.stringify(datos.otras));
         fd.set("imagen_url_ml", datos.imagenUrl ?? "");
@@ -127,7 +132,7 @@ export function NuevoProductoMl({ datos, catalogo, alCerrar }: { datos: DatosMlP
           required
           className={`${claseCampo} font-mono`}
         />
-        {datos.sellerSku && <p className="mt-0.5 text-[10px] text-zinc-400">En ML tiene SKU {datos.sellerSku}. Recomendación: pon este SKU del CRM también en ML para que la liga sea automática.</p>}
+        {datos.sellerSku && <p className="mt-0.5 text-[10px] text-zinc-400">En ML tiene SKU {datos.sellerSku}: se propone el mismo para que sea uno solo en los dos lados. Si lo cambias, la publicación queda ligada por su SKU de ML de todos modos.</p>}
         {existentes.has(sku) && sku && <p className="mt-0.5 text-[11px] text-amber-700">Ese SKU ya existe — usa “Ligar con producto” si es el mismo.</p>}
       </div>
       <div className="grid grid-cols-2 gap-2">

@@ -12,6 +12,7 @@ import { TarjetaRecepcion } from "./tarjeta-recepcion";
 import { ConfirmarEnvio } from "./confirmar-envio";
 import { agruparLineas, diagnosticoEnviosFull, enviosPorConfirmar, obtenerEnviosFullMl, obtenerEstadoEnviosFull } from "@/lib/mercadolibre-envios-full";
 import { resolvedorSku } from "@/lib/salidas-ml";
+import { AvisoSkusPendientes } from "@/app/mercadolibre/skus/aviso-skus";
 import { obtenerConexion } from "@/lib/mercadolibre-auth";
 import { formatoFechaHoraMx } from "@/lib/fechas-mx";
 import { BotonActualizarEnviosMl, BuscarEnvioMl, CapturarEnvioMl, ProbarEnvioMl, TarjetaEnvioMl, type EnvioParaPantalla } from "./envios-full-ml";
@@ -88,6 +89,8 @@ export default async function FullYMercadoLibre() {
       {errorLectura && (
         <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{errorLectura} — si dice que falta una tabla, corre el SQL 0035 en Supabase.</div>
       )}
+
+      <AvisoSkusPendientes skusCrm={new Set(resumenes.map((r) => r.sku))} />
 
       {/* ---- Envíos a Full leídos de Mercado Libre ---- */}
       <section id="envios-ml" className="space-y-3">

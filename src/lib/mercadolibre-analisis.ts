@@ -202,11 +202,11 @@ export async function analisisVentasMl(supabase: SupabaseClient, desde: Date, ha
     const { sku } = skuCrmDe(p, mapaVinculos, skusCrm);
     if (!sku) continue;
     const k = claveCompartida(p);
-    if (!ligaCompartida.has(k)) ligaCompartida.set(k, { sku, factor: factorDePublicacion(p.item_id, p.variation_id, factores) });
+    if (!ligaCompartida.has(k)) ligaCompartida.set(k, { sku, factor: factorDePublicacion(p.item_id, p.variation_id, factores, p.seller_sku) });
   }
   const ligaDe = (p: PublicacionMl): { sku: string | null; factor: number } => {
     const directa = skuCrmDe(p, mapaVinculos, skusCrm).sku;
-    if (directa) return { sku: directa, factor: factorDePublicacion(p.item_id, p.variation_id, factores) };
+    if (directa) return { sku: directa, factor: factorDePublicacion(p.item_id, p.variation_id, factores, p.seller_sku) };
     return ligaCompartida.get(claveCompartida(p)) ?? { sku: null, factor: 1 };
   };
   const claveGrupoDe = (p: PublicacionMl) => {

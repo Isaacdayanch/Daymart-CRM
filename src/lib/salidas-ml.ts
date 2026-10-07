@@ -7,7 +7,7 @@
 import { createServiceClient } from "@/lib/supabase/servicio";
 import { insertarMovimientosStock } from "@/lib/movimientos-stock";
 import { costoPromedioPonderado } from "@/lib/calculos-stock";
-import { claveVinculo, factorDePublicacion, factoresVinculos, obtenerPublicaciones, obtenerVinculos, skuCrmDe, type PublicacionMl } from "@/lib/mercadolibre-stock";
+import { claveLigaSku, claveVinculo, factorDePublicacion, factoresVinculos, normalizarSellerSku, obtenerPublicaciones, obtenerVinculos, skuCrmDe, type PublicacionMl } from "@/lib/mercadolibre-stock";
 import type { OrdenItemMl, OrdenMl } from "@/lib/mercadolibre-ordenes";
 import type { Bodega, EnvioFull, EnvioFullLinea, MovimientoStock, RecepcionFull } from "@/lib/tipos";
 
@@ -45,7 +45,12 @@ export async function resolvedorSku() {
     publicaciones,
     factores,
     /** Piezas del CRM por unidad de ML (1 normal, 2 para un par). */
-    factorDe(itemId: string | null, variationId: number | null): number {
+    factorDe(itemId: string | null, variationId: number | null, sellerSku?: string | null): number {
+      const porSku = normalizarSellerSku(sellerSku ?? (itemId ? porClave.get(claveVinculo(itemId, variationId))?.seller_sku : null));
+      if (porSku) {
+        const f = factores.get(claveLigaSku(porSku));
+        if (f !== undefined) return f;
+      }
       if (!itemId) return 1;
       const directo = factores.get(claveVinculo(itemId, variationId));
       if (directo !== undefined) return directo;
@@ -53,6 +58,13 @@ export async function resolvedorSku() {
       return factorDePublicacion(itemId, variationId, factores);
     },
     skuDe(itemId: string | null, variationId: number | null, sellerSku: string | null): string | null {
+      // 1) Liga por SKU de ML (o SKU igual), con el SKU de la orden/envío o el de la publicación.
+      const sku1 = normalizarSellerSku(sellerSku ?? (itemId ? porClave.get(claveVinculo(itemId, variationId))?.seller_sku : null));
+      if (sku1) {
+        const porSku = mapaVinculos.get(claveLigaSku(sku1));
+        if (porSku) return porSku;
+        if (skusCrm.has(sku1)) return sku1;
+      }
       if (!itemId) return null;
       const manual = mapaVinculos.get(claveVinculo(itemId, variationId)) ?? ligaItem(itemId, variationId);
       if (manual) return manual;
@@ -117,7 +129,7 @@ export async function registrarHistorialFull(publicaciones?: PublicacionMl[]) {
         sku_crm: skuDe(p.item_id, p.variation_id, p.seller_sku),
         // En piezas del CRM (un par en Full = 2 piezas), para que "ML detectó
         // N" y la salida propuesta ya vengan convertidas.
-        cantidad: (total - previa.total) * factorDe(p.item_id, p.variation_id),
+        cantidad: (total - previa.total) * factorDe(p.item_id, p.variation_id, p.seller_sku),
         total_antes: previa.total,
         total_despues: total,
         detectado_en: ahora,
@@ -455,7 +467,7 @@ export async function procesarVentasMl(): Promise<{ generadas: number; pendiente
   for (const plan of planes) {
     const filas = plan.lineas.map(({ sku, item }) => {
       const d = datosSku.get(sku);
-      const factor = factorDe(item.item_id, item.variation_id);
+      const factor = factorDe(item.item_id, item.variation_id, item.seller_sku);
       return {
         tipo: "SALIDA",
         sku,

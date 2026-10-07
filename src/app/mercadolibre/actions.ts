@@ -118,6 +118,44 @@ export async function terminarSyncStock(inicioIso?: string) {
  * cuántas piezas del CRM son UNA unidad de ML (1 normal; 2 para un par de
  * mancuernas, migración 0047): se aplica a envíos a Full, ventas que salen
  * de bodega, valor en Full y Análisis de venta. */
+/** Liga por SKU de Mercado Libre (migración 0048): aplica a todas las
+ * publicaciones que traigan ese SKU. Regla de Isaac (7 oct): todo se
+ * administra sobre ese SKU. */
+export async function ligarSkuMl(sellerSku: string, skuCrm: string, piezasPorUnidad = 1) {
+  if (!(await soloDueno())) return { error: "Solo el dueño puede hacer esto." };
+  const { normalizarSellerSku } = await import("@/lib/mercadolibre-stock");
+  const clave = normalizarSellerSku(sellerSku);
+  if (!clave) return { error: "Falta el SKU de Mercado Libre." };
+  if (!skuCrm) return { error: "Elige el producto del CRM." };
+  const factor = Math.round(Number(piezasPorUnidad) || 1);
+  if (factor < 1) return { error: "Las piezas por unidad deben ser 1 o más." };
+  const { createServiceClient } = await import("@/lib/supabase/servicio");
+  const supabase = createServiceClient();
+  const { error } = await supabase
+    .from("mercadolibre_sku_vinculos")
+    .upsert({ seller_sku: clave, sku_crm: skuCrm, piezas_por_unidad: factor, actualizado_en: new Date().toISOString() }, { onConflict: "seller_sku" });
+  if (error) return { error: /does not exist|schema cache/i.test(error.message) ? "Falta correr el SQL 0048 en Supabase para ligar por SKU." : error.message };
+  revalidarLigas();
+  return { error: null };
+}
+
+export async function quitarLigaSkuMl(sellerSku: string) {
+  if (!(await soloDueno())) return { error: "Solo el dueño puede hacer esto." };
+  const { normalizarSellerSku } = await import("@/lib/mercadolibre-stock");
+  const clave = normalizarSellerSku(sellerSku);
+  if (!clave) return { error: "Falta el SKU de Mercado Libre." };
+  const { createServiceClient } = await import("@/lib/supabase/servicio");
+  const supabase = createServiceClient();
+  const { error } = await supabase.from("mercadolibre_sku_vinculos").delete().eq("seller_sku", clave);
+  if (error) return { error: error.message };
+  revalidarLigas();
+  return { error: null };
+}
+
+function revalidarLigas() {
+  for (const ruta of ["/mercadolibre/skus", "/mercadolibre/stock", "/mercadolibre/analisis", "/mercadolibre/promociones", "/mercadolibre", "/stock", "/stock/full", "/"]) revalidatePath(ruta);
+}
+
 export async function vincularPublicacion(itemId: string, variationId: number | null, skuCrm: string, piezasPorUnidad = 1) {
   if (!(await soloDueno())) return { error: "Solo el dueño puede hacer esto." };
   if (!skuCrm) return { error: "Elige el producto del CRM." };
@@ -125,6 +163,18 @@ export async function vincularPublicacion(itemId: string, variationId: number | 
   if (factor < 1) return { error: "Las piezas por unidad deben ser 1 o más." };
   const { createServiceClient } = await import("@/lib/supabase/servicio");
   const supabase = createServiceClient();
+  // Si la publicación trae SKU en ML, la liga se guarda POR SKU (aplica a
+  // todas las publicaciones con ese SKU); solo las que no traen SKU se
+  // ligan una por una.
+  let pub = supabase.from("mercadolibre_publicaciones").select("seller_sku").eq("item_id", itemId);
+  pub = variationId === null ? pub.is("variation_id", null) : pub.eq("variation_id", variationId);
+  const { data: fila } = await pub.maybeSingle<{ seller_sku: string | null }>();
+  if (fila?.seller_sku?.trim()) {
+    const r = await ligarSkuMl(fila.seller_sku, skuCrm, factor);
+    if (r.error && !/SQL 0048/.test(r.error)) return r;
+    if (!r.error) return r;
+    // sin el SQL 0048 se cae a la liga por publicación
+  }
   let consulta = supabase.from("mercadolibre_vinculos").delete().eq("item_id", itemId);
   consulta = variationId === null ? consulta.is("variation_id", null) : consulta.eq("variation_id", variationId);
   await consulta;
@@ -308,6 +358,9 @@ export async function crearProductoDesdeMl(formData: FormData) {
   }
 
   // Liga la publicación elegida y las que comparten su stock (catálogo).
+  // Si trae SKU en ML, la liga es por SKU (aplica a todas sus publicaciones).
+  const sellerSkuMl = t("seller_sku");
+  if (sellerSkuMl) await ligarSkuMl(sellerSkuMl, sku, 1);
   const { createServiceClient } = await import("@/lib/supabase/servicio");
   const servicio = createServiceClient();
   for (const v of [{ itemId, variationId }, ...otras]) {

@@ -29,7 +29,7 @@ export function LigaProducto({
   itemId: string;
   variationId: number | null;
   sku: string | null;
-  origen: "auto" | "manual" | null;
+  origen: "sku" | "auto" | "manual" | null;
   nombre: string | null;
   /** Piezas del CRM que son UNA unidad de esta publicación (2 = un par). */
   piezasPorUnidad?: number;
@@ -109,7 +109,7 @@ export function LigaProducto({
         <p className="font-medium text-zinc-900">{nombre ?? sku}</p>
         <p className="text-zinc-400">
           <span className="font-mono">{sku}</span>
-          {origen === "auto" ? " · por SKU" : " · manual"}
+          {origen === "sku" ? " · por SKU de ML" : origen === "auto" ? " · SKU igual" : " · por publicación"}
           {piezasPorUnidad > 1 && <span className="font-medium text-violet-700"> · {piezasPorUnidad} pzas por unidad</span>}
           {" · "}
           <button type="button" onClick={() => setEditando(true)} className="text-zinc-500 hover:text-zinc-900">

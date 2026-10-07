@@ -41,6 +41,46 @@ export interface VinculoMl {
   /** Piezas del CRM que son UNA unidad de esta publicación (migración 0047):
    * 1 normal, 2 para un par de mancuernas. */
   piezas_por_unidad?: number | null;
+  /** true = es una liga por SKU de ML (item_id = "sku:XXX"), no por publicación. */
+  por_sku?: boolean;
+}
+
+/** Liga por SKU de Mercado Libre (migración 0048): el SKU que Isaac pone en
+ * sus publicaciones → producto del CRM. Aplica a TODAS las publicaciones
+ * con ese SKU (dos publicaciones de lo mismo = mismo SKU = mismo producto). */
+export interface LigaSkuMl {
+  seller_sku: string;
+  sku_crm: string;
+  piezas_por_unidad: number | null;
+}
+
+/** Los SKUs de ML se comparan sin espacios ni mayúsculas/minúsculas. */
+export function normalizarSellerSku(sellerSku: string | null | undefined) {
+  const s = (sellerSku ?? "").trim().toUpperCase();
+  return s || null;
+}
+
+/** Prefijo con el que las ligas por SKU viajan dentro del mismo mapa que
+ * las ligas por publicación (`clave → sku_crm`), para que todas las
+ * pantallas las apliquen sin cambiar su código. */
+const PREFIJO_SKU = "sku:";
+export function claveLigaSku(sellerSku: string) {
+  return claveVinculo(`${PREFIJO_SKU}${sellerSku}`, null);
+}
+
+export async function obtenerLigasSku(): Promise<LigaSkuMl[]> {
+  const supabase = createServiceClient();
+  const { data, error } = await supabase.from("mercadolibre_sku_vinculos").select("seller_sku, sku_crm, piezas_por_unidad").returns<LigaSkuMl[]>();
+  if (error) return []; // sin el SQL 0048 simplemente no hay ligas por SKU
+  return data ?? [];
+}
+
+/** Las ligas por SKU convertidas a "vínculos" sintéticos (item_id = "sku:XXX"). */
+export function vinculosDesdeLigasSku(ligas: LigaSkuMl[]): VinculoMl[] {
+  return ligas
+    .map((l) => ({ l, k: normalizarSellerSku(l.seller_sku) }))
+    .filter((x): x is { l: LigaSkuMl; k: string } => Boolean(x.k))
+    .map(({ l, k }) => ({ id: `sku:${k}`, item_id: `${PREFIJO_SKU}${k}`, variation_id: null, sku_crm: l.sku_crm, piezas_por_unidad: l.piezas_por_unidad, por_sku: true }));
 }
 
 /** Mapa clave de publicación → piezas del CRM por unidad de ML (≥ 1). */
@@ -48,10 +88,15 @@ export function factoresVinculos(vinculos: VinculoMl[]): Map<string, number> {
   return new Map(vinculos.map((v) => [claveVinculo(v.item_id, v.variation_id), Math.max(1, Math.round(Number(v.piezas_por_unidad) || 1))]));
 }
 
-/** Factor de una publicación: el de su liga manual (o el de su item sin
- * variación); sin liga manual = 1. */
-export function factorDePublicacion(itemId: string, variationId: number | null, factores: Map<string, number> | undefined) {
+/** Factor de una publicación, en el mismo orden que la liga: por SKU de
+ * ML → por publicación (o su item sin variación) → 1. */
+export function factorDePublicacion(itemId: string, variationId: number | null, factores: Map<string, number> | undefined, sellerSku?: string | null) {
   if (!factores) return 1;
+  const porSku = normalizarSellerSku(sellerSku);
+  if (porSku) {
+    const f = factores.get(claveLigaSku(porSku));
+    if (f !== undefined) return f;
+  }
   return factores.get(claveVinculo(itemId, variationId)) ?? (variationId !== null ? factores.get(claveVinculo(itemId, null)) : undefined) ?? 1;
 }
 
@@ -460,10 +505,12 @@ export async function obtenerPublicaciones(): Promise<PublicacionMl[]> {
   return data ?? [];
 }
 
+/** Ligas por publicación + ligas por SKU de ML (como vínculos sintéticos),
+ * para que todas las pantallas resuelvan igual con `skuCrmDe`. */
 export async function obtenerVinculos(): Promise<VinculoMl[]> {
   const supabase = createServiceClient();
-  const { data } = await supabase.from("mercadolibre_vinculos").select("*").returns<VinculoMl[]>();
-  return data ?? [];
+  const [{ data }, ligas] = await Promise.all([supabase.from("mercadolibre_vinculos").select("*").returns<VinculoMl[]>(), obtenerLigasSku()]);
+  return [...(data ?? []), ...vinculosDesdeLigasSku(ligas)];
 }
 
 export function claveVinculo(itemId: string, variationId: number | null) {
@@ -472,12 +519,23 @@ export function claveVinculo(itemId: string, variationId: number | null) {
 
 /** SKU del CRM de cada publicación: la liga manual manda; si no hay,
  * coincidencia automática cuando el SKU de ML es igual a un SKU del CRM. */
-export function skuCrmDe(pub: PublicacionMl, vinculos: Map<string, string>, skusCrm: Set<string>) {
+/** Orden de resolución (Isaac, 7 oct: "todo sobre ese SKU"): 1) liga por
+ * SKU de ML, 2) el SKU de ML es igual a uno del CRM, 3) liga por
+ * publicación (para las que no traen SKU en ML). */
+export function skuCrmDe(pub: Pick<PublicacionMl, "item_id" | "variation_id" | "seller_sku">, vinculos: Map<string, string>, skusCrm: Set<string>) {
+  const sellerSku = normalizarSellerSku(pub.seller_sku);
+  if (sellerSku) {
+    const porSku = vinculos.get(claveLigaSku(sellerSku));
+    if (porSku) return { sku: porSku, origen: "sku" as const };
+    if (skusCrm.has(sellerSku)) return { sku: sellerSku, origen: "auto" as const };
+    if (pub.seller_sku && skusCrm.has(pub.seller_sku)) return { sku: pub.seller_sku, origen: "auto" as const };
+  }
   const manual = vinculos.get(claveVinculo(pub.item_id, pub.variation_id));
   if (manual) return { sku: manual, origen: "manual" as const };
-  if (pub.seller_sku && skusCrm.has(pub.seller_sku)) return { sku: pub.seller_sku, origen: "auto" as const };
   return { sku: null, origen: null };
 }
+
+export type OrigenLiga = "sku" | "auto" | "manual" | null;
 
 export interface ResumenFull {
   /** Piezas disponibles en Full, contando cada inventario UNA vez. */
@@ -513,7 +571,7 @@ export function resumenFull(
     const { sku } = skuCrmDe(p, vinculos, skusCrm);
     if (sku) {
       // En piezas del CRM: un "par" en Full son 2 piezas en bodega.
-      const piezasCrm = p.full_disponible * factorDePublicacion(p.item_id, p.variation_id, factores);
+      const piezasCrm = p.full_disponible * factorDePublicacion(p.item_id, p.variation_id, factores, p.seller_sku);
       r.valor += piezasCrm * (costoPorSku.get(sku) ?? 0);
       r.porSku.set(sku, (r.porSku.get(sku) ?? 0) + piezasCrm);
     } else if (p.full_disponible > 0) {

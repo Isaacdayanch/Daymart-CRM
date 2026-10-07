@@ -11,6 +11,7 @@ import {
   obtenerVinculos,
   resumenFull,
   skuCrmDe,
+  type OrigenLiga,
   type PublicacionMl,
 } from "@/lib/mercadolibre-stock";
 import { resumenPorSku, valorTotalInventario } from "@/lib/calculos-stock";
@@ -23,6 +24,7 @@ import { formatoPesos } from "@/lib/formato";
 import type { ConfiguracionStock, MovimientoStock } from "@/lib/tipos";
 import { BotonSincronizarStock } from "./boton-sincronizar-stock";
 import { LigaProducto } from "./liga-producto";
+import { AvisoSkusPendientes } from "../skus/aviso-skus";
 
 // Las llamadas a Mercado Libre pueden tardar: se sube el tope de tiempo de Vercel (máx. 60 s en plan Hobby).
 export const maxDuration = 60;
@@ -36,7 +38,7 @@ export const maxDuration = 60;
 interface GrupoPublicacion {
   principal: PublicacionMl;
   otras: PublicacionMl[];
-  liga: { sku: string | null; origen: "manual" | "auto" | null; de: PublicacionMl };
+  liga: { sku: string | null; origen: OrigenLiga; de: PublicacionMl };
   activo: boolean;
   full: boolean;
 }
@@ -261,7 +263,7 @@ export default async function StockMercadoLibre({
                     sku={liga.sku}
                     origen={liga.origen}
                     nombre={liga.sku ? (nombrePorSku.get(liga.sku) ?? null) : null}
-                    piezasPorUnidad={factorDePublicacion(liga.de.item_id, liga.de.variation_id, factores)}
+                    piezasPorUnidad={factorDePublicacion(liga.de.item_id, liga.de.variation_id, factores, liga.de.seller_sku)}
                     opciones={opcionesProducto}
                     datosMl={{
                       itemId: liga.de.item_id,
@@ -302,6 +304,7 @@ export default async function StockMercadoLibre({
           Mercado Libre no está conectado. Ve a <Link href="/mercadolibre/conexion" className="underline">Conexión</Link>.
         </div>
       )}
+      <AvisoSkusPendientes skusCrm={skusTodos} />
       {errorLectura && (
         <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
           {errorLectura} — si dice que falta una tabla, corre el SQL 0032 en Supabase.
