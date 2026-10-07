@@ -61,7 +61,7 @@ export function LigaProducto({
           Piezas del CRM por unidad de ML
           <input type="number" min={1} step={1} value={factor} onChange={(e) => setFactor(e.target.value)} className="w-14 rounded-lg border border-zinc-300 px-2 py-1 text-xs" />
         </label>
-        <p className="text-[10px] text-zinc-400">1 normal; 2 si en ML se vende por PAR y en tu bodega cuentas piezas sueltas (mancuernas).</p>
+        <p className="text-[10px] text-zinc-400">Depende de cómo cuentas TÚ en bodega, no de cómo vende ML: mancuernas sueltas que ML vende en par = 2; yoga blocks que ya cuentas en par = 1.</p>
         <div className="flex items-center gap-2 text-xs">
           <button
             type="button"

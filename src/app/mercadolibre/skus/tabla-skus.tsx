@@ -84,7 +84,7 @@ function FilaGrupo({ g, opciones }: { g: GrupoSkuMl; opciones: { sku: string; no
               <label className="flex items-center gap-2 text-[11px] text-zinc-600">
                 Piezas del CRM por unidad de ML
                 <input type="number" min={1} step={1} value={factor} onChange={(e) => setFactor(e.target.value)} className="w-14 rounded-lg border border-zinc-300 px-2 py-1 text-xs" />
-                <span className="text-zinc-400">(2 si en ML se vende por par)</span>
+                <span className="text-zinc-400">(solo si en tu bodega cuentas piezas sueltas y ML lo vende en paquete, ej. mancuernas = 2; si en tu stock ya cuentas el paquete, ej. yoga blocks en par, déjalo en 1)</span>
               </label>
               <div className="flex items-center gap-2 text-xs">
                 <button type="button" disabled={!elegido || guardando} onClick={guardar} className="rounded-lg bg-zinc-900 px-3 py-1.5 font-medium text-white hover:bg-zinc-700 disabled:opacity-50">
