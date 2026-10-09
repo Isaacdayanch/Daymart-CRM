@@ -2,8 +2,8 @@ import { createClient } from "@/lib/supabase/server";
 import { resumenPorSku } from "@/lib/calculos-stock";
 import { obtenerCatalogo } from "@/lib/catalogo";
 import { obtenerPiezasPorCajaPorSku } from "@/lib/productos-stock";
-import { agruparPorSkuMl, type ProductoCrmResumen } from "@/lib/mercadolibre-skus";
-import { obtenerPublicaciones, obtenerVinculos } from "@/lib/mercadolibre-stock";
+import { agruparPorSkuMl, esPendienteReal, esPublicacionPendienteReal, type ProductoCrmResumen } from "@/lib/mercadolibre-skus";
+import { obtenerIgnorados, obtenerPublicaciones, obtenerVinculos, type LigaIgnorada } from "@/lib/mercadolibre-stock";
 import type { ConfiguracionStock, MovimientoStock } from "@/lib/tipos";
 import { TablaSkus } from "./tabla-skus";
 import { BotonSincronizarStock } from "../stock/boton-sincronizar-stock";
@@ -37,13 +37,16 @@ export default async function LigarSkus({ searchParams }: { searchParams: Promis
   let error: string | null = null;
   let grupos: ReturnType<typeof agruparPorSkuMl>["grupos"] = [];
   let sinSku: ReturnType<typeof agruparPorSkuMl>["sinSku"] = [];
+  let ignorados: LigaIgnorada[] = [];
   try {
-    const [publicaciones, vinculos] = await Promise.all([obtenerPublicaciones(), obtenerVinculos()]);
-    ({ grupos, sinSku } = agruparPorSkuMl(publicaciones, vinculos, productos));
+    const [publicaciones, vinculos, ign] = await Promise.all([obtenerPublicaciones(), obtenerVinculos(), obtenerIgnorados()]);
+    ignorados = ign;
+    ({ grupos, sinSku } = agruparPorSkuMl(publicaciones, vinculos, productos, new Set(ign.map((i) => i.clave))));
   } catch (e) {
     error = e instanceof Error ? e.message : "No se pudieron leer las publicaciones.";
   }
-  const pendientes = grupos.filter((g) => g.estado === "pendiente").length;
+  // Pendientes de verdad: con alguna publicación activa y no olvidados.
+  const pendientes = grupos.filter(esPendienteReal).length + sinSku.filter(esPublicacionPendienteReal).length;
   const [conexion, sync] = await Promise.all([obtenerConexion().catch(() => null), obtenerEstadoSync().catch(() => null)]);
 
   return (
@@ -62,7 +65,7 @@ export default async function LigarSkus({ searchParams }: { searchParams: Promis
         <BotonSincronizarStock conectado={Boolean(conexion)} />
       </div>
       {error && <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
-      <TablaSkus grupos={grupos} sinSku={sinSku} productos={productos} pendientes={pendientes} qInicial={q ?? ""} />
+      <TablaSkus grupos={grupos} sinSku={sinSku} productos={productos} pendientes={pendientes} ignorados={ignorados} qInicial={q ?? ""} />
     </div>
   );
 }

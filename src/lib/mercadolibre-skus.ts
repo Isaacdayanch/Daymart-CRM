@@ -29,6 +29,8 @@ export interface PublicacionResumen {
   factor: number;
   /** Propuesta por nombre parecido (incluye el color/variante). */
   sugerencia: { sku: string; nombre: string; puntos: number } | null;
+  /** Isaac la marcó "olvidar" (solo aplica a publicaciones sin SKU en ML). */
+  ignorado: boolean;
 }
 
 export interface GrupoSkuMl {
@@ -43,6 +45,16 @@ export interface GrupoSkuMl {
   activa: boolean;
   /** true si trae varias variantes (colores/tallas): cada una puede ligarse aparte. */
   conVariantes: boolean;
+  /** Isaac marcó este SKU como "olvidar": no cuenta como pendiente. */
+  ignorado: boolean;
+}
+
+/** Pendiente de verdad = no resuelve, tiene alguna publicación activa y no está olvidado. */
+export function esPendienteReal(g: GrupoSkuMl) {
+  return g.estado === "pendiente" && g.activa && !g.ignorado;
+}
+export function esPublicacionPendienteReal(p: PublicacionResumen) {
+  return !p.skuCrm && p.estado === "active" && !p.ignorado;
 }
 
 const VACIAS = new Set(["DE", "DEL", "LA", "EL", "LOS", "LAS", "PARA", "CON", "Y", "O", "EN", "UN", "UNA", "POR", "A", "AL", "COLOR", "DAYMART", "GYM", "CASA", "PIEZAS", "PZAS", "KG", "CM", "MM"]);
@@ -81,7 +93,7 @@ export function sugerirProducto(pub: { titulo: string | null; variacion: string 
   return mejor;
 }
 
-export function agruparPorSkuMl(publicaciones: PublicacionMl[], vinculos: VinculoMl[], productos: ProductoCrmResumen[]): { grupos: GrupoSkuMl[]; sinSku: PublicacionResumen[] } {
+export function agruparPorSkuMl(publicaciones: PublicacionMl[], vinculos: VinculoMl[], productos: ProductoCrmResumen[], ignorados: Set<string> = new Set()): { grupos: GrupoSkuMl[]; sinSku: PublicacionResumen[] } {
   const mapaVinculos = new Map(vinculos.map((v) => [claveVinculo(v.item_id, v.variation_id), v.sku_crm]));
   const factores = factoresVinculos(vinculos);
   const skusCrm = new Set(productos.map((p) => p.sku));
@@ -105,6 +117,7 @@ export function agruparPorSkuMl(publicaciones: PublicacionMl[], vinculos: Vincul
       origen: liga.origen,
       factor: factorDePublicacion(p.item_id, p.variation_id, factores, p.seller_sku),
       sugerencia: liga.sku ? null : sugerirProducto({ titulo: p.titulo, variacion: p.variacion, sellerSku }, productos),
+      ignorado: ignorados.has(claveVinculo(p.item_id, p.variation_id)),
     };
   };
   for (const p of publicaciones) {
@@ -135,6 +148,7 @@ export function agruparPorSkuMl(publicaciones: PublicacionMl[], vinculos: Vincul
       sugerencia: estado === "pendiente" ? sugerirProducto({ titulo: principal.titulo, variacion: principal.variacion, sellerSku }, productos) : null,
       activa: pubs.some((p) => p.estado === "active"),
       conVariantes: variantes.size >= 2,
+      ignorado: ignorados.has(claveLigaSku(sellerSku)),
     });
   }
   const orden = { pendiente: 0, ligado: 1, igual: 2 };

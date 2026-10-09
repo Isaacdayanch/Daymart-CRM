@@ -75,6 +75,24 @@ export async function obtenerLigasSku(): Promise<LigaSkuMl[]> {
   return data ?? [];
 }
 
+/** SKUs de ML / publicaciones que Isaac marcó "olvidar" en Ligar SKUs
+ * (migración 0050): claves `claveLigaSku(sku)` o `claveVinculo(item, variación)`. */
+export interface LigaIgnorada {
+  clave: string;
+  seller_sku: string | null;
+  item_id: string | null;
+  variation_id: number | null;
+  titulo: string | null;
+  creado_en: string;
+}
+
+export async function obtenerIgnorados(): Promise<LigaIgnorada[]> {
+  const supabase = createServiceClient();
+  const { data, error } = await supabase.from("mercadolibre_ligas_ignoradas").select("*").returns<LigaIgnorada[]>();
+  if (error) return []; // sin el SQL 0050 simplemente no hay olvidados
+  return data ?? [];
+}
+
 /** Las ligas por SKU convertidas a "vínculos" sintéticos (item_id = "sku:XXX"). */
 export function vinculosDesdeLigasSku(ligas: LigaSkuMl[]): VinculoMl[] {
   return ligas

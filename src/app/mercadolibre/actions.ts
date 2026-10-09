@@ -154,6 +154,46 @@ export async function quitarLigaSkuMl(sellerSku: string) {
   return { error: null };
 }
 
+/** "Olvidar este producto" (Isaac, 9 oct): el SKU de ML deja de aparecer como
+ * pendiente en Ligar SKUs (no tiene stock ni se va a restockear). No borra
+ * nada: se puede volver a mostrar. */
+export async function olvidarSkuMl(sellerSku: string, titulo?: string | null) {
+  if (!(await soloDueno())) return { error: "Solo el dueño puede hacer esto." };
+  const { normalizarSellerSku, claveLigaSku } = await import("@/lib/mercadolibre-stock");
+  const clave = normalizarSellerSku(sellerSku);
+  if (!clave) return { error: "Falta el SKU de Mercado Libre." };
+  const { createServiceClient } = await import("@/lib/supabase/servicio");
+  const supabase = createServiceClient();
+  const { error } = await supabase.from("mercadolibre_ligas_ignoradas").upsert({ clave: claveLigaSku(clave), seller_sku: clave, titulo: titulo ?? null }, { onConflict: "clave" });
+  if (error) return { error: /does not exist|schema cache/i.test(error.message) ? "Falta correr el SQL 0050 en Supabase para poder olvidar productos." : error.message };
+  revalidarLigas();
+  return { error: null };
+}
+
+/** Lo mismo para una publicación sin SKU en ML. */
+export async function olvidarPublicacionMl(itemId: string, variationId: number | null, titulo?: string | null) {
+  if (!(await soloDueno())) return { error: "Solo el dueño puede hacer esto." };
+  if (!itemId) return { error: "Falta la publicación." };
+  const { claveVinculo } = await import("@/lib/mercadolibre-stock");
+  const { createServiceClient } = await import("@/lib/supabase/servicio");
+  const supabase = createServiceClient();
+  const { error } = await supabase.from("mercadolibre_ligas_ignoradas").upsert({ clave: claveVinculo(itemId, variationId), item_id: itemId, variation_id: variationId, titulo: titulo ?? null }, { onConflict: "clave" });
+  if (error) return { error: /does not exist|schema cache/i.test(error.message) ? "Falta correr el SQL 0050 en Supabase para poder olvidar productos." : error.message };
+  revalidarLigas();
+  return { error: null };
+}
+
+/** Volver a mostrar algo olvidado. */
+export async function recordarLigaMl(clave: string) {
+  if (!(await soloDueno())) return { error: "Solo el dueño puede hacer esto." };
+  const { createServiceClient } = await import("@/lib/supabase/servicio");
+  const supabase = createServiceClient();
+  const { error } = await supabase.from("mercadolibre_ligas_ignoradas").delete().eq("clave", clave);
+  if (error) return { error: error.message };
+  revalidarLigas();
+  return { error: null };
+}
+
 function revalidarLigas() {
   for (const ruta of ["/mercadolibre/skus", "/mercadolibre/stock", "/mercadolibre/analisis", "/mercadolibre/promociones", "/mercadolibre", "/stock", "/stock/full", "/"]) revalidatePath(ruta);
 }
