@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { texto } from "@/lib/form-helpers";
 import { obtenerPerfilActual } from "@/lib/perfil";
-import type { DecisionDiferencia, MomentoEnvio, ResultadoCaptura } from "@/lib/mercadolibre-envios-full";
+import type { DecisionDiferencia, MomentoEnvio, PreviaEnvio, ResultadoCaptura } from "@/lib/mercadolibre-envios-full";
 
 async function conSesion() {
   const perfil = await obtenerPerfilActual();
@@ -62,6 +62,13 @@ export async function procesarAhora() {
 // ---- Envíos a Full en dos momentos (migración 0049) ----
 
 const SIN_SESION: ResultadoCaptura = { error: "Inicia sesión.", productos: 0, piezas: 0, sinPublicacion: [], sinLigar: 0, diferencias: 0, cerrado: false };
+
+/** Vista previa: qué leyó el sistema de la tabla pegada y a qué producto cae cada renglón. No guarda nada. */
+export async function previsualizarEnvioMl(numero: string, textoPanel: string): Promise<PreviaEnvio> {
+  if (!(await conSesion())) return { error: "Inicia sesión.", inboundId: "", lineas: [], faseExistente: null, totalDeclaradas: 0, totalSalen: 0, sinLigar: 0, sinPublicacion: 0 };
+  const { previsualizarEnvioDesdePanel } = await import("@/lib/mercadolibre-envios-full");
+  return previsualizarEnvioDesdePanel(numero, textoPanel);
+}
 
 /** Momento 1 (o los dos juntos): pegar la tabla del panel de ML. */
 export async function capturarEnvioMl(numero: string, textoPanel: string, momento: MomentoEnvio, fechaSalida: string | null, bodegaId: string | null): Promise<ResultadoCaptura> {

@@ -7,7 +7,7 @@
 import { createServiceClient } from "@/lib/supabase/servicio";
 import { insertarMovimientosStock } from "@/lib/movimientos-stock";
 import { costoPromedioPonderado } from "@/lib/calculos-stock";
-import { claveLigaSku, claveVinculo, factorDePublicacion, factoresVinculos, normalizarSellerSku, obtenerPublicaciones, obtenerVinculos, skuCrmDe, type PublicacionMl } from "@/lib/mercadolibre-stock";
+import { claveLigaSku, claveVinculo, factorDePublicacion, factoresVinculos, normalizarSellerSku, obtenerPublicaciones, obtenerVinculos, skuCrmDe, type OrigenLiga, type PublicacionMl } from "@/lib/mercadolibre-stock";
 import type { OrdenItemMl, OrdenMl } from "@/lib/mercadolibre-ordenes";
 import type { Bodega, MovimientoStock, RecepcionFull } from "@/lib/tipos";
 
@@ -41,7 +41,8 @@ export async function resolvedorSku() {
   const conVariantes = new Set(publicaciones.filter((p) => p.variation_id !== null).map((p) => p.item_id));
   const ligaItem = (itemId: string, variationId: number | null) =>
     variationId !== null && !conVariantes.has(itemId) ? mapaVinculos.get(claveVinculo(itemId, null)) : undefined;
-  return {
+  const resolver = (itemId: string | null, variationId: number | null, sellerSku: string | null) => api.resolver(itemId, variationId, sellerSku);
+  const api = {
     publicaciones,
     factores,
     /** Piezas del CRM por unidad de ML (1 normal, 2 para un par). */
@@ -59,31 +60,36 @@ export async function resolvedorSku() {
       if (variationId !== null && conVariantes.has(itemId)) return 1;
       return factorDePublicacion(itemId, variationId, factores);
     },
-    skuDe(itemId: string | null, variationId: number | null, sellerSku: string | null): string | null {
+    /** Producto del CRM y por qué liga se resolvió (manual = esa publicación/variante, sku = liga por SKU de ML, auto = mismo SKU). */
+    resolver(itemId: string | null, variationId: number | null, sellerSku: string | null): { sku: string | null; origen: OrigenLiga } {
       // 1) Liga de ESA publicación/variante (lo más específico).
       if (itemId) {
         const propia = mapaVinculos.get(claveVinculo(itemId, variationId));
-        if (propia) return propia;
+        if (propia) return { sku: propia, origen: "manual" };
       }
       // 2) Liga por SKU de ML (o SKU igual), con el SKU de la orden/envío o el de la publicación.
       const sku1 = normalizarSellerSku(sellerSku ?? (itemId ? porClave.get(claveVinculo(itemId, variationId))?.seller_sku : null));
       if (sku1) {
         const porSku = mapaVinculos.get(claveLigaSku(sku1));
-        if (porSku) return porSku;
-        if (skusCrm.has(sku1)) return sku1;
+        if (porSku) return { sku: porSku, origen: "sku" };
+        if (skusCrm.has(sku1)) return { sku: sku1, origen: "auto" };
       }
-      if (!itemId) return null;
+      if (!itemId) return { sku: null, origen: null };
       const manual = ligaItem(itemId, variationId);
-      if (manual) return manual;
+      if (manual) return { sku: manual, origen: "manual" };
       const pub = porClave.get(claveVinculo(itemId, variationId));
       if (pub) {
         const r = skuCrmDe(pub, mapaVinculos, skusCrm);
-        if (r.sku) return r.sku;
+        if (r.sku) return r;
       }
-      if (sellerSku && skusCrm.has(sellerSku)) return sellerSku;
-      return null;
+      if (sellerSku && skusCrm.has(sellerSku)) return { sku: sellerSku, origen: "auto" };
+      return { sku: null, origen: null };
+    },
+    skuDe(itemId: string | null, variationId: number | null, sellerSku: string | null): string | null {
+      return resolver(itemId, variationId, sellerSku).sku;
     },
   };
+  return api;
 }
 
 // ---------------------------------------------------------------------------

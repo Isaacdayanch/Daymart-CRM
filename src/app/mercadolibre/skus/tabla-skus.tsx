@@ -261,9 +261,10 @@ function FilaGrupo({ g, opciones }: { g: GrupoSkuMl; opciones: Opcion[] }) {
   );
 }
 
-export function TablaSkus({ grupos, sinSku, productos, pendientes }: { grupos: GrupoSkuMl[]; sinSku: PublicacionResumen[]; productos: ProductoCrmResumen[]; pendientes: number }) {
-  const [filtro, setFiltro] = useState<"pendientes" | "todos">(pendientes > 0 ? "pendientes" : "todos");
-  const [q, setQ] = useState("");
+export function TablaSkus({ grupos, sinSku, productos, pendientes, qInicial = "" }: { grupos: GrupoSkuMl[]; sinSku: PublicacionResumen[]; productos: ProductoCrmResumen[]; pendientes: number; qInicial?: string }) {
+  // Si llega con búsqueda (ej. desde la vista previa de un envío), se muestran todos los grupos que coincidan.
+  const [filtro, setFiltro] = useState<"pendientes" | "todos">(pendientes > 0 && !qInicial ? "pendientes" : "todos");
+  const [q, setQ] = useState(qInicial);
   const opciones: Opcion[] = productos.map((p) => ({ sku: p.sku, nombre: p.nombre, stockActual: p.stockActual, imagenUrl: p.imagenUrl }));
   const texto = q.trim().toLowerCase();
   const visibles = grupos

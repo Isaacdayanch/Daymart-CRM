@@ -16,7 +16,8 @@ export const maxDuration = 60;
 /** "Ligar SKUs": cada SKU de Mercado Libre → un producto del CRM, una sola
  * vez, para todas sus publicaciones. Los pendientes van arriba con una
  * propuesta por nombre; Isaac elige y liga. */
-export default async function LigarSkus() {
+export default async function LigarSkus({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
+  const { q } = await searchParams;
   const supabase = await createClient();
   const [{ data: movimientos }, { data: configuracion }, piezasPorCajaPorSku, catalogo] = await Promise.all([
     supabase.from("movimientos_stock").select("*").returns<MovimientoStock[]>(),
@@ -61,7 +62,7 @@ export default async function LigarSkus() {
         <BotonSincronizarStock conectado={Boolean(conexion)} />
       </div>
       {error && <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
-      <TablaSkus grupos={grupos} sinSku={sinSku} productos={productos} pendientes={pendientes} />
+      <TablaSkus grupos={grupos} sinSku={sinSku} productos={productos} pendientes={pendientes} qInicial={q ?? ""} />
     </div>
   );
 }

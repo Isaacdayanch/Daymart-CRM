@@ -23,9 +23,10 @@
 
 import { createServiceClient } from "@/lib/supabase/servicio";
 import { insertarMovimientosStock } from "@/lib/movimientos-stock";
-import { obtenerPublicaciones, type PublicacionMl } from "@/lib/mercadolibre-stock";
+import { obtenerPublicaciones, type OrigenLiga, type PublicacionMl } from "@/lib/mercadolibre-stock";
 import { resolvedorSku } from "@/lib/salidas-ml";
-import type { Bodega, RecepcionFull } from "@/lib/tipos";
+import { stockActual } from "@/lib/calculos-stock";
+import type { Bodega, MovimientoStock, RecepcionFull } from "@/lib/tipos";
 
 const DIA_MS = 86400000;
 /** Días en camino a partir de los cuales se avisa que falta cerrar el envío. */
@@ -323,6 +324,97 @@ async function generarSalidasLineas(envio: EnvioFullMl, lineas: EnvioFullMlLinea
     generadas++;
   }
   return { generadas, sinLigar, error: null };
+}
+
+// ---------------------------------------------------------------------------
+// Vista previa: qué leyó el sistema y a qué producto del CRM cae cada renglón
+// (Isaac revisa ANTES de que se descuente nada; 9 oct: "quiero ver que están
+// haciendo bien las cosas… me aparece un banco que no se fue en ese Full")
+// ---------------------------------------------------------------------------
+
+export interface LineaPrevia {
+  inventoryId: string;
+  tituloPanel: string;
+  /** Publicación de ML que tiene ese inventario (null si no está sincronizada). */
+  tituloMl: string | null;
+  imagenUrl: string | null;
+  itemId: string | null;
+  variationId: number | null;
+  sellerSku: string | null;
+  /** Producto del CRM al que cae (null = sin ligar) y por qué liga. */
+  skuCrm: string | null;
+  nombreCrm: string | null;
+  stockBodega: number | null;
+  origen: OrigenLiga;
+  factor: number;
+  declaradas: number;
+  aptas: number;
+  /** Piezas del CRM que saldrían de bodega (declaradas × factor). */
+  piezasSalen: number;
+}
+
+export interface PreviaEnvio {
+  error: string | null;
+  inboundId: string;
+  lineas: LineaPrevia[];
+  /** Si ese número ya existe, en qué fase va. */
+  faseExistente: FaseEnvio | null;
+  totalDeclaradas: number;
+  totalSalen: number;
+  sinLigar: number;
+  sinPublicacion: number;
+}
+
+export async function previsualizarEnvioDesdePanel(numero: string, texto: string): Promise<PreviaEnvio> {
+  const vacia: Omit<PreviaEnvio, "error"> = { inboundId: "", lineas: [], faseExistente: null, totalDeclaradas: 0, totalSalen: 0, sinLigar: 0, sinPublicacion: 0 };
+  const inboundId = limpiarNumero(numero);
+  if (!inboundId) return { ...vacia, error: "Escribe el número del envío tal como sale en tu panel (ej. 77396369)." };
+  const lineasPanel = parsearPanelEnvioMl(texto);
+  if (!lineasPanel.length) return { ...vacia, inboundId, error: "No encontré productos en lo que pegaste. Copia la tabla del envío en Mercado Libre (desde \"Código ML:\" hasta los totales) y vuelve a pegarla." };
+
+  const [existente, porInventario, resolvedor] = await Promise.all([cargarEnvio(inboundId), publicacionesPorInventario(), resolvedorSku()]);
+  const base = lineasPanel.map((l) => {
+    const pub = porInventario.get(l.inventoryId) ?? null;
+    const r = resolvedor.resolver(pub?.item_id ?? null, pub?.variation_id ?? null, pub?.seller_sku ?? null);
+    const factor = pub ? resolvedor.factorDe(pub.item_id, pub.variation_id, pub.seller_sku) : 1;
+    return { l, pub, r, factor };
+  });
+  const skus = Array.from(new Set(base.map((b) => b.r.sku).filter((x): x is string => Boolean(x))));
+  const supabase = createServiceClient();
+  const [fichas, { data: movs }] = await Promise.all([
+    fichasPorSku(skus),
+    skus.length ? supabase.from("movimientos_stock").select("*").in("sku", skus).returns<MovimientoStock[]>() : Promise.resolve({ data: [] as MovimientoStock[] }),
+  ]);
+  const stockPorSku = new Map<string, number>();
+  for (const sku of skus) stockPorSku.set(sku, stockActual((movs ?? []).filter((m) => m.sku === sku)));
+
+  const lineas: LineaPrevia[] = base.map(({ l, pub, r, factor }) => ({
+    inventoryId: l.inventoryId,
+    tituloPanel: l.titulo,
+    tituloMl: pub ? [pub.titulo, pub.variacion].filter(Boolean).join(" · ") : null,
+    imagenUrl: pub?.imagen_url ?? null,
+    itemId: pub?.item_id ?? null,
+    variationId: pub?.variation_id ?? null,
+    sellerSku: pub?.seller_sku ?? null,
+    skuCrm: r.sku,
+    nombreCrm: r.sku ? (fichas.get(r.sku)?.nombre ?? null) : null,
+    stockBodega: r.sku ? (stockPorSku.get(r.sku) ?? 0) : null,
+    origen: r.origen,
+    factor,
+    declaradas: l.declaradas,
+    aptas: l.recibidas,
+    piezasSalen: Math.round(l.declaradas * factor),
+  }));
+  return {
+    error: null,
+    inboundId,
+    lineas,
+    faseExistente: existente ? faseDe(existente.envio) : null,
+    totalDeclaradas: lineas.reduce((s, x) => s + x.declaradas, 0),
+    totalSalen: lineas.filter((x) => x.skuCrm).reduce((s, x) => s + x.piezasSalen, 0),
+    sinLigar: lineas.filter((x) => !x.skuCrm).length,
+    sinPublicacion: lineas.filter((x) => !x.tituloMl).length,
+  };
 }
 
 // ---------------------------------------------------------------------------
