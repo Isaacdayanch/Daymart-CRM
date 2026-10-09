@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { CampoFecha } from "@/components/campo-fecha";
-import { cancelarEnvioFull, configurarSalidasMl, confirmarDevolucion, procesarAhora, resolverDiferencia } from "./actions";
+import { configurarSalidasMl, confirmarDevolucion, procesarAhora } from "./actions";
 
 const btnSec = "rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50";
 
@@ -98,49 +98,5 @@ export function BotonesDevolucion({ ordenId }: { ordenId: number }) {
       </button>
       {error && <span className="text-xs text-red-600">{error}</span>}
     </div>
-  );
-}
-
-export function BotonesDiferencia({ lineaId, faltante }: { lineaId: string; faltante: number }) {
-  const router = useRouter();
-  const [enviando, setEnviando] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  async function decidir(decision: "QUEDO_EN_BODEGA" | "MERMA") {
-    if (!confirm(decision === "QUEDO_EN_BODEGA" ? `¿Las ${faltante} piezas se quedaron en bodega (no se fueron)?` : `¿Dar por perdidas ${faltante} piezas? Saldrán de bodega como merma.`)) return;
-    setEnviando(true);
-    const r = await resolverDiferencia(lineaId, decision);
-    setEnviando(false);
-    if (r?.error) setError(r.error);
-    else router.refresh();
-  }
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      <span className="text-xs text-amber-700">faltan {faltante}:</span>
-      <button type="button" disabled={enviando} onClick={() => decidir("QUEDO_EN_BODEGA")} className={btnSec}>
-        se quedaron en bodega
-      </button>
-      <button type="button" disabled={enviando} onClick={() => decidir("MERMA")} className="text-xs text-zinc-400 underline hover:text-red-600">
-        merma
-      </button>
-      {error && <span className="text-xs text-red-600">{error}</span>}
-    </div>
-  );
-}
-
-export function BotonCancelarEnvio({ envioId, numero }: { envioId: string; numero: number }) {
-  const router = useRouter();
-  return (
-    <button
-      type="button"
-      onClick={async () => {
-        if (!confirm(`¿Cancelar el envío #${numero}? Solo si nunca salió de bodega.`)) return;
-        const r = await cancelarEnvioFull(envioId);
-        if (r?.error) alert(r.error);
-        else router.refresh();
-      }}
-      className="text-xs text-zinc-400 hover:text-red-600"
-    >
-      cancelar envío
-    </button>
   );
 }

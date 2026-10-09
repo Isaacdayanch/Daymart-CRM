@@ -21,6 +21,7 @@ export function TablaStock({
   verDinero = true,
   categorias = [],
   fullPorSku,
+  enCaminoPorSku,
 }: {
   resumenes: ResumenSku[];
   bodegasPorId: Record<string, string>;
@@ -28,6 +29,8 @@ export function TablaStock({
   categorias?: string[];
   /** Piezas en Full de Mercado Libre por SKU (solo dueño, si ML está conectado). */
   fullPorSku?: Record<string, number>;
+  /** Piezas que ya salieron de bodega y van en camino a Full, por SKU. */
+  enCaminoPorSku?: Record<string, number>;
 }) {
   const [busqueda, setBusqueda] = useState("");
   const [categoria, setCategoria] = useState(TODAS_CATEGORIAS);
@@ -139,6 +142,7 @@ export function TablaStock({
                   {fullPorSku && (
                     <td className="px-6 py-3 text-right text-[#2D3277]">
                       {fullPorSku[r.sku] !== undefined ? fullPorSku[r.sku].toLocaleString("es-MX") : <span className="text-zinc-300">—</span>}
+                      {enCaminoPorSku?.[r.sku] ? <span className="block text-[10px] text-zinc-400">+{enCaminoPorSku[r.sku].toLocaleString("es-MX")} en camino</span> : null}
                     </td>
                   )}
                   <td className="px-6 py-3 text-right text-xs text-zinc-400">

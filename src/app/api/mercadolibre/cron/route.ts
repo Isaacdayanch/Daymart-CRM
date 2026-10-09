@@ -77,32 +77,6 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // Envíos a Full leídos de ML: cuando ML marca uno recibido, aparece el
-  // aviso en Stock para que Isaac confirme la salida de bodega.
-  // APAGADO (5 oct) mientras se encuentra el camino correcto de la API: la
-  // lectura por operaciones solo trae traslados internos y gasta la cuota.
-  const ENVIOS_FULL_AUTOMATICO = false;
-  if (ENVIOS_FULL_AUTOMATICO && Date.now() - inicio < 45000) {
-    try {
-      const { obtenerEstadoEnviosFull, sincronizarEnviosFull } = await import("@/lib/mercadolibre-envios-full");
-      const estado = await obtenerEstadoEnviosFull();
-      const ultima = estado?.ultima_sync_envios_full ? new Date(estado.ultima_sync_envios_full).getTime() : 0;
-      // Cada 5 min, con cursor: en cada corrida revisa una tanda de inventarios (ML tiene cuota).
-      if (Date.now() - ultima > 5 * 60000) {
-        const r = await sincronizarEnviosFull({ diasAtras: 60, presupuestoMs: Math.max(5000, 45000 - (Date.now() - inicio)) });
-        resultado.enviosFull = { envios: r.envios, recibidosNuevos: r.recibidosNuevos, revisados: r.revisados, totalInventarios: r.totalInventarios };
-        if (r.recibidosNuevos) {
-          revalidatePath("/stock");
-          revalidatePath("/stock/full");
-        }
-      } else {
-        resultado.enviosFull = "al_dia";
-      }
-    } catch (e) {
-      resultado.enviosFull = { error: e instanceof Error ? e.message : "Fallaron los envíos a Full." };
-    }
-  }
-
   // Salidas automáticas por ventas de ML que ya salieron de la bodega
   // (solo si Isaac activó el interruptor con su fecha de arranque).
   try {
@@ -115,6 +89,20 @@ export async function GET(request: NextRequest) {
     }
   } catch (e) {
     resultado.salidas = { error: e instanceof Error ? e.message : "Fallaron las salidas automáticas." };
+  }
+
+  // Envíos a Full: líneas que estaban "sin ligar" y ya resuelven a un
+  // producto del CRM → se genera su salida de bodega sola.
+  try {
+    const { generarSalidasPendientesEnvios } = await import("@/lib/mercadolibre-envios-full");
+    const r = await generarSalidasPendientesEnvios();
+    resultado.enviosFull = r;
+    if (r.generadas) {
+      revalidatePath("/stock");
+      revalidatePath("/stock/full");
+    }
+  } catch (e) {
+    resultado.enviosFull = { error: e instanceof Error ? e.message : "Fallaron las salidas de envíos a Full." };
   }
 
   return NextResponse.json({ ok: true, segundos: Math.round((Date.now() - inicio) / 1000), ...resultado });

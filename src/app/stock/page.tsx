@@ -7,6 +7,7 @@ import { obtenerCategoriaPorSku, obtenerPiezasPorCajaPorSku } from "@/lib/produc
 import type { Bodega, ConfiguracionStock, MovimientoStock } from "@/lib/tipos";
 import { TablaStock } from "./tabla-stock";
 import { obtenerResumenFull } from "@/lib/mercadolibre-stock";
+import { enCaminoAFull } from "@/lib/mercadolibre-envios-full";
 
 export default async function ResumenStock() {
   const supabase = await createClient();
@@ -39,6 +40,9 @@ export default async function ResumenStock() {
   // Stock en Full de Mercado Libre (solo dueño; null si no está conectado).
   const full = verDinero ? await obtenerResumenFull(resumenes) : null;
   const fullPorSku = full ? Object.fromEntries(full.porSku) : undefined;
+  // Piezas que ya salieron de bodega y van en camino a Full (envíos sin cerrar).
+  const enCamino = verDinero ? await enCaminoAFull(new Map(resumenes.map((r) => [r.sku, r.costoPromedio]))).catch(() => null) : null;
+  const enCaminoPorSku = enCamino && enCamino.piezas > 0 ? Object.fromEntries(enCamino.porSku) : undefined;
   const piezasBodega = resumenes.reduce((s, r) => s + r.stockActual, 0);
 
   return (
@@ -56,11 +60,19 @@ export default async function ResumenStock() {
         {verDinero && (
           <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
             <p className="text-xs font-medium text-zinc-400 uppercase tracking-wide">Valor de inventario</p>
-            <p className="mt-2 text-3xl font-semibold tracking-tight text-zinc-900">{formatoPesos(valorTotal + (full?.valor ?? 0))}</p>
+            <p className="mt-2 text-3xl font-semibold tracking-tight text-zinc-900">{formatoPesos(valorTotal + (enCamino?.valor ?? 0) + (full?.valor ?? 0))}</p>
             {full ? (
               <p className="mt-1 text-xs text-zinc-400">
-                Bodega {formatoPesos(valorTotal)} ({piezasBodega.toLocaleString("es-MX")} pzas) + Full {formatoPesos(full.valor)} (
-                {full.piezas.toLocaleString("es-MX")} pzas)
+                Bodega {formatoPesos(valorTotal)} ({piezasBodega.toLocaleString("es-MX")} pzas)
+                {enCamino && enCamino.piezas > 0 && (
+                  <>
+                    {" + "}
+                    <Link href="/stock/full#envios-ml" className="text-[#2D3277] hover:underline">
+                      en camino a Full {formatoPesos(enCamino.valor)} ({enCamino.piezas.toLocaleString("es-MX")} pzas)
+                    </Link>
+                  </>
+                )}
+                {" + "}Full {formatoPesos(full.valor)} ({full.piezas.toLocaleString("es-MX")} pzas)
                 {full.inventariosSinLigar > 0 && (
                   <>
                     {" · "}
@@ -131,6 +143,7 @@ export default async function ResumenStock() {
         ) : (
           <TablaStock
             fullPorSku={fullPorSku}
+            enCaminoPorSku={enCaminoPorSku}
             resumenes={resumenes}
             bodegasPorId={bodegasPorId}
             verDinero={verDinero}

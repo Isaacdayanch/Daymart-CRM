@@ -3,20 +3,22 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { formatoFechaHoraMx } from "@/lib/fechas-mx";
-import { ETIQUETA_ESTADO_ENVIO_ML, type EnvioFullMl, type LineaAgrupada } from "@/lib/mercadolibre-envios-full";
+import { fechaTextoMx, formatoFechaHoraMx, formatoFechaMx } from "@/lib/fechas-mx";
+import { DIAS_EN_CAMINO_AVISO, ETIQUETA_ESTADO_ENVIO_ML, diasEnCamino, diferenciaLinea, faseDe, type DecisionDiferencia, type EnvioFullMl, type FaseEnvio, type LineaAgrupada, type MomentoEnvio } from "@/lib/mercadolibre-envios-full";
+import type { RecepcionFull } from "@/lib/tipos";
 import { Selector } from "@/components/selector";
 import { CampoFecha } from "@/components/campo-fecha";
-import { buscarEnvioMl, capturarEnvioMl, confirmarEnvioMl, deshacerConfirmacionMl, ignorarEnvioMl, probarEnvioMl, quitarEnvioMl, sincronizarEnviosFullAhora } from "./actions";
+import { capturarEnvioMl, cerrarEnvioMl, deshacerEnvioMl, ignorarEnvioMl, ignorarRecepcionMl, llegadaCompletaMl, llegadaDesdePanelMl, registrarSalidaEnvioMl } from "./actions";
 
 export interface LineaParaPantalla extends LineaAgrupada {
   /** Producto del CRM resuelto por la liga (null = sin ligar). */
   sku: string | null;
   nombreCrm: string | null;
   stockBodega: number | null;
-  piezasPorCaja: number | null;
   /** Piezas del CRM por unidad de ML (2 = un par de mancuernas). */
   factor: number;
+  /** Piezas (CRM) que ML ya subió en Full de este producto desde que salió el envío. */
+  subioEnFull: number;
 }
 
 export interface EnvioParaPantalla {
@@ -24,76 +26,65 @@ export interface EnvioParaPantalla {
   lineas: LineaParaPantalla[];
 }
 
+export interface BodegaOpcion {
+  id: string;
+  nombre: string;
+}
+
 const btnSec = "rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50";
+const btnPri = "rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50";
+const PLACEHOLDER_PANEL = "Código ML: IBHA96856 +2\n2 Piezas - Bloques De Yoga Cómodos Y Fuertes Daymart Color Azul Claro\n5,619.74 cm3\n150 u.\n149 u.\n1 u.\n(de menos)\n149 u.\n…";
 
-function colorEstado(estado: EnvioFullMl["estado"]) {
-  if (estado === "RECIBIDO" || estado === "CONTADO") return "bg-emerald-50 text-emerald-700 ring-emerald-600/20";
-  if (estado === "CANCELADO") return "bg-red-50 text-red-700 ring-red-600/20";
-  if (estado === "COLECTADO") return "bg-[#2D3277]/5 text-[#2D3277] ring-[#2D3277]/20";
-  return "bg-amber-50 text-amber-700 ring-amber-600/20";
+const ETIQUETA_FASE: Record<FaseEnvio, { texto: string; clase: string }> = {
+  EN_CAMINO: { texto: "En camino a Full", clase: "bg-[#2D3277]/5 text-[#2D3277] ring-[#2D3277]/20" },
+  POR_CERRAR: { texto: "Llegó · diferencias por resolver", clase: "bg-amber-50 text-amber-700 ring-amber-600/20" },
+  PENDIENTE_REGISTRAR: { texto: "Capturado · falta descontar", clase: "bg-amber-50 text-amber-700 ring-amber-600/20" },
+  CERRADO: { texto: "Cerrado", clase: "bg-emerald-50 text-emerald-700 ring-emerald-600/20" },
+  IGNORADO: { texto: "No salió de bodega", clase: "bg-zinc-100 text-zinc-500 ring-zinc-300" },
+  CANCELADO: { texto: "Cancelado", clase: "bg-red-50 text-red-700 ring-red-600/20" },
+};
+
+function TextareaPanel({ value, onChange, rows = 6 }: { value: string; onChange: (v: string) => void; rows?: number }) {
+  return <textarea value={value} onChange={(e) => onChange(e.target.value)} required rows={rows} placeholder={PLACEHOLDER_PANEL} className="mt-2 block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 font-mono text-xs" />;
 }
 
-export function BotonActualizarEnviosMl({ conectado }: { conectado: boolean }) {
+/** Registrar un envío a Full pegando la tabla del panel de ML. Dos momentos:
+ * "acaba de salir" (la bodega se descuenta con las declaradas) o "ya llegó"
+ * (se descuenta y de una vez se concilia con las Aptas para Full). */
+export function CapturarEnvioMl({ bodegas }: { bodegas: BodegaOpcion[] }) {
   const router = useRouter();
-  const [cargando, setCargando] = useState(false);
-  const [mensaje, setMensaje] = useState<string | null>(null);
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      <button
-        type="button"
-        disabled={cargando || !conectado}
-        onClick={async () => {
-          setCargando(true);
-          setMensaje(null);
-          const r = await sincronizarEnviosFullAhora();
-          setCargando(false);
-          setMensaje(
-            r.error
-              ? `Error: ${r.error}`
-              : r.envios === 0
-                ? `Se revisaron ${r.revisados ?? 0} de ${r.totalInventarios ?? 0} inventarios y no apareció ningún envío — abajo está el diagnóstico (mándame captura). Vuelve a darle para seguir con la siguiente tanda.`
-                : `Listo: ${r.envios} envío(s) leídos (${r.revisados ?? 0} de ${r.totalInventarios ?? 0} inventarios en esta tanda)${r.recibidosNuevos ? `, ${r.recibidosNuevos} recibido(s) nuevo(s)` : ""}.`,
-          );
-          router.refresh();
-        }}
-        className={btnSec}
-      >
-        {cargando ? "Leyendo envíos de ML…" : "Actualizar envíos desde Mercado Libre"}
-      </button>
-      {mensaje && <span className={`text-xs ${mensaje.startsWith("Error") ? "text-red-600" : "text-emerald-700"}`}>{mensaje}</span>}
-    </div>
-  );
-}
-
-/** Buscador por número de envío (plan B de Isaac): pega el número de su
- * panel de ML y desde cuándo empezó a llegar; el sistema arma el envío con
- * los productos que subieron en Full desde esa fecha y lo deja listo para
- * revisar y confirmar. */
-/** Capturar un envío pegando la tabla del panel de ML: cantidades exactas
- * por producto (el "Código ML" del panel es el inventario de Full, así que
- * cada renglón cae en su publicación sin adivinar). */
-export function CapturarEnvioMl() {
-  const router = useRouter();
+  const hoy = fechaTextoMx(new Date());
   const [numero, setNumero] = useState("");
+  const [momento, setMomento] = useState<MomentoEnvio>("EN_CAMINO");
+  const [fecha, setFecha] = useState(hoy);
+  const [bodegaId, setBodegaId] = useState(bodegas[0]?.id ?? "");
   const [textoPanel, setTextoPanel] = useState("");
   const [cargando, setCargando] = useState(false);
   const [mensaje, setMensaje] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   return (
     <form
+      id="capturar"
       onSubmit={async (e) => {
         e.preventDefault();
         setCargando(true);
         setError(null);
         setMensaje(null);
-        const r = await capturarEnvioMl(numero, textoPanel);
+        const r = await capturarEnvioMl(numero, textoPanel, momento, fecha || null, bodegaId || null);
         setCargando(false);
         if (r.error) setError(r.error);
         else {
-          setMensaje(
-            `Listo: el envío ${numero.trim()} quedó abajo con ${r.productos} producto(s) y ${r.piezas.toLocaleString("es-MX")} piezas, tal como dice tu panel. Revísalo y confirma la salida.` +
-              (r.sinPublicacion.length ? ` Ojo: ${r.sinPublicacion.length} código(s) no están en tus publicaciones sincronizadas (${r.sinPublicacion.join(", ")}): dale "Actualizar" en Publicaciones y vuelve a pegar.` : ""),
-          );
+          const n = numero.trim();
+          const partes = [
+            momento === "EN_CAMINO"
+              ? `Listo: el envío ${n} quedó en camino con ${r.productos} producto(s) y ${r.piezas.toLocaleString("es-MX")} piezas declaradas, ya descontadas de tu bodega. Cuando ML lo reciba, dale "ML lo recibió completo" o pega la tabla si hubo diferencias.`
+              : r.cerrado
+                ? `Listo: el envío ${n} se descontó de tu bodega (${r.productos} producto(s), ${r.piezas.toLocaleString("es-MX")} piezas) y ML lo recibió completo: quedó cerrado.`
+                : `Listo: el envío ${n} se descontó de tu bodega (${r.productos} producto(s), ${r.piezas.toLocaleString("es-MX")} piezas). ML recibió ${r.diferencias} producto(s) con diferencia: abajo decide si se quedaron en bodega o fueron merma y ciérralo.`,
+            r.sinLigar ? `Ojo: ${r.sinLigar} producto(s) no están ligados a un producto del CRM, así que sus piezas todavía NO se descontaron; lígalos en Ligar SKUs y se descuentan solos.` : "",
+            r.sinPublicacion.length ? `${r.sinPublicacion.length} código(s) no están en tus publicaciones sincronizadas (${r.sinPublicacion.join(", ")}): dale "Actualizar" en Publicaciones y vuelve a pegar.` : "",
+          ].filter(Boolean);
+          setMensaje(partes.join(" "));
           setNumero("");
           setTextoPanel("");
         }
@@ -101,69 +92,33 @@ export function CapturarEnvioMl() {
       }}
       className="rounded-2xl border border-emerald-300 bg-emerald-50/60 p-4 sm:p-5"
     >
-      <p className="text-sm font-semibold text-zinc-900">Capturar un envío desde tu panel de Mercado Libre (cantidades exactas)</p>
+      <p className="text-sm font-semibold text-zinc-900">Registrar un envío a Full</p>
       <ol className="mt-1 list-decimal space-y-0.5 pl-4 text-xs text-zinc-600">
         <li>En Mercado Libre abre el envío (Gestión de envíos Full → el número).</li>
         <li>Selecciona con el mouse toda la tabla de productos (desde el primer “Código ML:” hasta la fila “Total”) y cópiala (Ctrl+C / Cmd+C).</li>
-        <li>Pégala aquí y pon el número del envío. Se toma la columna “Aptas para Full”.</li>
+        <li>Pégala aquí, pon el número y di en qué va el envío.</li>
       </ol>
-      <div className="mt-3 flex flex-wrap items-end gap-3">
-        <div>
-          <label className="block text-[11px] font-medium text-zinc-500">Número de envío</label>
-          <input type="text" value={numero} onChange={(e) => setNumero(e.target.value)} placeholder="77396369" required className="mt-1 w-44 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm" />
-        </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {(
+          [
+            ["EN_CAMINO", "Acaba de salir de mi bodega (va en camino)"],
+            ["LLEGO", "Ya llegó a Full"],
+          ] as [MomentoEnvio, string][]
+        ).map(([valor, etiqueta]) => (
+          <button
+            key={valor}
+            type="button"
+            onClick={() => setMomento(valor)}
+            className={`rounded-full px-3 py-1.5 text-xs font-medium ring-1 ring-inset ${momento === valor ? "bg-zinc-900 text-white ring-zinc-900" : "bg-white text-zinc-600 ring-zinc-300 hover:bg-zinc-50"}`}
+          >
+            {etiqueta}
+          </button>
+        ))}
       </div>
-      <textarea
-        value={textoPanel}
-        onChange={(e) => setTextoPanel(e.target.value)}
-        required
-        rows={6}
-        placeholder={"Código ML: IBHA96856 +2\n2 Piezas - Bloques De Yoga Cómodos Y Fuertes Daymart Color Azul Claro\n5,619.74 cm3\n150 u.\n149 u.\n1 u.\n(de menos)\n149 u.\n…"}
-        className="mt-2 block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 font-mono text-xs"
-      />
-      <div className="mt-2 flex items-center gap-3">
-        <button type="submit" disabled={cargando || !numero.trim() || !textoPanel.trim()} className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50">
-          {cargando ? "Leyendo…" : "Capturar envío"}
-        </button>
-        <span className="text-[11px] text-zinc-500">Si el número ya existe abajo, se reemplazan sus productos con lo que pegues.</span>
-      </div>
-      {mensaje && <p className="mt-2 text-xs text-emerald-700">{mensaje}</p>}
-      {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
-    </form>
-  );
-}
-
-export function BuscarEnvioMl() {
-  const router = useRouter();
-  const hoy = new Date();
-  const hace14 = new Date(hoy.getTime() - 14 * 86400000).toISOString().slice(0, 10);
-  const [numero, setNumero] = useState("");
-  const [desde, setDesde] = useState(hace14);
-  const [cargando, setCargando] = useState(false);
-  const [mensaje, setMensaje] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  return (
-    <form
-      onSubmit={async (e) => {
-        e.preventDefault();
-        setCargando(true);
-        setError(null);
-        setMensaje(null);
-        const r = await buscarEnvioMl(numero, desde);
-        setCargando(false);
-        if (r.error) setError(r.error);
-        else if (r.productos === 0) setMensaje(`Se creó el envío ${numero.trim()}, pero Mercado Libre no ha reportado subidas de stock en Full desde esa fecha. Dale a "Actualizar desde Mercado Libre" en Publicaciones y vuelve a buscar, o cambia la fecha.`);
-        else {
-          setMensaje(`Listo: el envío ${numero.trim()} quedó abajo con ${r.productos} producto(s) y ${r.piezas} piezas que subieron en Full. Revísalo y confirma.`);
-          setNumero("");
-        }
-        router.refresh();
-      }}
-      className="rounded-2xl border border-[#2D3277]/20 bg-[#2D3277]/5 p-4 sm:p-5"
-    >
-      <p className="text-sm font-semibold text-zinc-900">Estimar un envío por lo que subió en Full (menos exacto)</p>
-      <p className="mt-0.5 text-xs text-zinc-600">
-        Solo si no puedes copiar la tabla del panel: te armo el envío con lo que subió en Full desde esa fecha. Si ese día recibiste dos envíos, las cantidades salen mezcladas — mejor usa la captura de arriba.
+      <p className="mt-1 text-[11px] text-zinc-500">
+        {momento === "EN_CAMINO"
+          ? "Se descuentan de tu bodega las piezas declaradas, con la fecha en que salió. Cuando ML lo reciba, lo cierras con un clic (o pegas la tabla si hubo diferencias)."
+          : "Se descuentan las declaradas y se toma la columna “Aptas para Full” como lo recibido; si hay diferencias, decides producto por producto."}
       </p>
       <div className="mt-3 flex flex-wrap items-end gap-3">
         <div>
@@ -171,14 +126,26 @@ export function BuscarEnvioMl() {
           <input type="text" value={numero} onChange={(e) => setNumero(e.target.value)} placeholder="77396369" required className="mt-1 w-44 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm" />
         </div>
         <div>
-          <label className="block text-[11px] font-medium text-zinc-500">Empezó a llegar desde</label>
+          <label className="block text-[11px] font-medium text-zinc-500">Fecha en que salió de tu bodega</label>
           <div className="mt-1 w-44">
-            <CampoFecha name="desde" defaultValue={hace14} max={hoy.toISOString().slice(0, 10)} onChange={setDesde} />
+            <CampoFecha name="fecha_salida" defaultValue={hoy} max={hoy} onChange={setFecha} />
           </div>
         </div>
-        <button type="submit" disabled={cargando || !numero.trim()} className="rounded-xl bg-[#2D3277] px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-[#232860] disabled:opacity-50">
-          {cargando ? "Armando…" : "Buscar envío"}
+        {bodegas.length > 1 && (
+          <div className="w-48">
+            <label className="block text-[11px] font-medium text-zinc-500">Bodega</label>
+            <div className="mt-1">
+              <Selector defaultValue={bodegaId} onChange={setBodegaId} opciones={bodegas.map((b) => ({ value: b.id, label: b.nombre }))} />
+            </div>
+          </div>
+        )}
+      </div>
+      <TextareaPanel value={textoPanel} onChange={setTextoPanel} />
+      <div className="mt-2 flex flex-wrap items-center gap-3">
+        <button type="submit" disabled={cargando || !numero.trim() || !textoPanel.trim()} className={btnPri}>
+          {cargando ? "Registrando…" : momento === "EN_CAMINO" ? "Registrar envío (sale de bodega)" : "Registrar envío (ya llegó)"}
         </button>
+        <span className="text-[11px] text-zinc-500">Un par de mancuernas sale como 2 piezas si así está ligado. Nada se descuenta dos veces: si el número ya existe, te aviso.</span>
       </div>
       {mensaje && <p className="mt-2 text-xs text-emerald-700">{mensaje}</p>}
       {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
@@ -186,252 +153,363 @@ export function BuscarEnvioMl() {
   );
 }
 
-/** Diagnóstico: probar un número de envío real del panel de ML por todos
- * los caminos conocidos y ver qué contesta cada uno. */
-export function ProbarEnvioMl() {
-  const [numero, setNumero] = useState("");
-  const [cargando, setCargando] = useState(false);
+/** Subidas de stock en Full que ningún envío capturado explica. */
+export function AvisoSinExplicar({ recepciones }: { recepciones: RecepcionFull[] }) {
+  const router = useRouter();
   const [error, setError] = useState<string | null>(null);
-  const [resultados, setResultados] = useState<{ ruta: string; resultado: string; muestra?: string }[]>([]);
+  if (!recepciones.length) return null;
   return (
-    <div className="rounded-xl border border-zinc-200 bg-white p-4 text-sm">
-      <p className="font-medium text-zinc-900">Probar con un número de envío de tu panel de Mercado Libre</p>
-      <p className="mt-0.5 text-xs text-zinc-500">Escribe el número tal como sale en “Gestión de envíos Full” (ej. 77396369). Le pregunto a ML por ese envío por todos los caminos y te muestro qué contesta cada uno; mándame captura.</p>
-      <form
-        className="mt-2 flex flex-wrap items-center gap-2"
-        onSubmit={async (e) => {
-          e.preventDefault();
-          setCargando(true);
-          setError(null);
-          const r = await probarEnvioMl(numero);
-          setCargando(false);
-          if (r.error) setError(r.error);
-          setResultados(r.resultados);
-        }}
-      >
-        <input type="text" value={numero} onChange={(e) => setNumero(e.target.value)} placeholder="77396369" className="w-44 rounded-lg border border-zinc-300 px-3 py-1.5 text-sm" />
-        <button type="submit" disabled={cargando} className={btnSec}>
-          {cargando ? "Preguntando a ML…" : "Probar"}
-        </button>
-        {error && <span className="text-xs text-red-600">{error}</span>}
-      </form>
-      {resultados.length > 0 && (
-        <ul className="mt-3 space-y-2 font-mono text-[11px]">
-          {resultados.map((r) => (
-            <li key={r.ruta} className={`rounded-lg border p-2 ${r.resultado.startsWith("ok") ? "border-emerald-200 bg-emerald-50 text-emerald-900" : "border-zinc-200 bg-zinc-50 text-zinc-600"}`}>
-              <p className="break-all">
-                {r.ruta} → {r.resultado}
-              </p>
-              {r.muestra && <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all text-[10px] text-emerald-800">{r.muestra}</pre>}
-            </li>
-          ))}
-        </ul>
-      )}
+    <div id="sin-explicar" className="rounded-2xl border border-amber-300 bg-amber-50 p-4">
+      <p className="text-sm font-medium text-amber-900">Subió el stock en Full de {recepciones.length} producto(s) y no hay ningún envío capturado que lo explique</p>
+      <p className="text-xs text-amber-800">Si fue un envío tuyo, captúralo arriba con su número (y esto se explica solo). Si no salió de tu bodega (ej. una devolución que llegó a Full), márcalo.</p>
+      <ul className="mt-2 divide-y divide-amber-200/60">
+        {recepciones.map((r) => (
+          <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 py-1.5 text-xs">
+            <span className="text-amber-900">
+              {formatoFechaMx(r.detectado_en)} · {r.titulo ?? r.inventory_id} · <strong>+{Number(r.cantidad).toLocaleString("es-MX")} pzas</strong>
+              {r.sku_crm && <span className="font-mono text-amber-700"> · {r.sku_crm}</span>}
+            </span>
+            <button
+              type="button"
+              onClick={async () => {
+                const x = await ignorarRecepcionMl(r.id);
+                if (x.error) setError(x.error);
+                router.refresh();
+              }}
+              className="text-amber-700 underline-offset-2 hover:underline"
+            >
+              no fue de mi bodega
+            </button>
+          </li>
+        ))}
+      </ul>
+      {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
     </div>
   );
 }
 
-/** Un envío a Full de Mercado Libre: estatus, productos y, si ML ya lo
- * recibió, el botón para confirmar la salida de bodega. */
-export function TarjetaEnvioMl({ datos, bodegas }: { datos: EnvioParaPantalla; bodegas: { id: string; nombre: string }[] }) {
+function LineaEnvio({ l, fase }: { l: LineaParaPantalla; fase: FaseEnvio }) {
+  const diff = fase === "POR_CERRAR" || fase === "CERRADO" ? diferenciaLinea({ cantidad_planeada: l.planeadas, cantidad_recibida: l.recibidas }) : 0;
+  const declaradas = l.planeadas ?? l.recibidas;
+  return (
+    <li className="flex flex-wrap items-center justify-between gap-3 py-2 text-sm">
+      <div className="flex items-center gap-3">
+        {l.imagen_url ? (
+          // eslint-disable-next-line @next/next/no-img-element -- miniatura de ML
+          <img src={l.imagen_url} alt="" className="h-9 w-9 rounded-lg object-cover" />
+        ) : (
+          <div className="h-9 w-9 rounded-lg bg-zinc-100" />
+        )}
+        <div>
+          <p className="text-zinc-900">{l.titulo ?? l.item_id ?? l.inventory_id ?? "Producto"}</p>
+          <p className="text-xs text-zinc-400">
+            {l.inventory_id && <span className="font-mono">{l.inventory_id}</span>}
+            {l.seller_sku && <> · SKU ML {l.seller_sku}</>}
+            {" · "}
+            {l.sku ? (
+              <span className="text-zinc-600">
+                CRM: <span className="font-mono">{l.sku}</span>
+                {l.stockBodega !== null && <> · {l.stockBodega.toLocaleString("es-MX")} en bodega</>}
+                {!l.salidaGenerada && fase !== "PENDIENTE_REGISTRAR" && <span className="text-amber-700"> · su salida se genera en la siguiente revisión</span>}
+              </span>
+            ) : (
+              <Link href="/mercadolibre/skus" className="text-amber-700 underline-offset-2 hover:underline">
+                sin ligar con un producto del CRM → ligar (sus piezas se descuentan solas al ligarlo)
+              </Link>
+            )}
+          </p>
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-3 text-xs">
+        {fase === "EN_CAMINO" && (
+          <span className="text-zinc-500">
+            salieron <strong className="text-zinc-900">{declaradas.toLocaleString("es-MX")}</strong>
+            {l.factor > 1 && <span className="text-violet-700"> × {l.factor} = {(declaradas * l.factor).toLocaleString("es-MX")} pzas</span>}
+          </span>
+        )}
+        {fase === "EN_CAMINO" && l.subioEnFull > 0 && <span className="rounded-full bg-[#2D3277]/5 px-2 py-0.5 text-[#2D3277]">ML ya subió {l.subioEnFull.toLocaleString("es-MX")} pzas</span>}
+        {(fase === "POR_CERRAR" || fase === "CERRADO" || fase === "PENDIENTE_REGISTRAR") && (
+          <span className="text-zinc-500">
+            declaradas <strong className="text-zinc-900">{declaradas.toLocaleString("es-MX")}</strong> · recibidas <strong className="text-emerald-700">{l.recibidas.toLocaleString("es-MX")}</strong>
+            {l.factor > 1 && <span className="text-violet-700"> (× {l.factor} pzas)</span>}
+          </span>
+        )}
+        {diff > 0 && (
+          <span className="rounded-full bg-amber-50 px-2 py-0.5 font-medium text-amber-700 ring-1 ring-inset ring-amber-600/20">
+            faltaron {diff.toLocaleString("es-MX")}
+            {fase === "CERRADO" && l.decision && <> · {l.decision === "MERMA" ? "merma" : "se quedaron en bodega"}</>}
+          </span>
+        )}
+        {diff < 0 && <span className="rounded-full bg-[#2D3277]/5 px-2 py-0.5 font-medium text-[#2D3277]">{Math.abs(diff).toLocaleString("es-MX")} de más</span>}
+      </div>
+    </li>
+  );
+}
+
+/** Un envío a Full: según su fase, los botones para cerrarlo, resolver
+ * diferencias, registrar la salida (flujo viejo) o deshacerlo. */
+export function TarjetaEnvioMl({ datos, bodegas }: { datos: EnvioParaPantalla; bodegas: BodegaOpcion[] }) {
   const router = useRouter();
   const { envio, lineas } = datos;
-  const porConfirmar = (envio.estado === "RECIBIDO" || envio.estado === "CONTADO") && !envio.confirmado_en && !envio.ignorado_en;
-  const [abierto, setAbierto] = useState(false);
-  // "salen" se propone en piezas del CRM: lo que ML recibió × piezas por unidad.
-  const [cantidades, setCantidades] = useState<Record<string, string>>(() => Object.fromEntries(lineas.map((l) => [l.clave, String((l.recibidas || l.planeadas || 0) * (l.factor || 1))])));
-  const [incluir, setIncluir] = useState<Record<string, boolean>>(() => Object.fromEntries(lineas.map((l) => [l.clave, Boolean(l.sku)])));
+  const fase = faseDe(envio);
+  const hoy = fechaTextoMx(new Date());
+  const [pegando, setPegando] = useState(false);
+  const [textoPanel, setTextoPanel] = useState("");
+  const [decisiones, setDecisiones] = useState<Record<string, DecisionDiferencia>>({});
+  const [fechaSalida, setFechaSalida] = useState(envio.fecha_recepcion ? fechaTextoMx(new Date(envio.fecha_recepcion)) : hoy);
   const [bodegaId, setBodegaId] = useState(bodegas[0]?.id ?? "");
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mensaje, setMensaje] = useState<string | null>(null);
 
-  const sinLigar = lineas.filter((l) => !l.sku).length;
+  const dias = diasEnCamino(envio);
+  const totalDeclaradas = lineas.reduce((s, l) => s + (l.planeadas ?? l.recibidas), 0);
   const totalRecibidas = lineas.reduce((s, l) => s + l.recibidas, 0);
-  const totalPlaneadas = lineas.reduce((s, l) => s + (l.planeadas ?? 0), 0);
-  const seleccion = lineas.filter((l) => incluir[l.clave] && l.sku && Number(cantidades[l.clave]) > 0);
-  const piezasSeleccion = seleccion.reduce((s, l) => s + (Number(cantidades[l.clave]) || 0), 0);
+  const sinLigar = lineas.filter((l) => !l.sku).length;
+  const conDiferencia = lineas.filter((l) => diferenciaLinea({ cantidad_planeada: l.planeadas, cantidad_recibida: l.recibidas }) !== 0);
+  const faltantes = conDiferencia.filter((l) => diferenciaLinea({ cantidad_planeada: l.planeadas, cantidad_recibida: l.recibidas }) > 0);
+  const abierto = fase === "EN_CAMINO" || fase === "POR_CERRAR" || fase === "PENDIENTE_REGISTRAR";
+  const etiqueta = ETIQUETA_FASE[fase];
+
+  async function correr(accion: () => Promise<{ error: string | null }>, exito?: string) {
+    setEnviando(true);
+    setError(null);
+    setMensaje(null);
+    const r = await accion();
+    setEnviando(false);
+    if (r.error) setError(r.error);
+    else if (exito) setMensaje(exito);
+    router.refresh();
+  }
 
   return (
-    <details open={porConfirmar} className={`group rounded-2xl border bg-white shadow-sm ${porConfirmar ? "border-emerald-300 ring-2 ring-emerald-100" : "border-zinc-200"}`}>
+    <details open={abierto} className={`group rounded-2xl border bg-white shadow-sm ${fase === "POR_CERRAR" || fase === "PENDIENTE_REGISTRAR" ? "border-amber-300 ring-2 ring-amber-100" : fase === "EN_CAMINO" ? "border-[#2D3277]/30" : "border-zinc-200"}`}>
       <summary className="flex cursor-pointer select-none flex-wrap items-center justify-between gap-2 px-5 py-3">
         <div className="flex items-center gap-3">
           <span className="inline-block transition-transform group-open:rotate-90">▸</span>
           <div>
             <p className="text-sm font-medium text-zinc-900">
               Envío a Full <span className="font-mono">{envio.inbound_id}</span>
-              {envio.fecha_creacion && <span className="ml-2 text-xs font-normal text-zinc-400">creado {formatoFechaHoraMx(envio.fecha_creacion)}</span>}
             </p>
             <p className="text-xs text-zinc-400">
-              {lineas.length} producto(s)
-              {totalPlaneadas > 0 && <> · {totalPlaneadas.toLocaleString("es-MX")} piezas planeadas</>}
-              {totalRecibidas > 0 && <> · <span className="text-emerald-700">{totalRecibidas.toLocaleString("es-MX")} recibidas por ML</span></>}
-              {envio.fecha_recepcion && <> · recibido {formatoFechaHoraMx(envio.fecha_recepcion)}</>}
+              {lineas.length} producto(s) · {totalDeclaradas.toLocaleString("es-MX")} piezas declaradas
+              {(fase === "POR_CERRAR" || fase === "CERRADO") && <> · <span className="text-emerald-700">{totalRecibidas.toLocaleString("es-MX")} recibidas por ML</span></>}
+              {envio.salio_en && <> · salió {formatoFechaMx(envio.salio_en)}</>}
+              {fase === "EN_CAMINO" && (
+                <>
+                  {" · "}
+                  <span className={dias >= DIAS_EN_CAMINO_AVISO ? "font-medium text-amber-700" : ""}>
+                    {dias} día{dias === 1 ? "" : "s"} en camino
+                  </span>
+                </>
+              )}
+              {envio.fecha_recepcion && fase !== "EN_CAMINO" && <> · llegó {formatoFechaMx(envio.fecha_recepcion)}</>}
             </p>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {envio.confirmado_en && <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-600">salida confirmada {formatoFechaHoraMx(envio.confirmado_en)}</span>}
-          {envio.ignorado_en && <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-500">no salió de bodega</span>}
-          <span className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset ${colorEstado(envio.estado)}`} title={envio.estado_ml ?? ""}>
-            {ETIQUETA_ESTADO_ENVIO_ML[envio.estado]}
-            {envio.estado_ml && envio.estado === "DESCONOCIDO" ? ` (${envio.estado_ml})` : ""}
+          {envio.cerrado_en && <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-500">cerrado {formatoFechaHoraMx(envio.cerrado_en)}</span>}
+          <span className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset ${etiqueta.clase}`} title={envio.estado_ml ?? ETIQUETA_ESTADO_ENVIO_ML[envio.estado]}>
+            {etiqueta.texto}
           </span>
         </div>
       </summary>
       <div className="border-t border-zinc-100 px-5 py-3">
-        {lineas.length === 0 && <p className="text-xs text-zinc-400">Mercado Libre no reportó productos en este envío todavía.</p>}
+        {lineas.length === 0 && <p className="text-xs text-zinc-400">Este envío no tiene productos.</p>}
         <ul className="divide-y divide-zinc-50">
           {lineas.map((l) => (
-            <li key={l.clave} className="flex flex-wrap items-center justify-between gap-3 py-2 text-sm">
-              <div className="flex items-center gap-3">
-                {abierto && porConfirmar && <input type="checkbox" checked={Boolean(incluir[l.clave]) && Boolean(l.sku)} disabled={!l.sku} onChange={(e) => setIncluir((x) => ({ ...x, [l.clave]: e.target.checked }))} />}
-                {l.imagen_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element -- miniatura de ML
-                  <img src={l.imagen_url} alt="" className="h-9 w-9 rounded-lg object-cover" />
-                ) : (
-                  <div className="h-9 w-9 rounded-lg bg-zinc-100" />
-                )}
-                <div>
-                  <p className="text-zinc-900">{l.titulo ?? l.item_id ?? l.inventory_id ?? "Producto"}</p>
-                  <p className="text-xs text-zinc-400">
-                    {l.item_id && <span className="font-mono">{l.item_id}</span>}
-                    {l.seller_sku && <> · SKU ML {l.seller_sku}</>}
-                    {" · "}
-                    {l.sku ? (
-                      <span className="text-zinc-600">
-                        CRM: <span className="font-mono">{l.sku}</span>
-                        {l.stockBodega !== null && <> · {l.stockBodega.toLocaleString("es-MX")} en bodega</>}
-                      </span>
-                    ) : (
-                      <Link href={`/mercadolibre/stock?filtro=sinligar${l.item_id ? `&q=${encodeURIComponent(l.item_id)}` : ""}`} className="text-amber-700 underline-offset-2 hover:underline">
-                        sin ligar con un producto del CRM → ligar
-                      </Link>
-                    )}
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3 text-xs">
-                {l.planeadas !== null && (
-                  <span className="text-zinc-500">
-                    planeadas <strong className="text-zinc-900">{l.planeadas}</strong>
-                  </span>
-                )}
-                <span className="text-zinc-500">
-                  recibidas <strong className="text-emerald-700">{l.recibidas}</strong>
-                  {l.factor > 1 && <span className="text-violet-700"> × {l.factor} = {(l.recibidas * l.factor).toLocaleString("es-MX")} pzas</span>}
-                </span>
-                {abierto && porConfirmar && (
-                  <label className="flex items-center gap-1 text-zinc-600">
-                    salen
-                    <input type="number" min={0} value={cantidades[l.clave] ?? ""} onChange={(e) => setCantidades((x) => ({ ...x, [l.clave]: e.target.value }))} disabled={!l.sku} className="w-20 rounded-lg border border-zinc-300 px-2 py-1 text-sm" />
-                  </label>
-                )}
-              </div>
-            </li>
+            <LineaEnvio key={l.clave} l={l} fase={fase} />
           ))}
         </ul>
+        {sinLigar > 0 && abierto && (
+          <p className="mt-2 text-xs text-amber-700">
+            {sinLigar} producto(s) sin ligar: sus piezas todavía no se descuentan de tu bodega. Lígalos en{" "}
+            <Link href="/mercadolibre/skus" className="underline">
+              Ligar SKUs
+            </Link>{" "}
+            y se descuentan solos.
+          </p>
+        )}
 
-        {porConfirmar && !abierto && (
+        {/* ---- En camino: ML lo recibió ---- */}
+        {fase === "EN_CAMINO" && !pegando && (
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <button type="button" onClick={() => setAbierto(true)} className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700">
-              Confirmar salida de bodega
-            </button>
             <button
               type="button"
-              onClick={async () => {
-                if (!window.confirm("¿Este envío NO salió de tu bodega (ej. una devolución que llegó a Full)? No se descuenta nada.")) return;
-                const r = await ignorarEnvioMl(envio.inbound_id);
-                if (r.error) setError(r.error);
-                router.refresh();
+              disabled={enviando}
+              onClick={() => {
+                if (!window.confirm(`¿Mercado Libre recibió el envío ${envio.inbound_id} completo, con las ${totalDeclaradas.toLocaleString("es-MX")} piezas declaradas? Se cierra sin diferencias.`)) return;
+                void correr(() => llegadaCompletaMl(envio.inbound_id), "Listo: el envío quedó cerrado, ML lo recibió completo.");
               }}
-              className={btnSec}
+              className={btnPri}
             >
-              No salió de mi bodega
+              ML lo recibió completo
             </button>
-            {envio.origen === "manual" && (
-              <button
-                type="button"
-                onClick={async () => {
-                  if (!window.confirm(`¿Quitar el envío ${envio.inbound_id} capturado a mano? Lo puedes volver a capturar pegando la tabla del panel.`)) return;
-                  const r = await quitarEnvioMl(envio.inbound_id);
-                  if (r.error) setError(r.error);
-                  router.refresh();
-                }}
-                className="text-xs text-zinc-400 hover:text-red-600 hover:underline"
-              >
-                quitar este envío
-              </button>
-            )}
-            {sinLigar > 0 && <span className="text-xs text-amber-700">{sinLigar} producto(s) sin ligar: ligarlos primero para que salgan de bodega.</span>}
+            <button type="button" disabled={enviando} onClick={() => setPegando(true)} className={btnSec}>
+              Llegó con diferencias: pegar la tabla
+            </button>
           </div>
         )}
-        {porConfirmar && abierto && (
-          <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50/60 p-3">
-            <p className="text-xs text-zinc-700">
-              Van a salir de tu bodega <strong>{piezasSeleccion.toLocaleString("es-MX")} piezas</strong> de {seleccion.length} producto(s), con destino Full. Si ML recibió menos de lo que mandaste, corrige “salen” con lo que de verdad se fue.
-            </p>
-            <div className="mt-2 flex flex-wrap items-end gap-3">
-              {bodegas.length > 1 && (
-                <div className="w-48">
-                  <label className="block text-[11px] font-medium text-zinc-500">Bodega</label>
-                  <Selector defaultValue={bodegaId} onChange={setBodegaId} opciones={bodegas.map((b) => ({ value: b.id, label: b.nombre }))} />
-                </div>
-              )}
+        {(fase === "EN_CAMINO" || fase === "POR_CERRAR") && pegando && (
+          <div className="mt-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+            <p className="text-xs text-zinc-700">Abre el envío en Mercado Libre (ya recibido), copia la tabla de productos y pégala: se toma la columna “Aptas para Full” como lo recibido.</p>
+            <TextareaPanel value={textoPanel} onChange={setTextoPanel} rows={5} />
+            <div className="mt-2 flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                disabled={enviando || seleccion.length === 0}
-                onClick={async () => {
-                  if (!window.confirm(`¿Descontar ${piezasSeleccion} piezas de tu bodega por el envío ${envio.inbound_id}?`)) return;
-                  setEnviando(true);
-                  setError(null);
-                  const r = await confirmarEnvioMl(
-                    envio.inbound_id,
-                    seleccion.map((l) => ({ clave: l.clave, sku: l.sku!, cantidad: Number(cantidades[l.clave]) || 0, nombre: l.nombreCrm ?? l.titulo, imagenUrl: l.imagen_url, piezasPorCaja: l.piezasPorCaja })),
-                    bodegaId || null,
-                  );
-                  setEnviando(false);
-                  if (r.error !== null) setError(r.error);
-                  else {
-                    setAbierto(false);
-                    setMensaje(`Listo: salieron ${r.piezas} piezas de ${r.productos} producto(s).`);
-                    router.refresh();
-                  }
-                }}
-                className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50"
+                disabled={enviando || !textoPanel.trim()}
+                onClick={() =>
+                  void correr(async () => {
+                    const r = await llegadaDesdePanelMl(envio.inbound_id, textoPanel);
+                    if (!r.error) {
+                      setPegando(false);
+                      setTextoPanel("");
+                      setMensaje(r.cerrado ? "Listo: ML recibió todo tal como se declaró; el envío quedó cerrado." : `ML recibió ${r.diferencias} producto(s) con diferencia: decide abajo qué pasó con cada uno y cierra el envío.${r.sinPublicacion.length ? ` Ojo: ${r.sinPublicacion.join(", ")} no están en tus publicaciones sincronizadas.` : ""}`);
+                    }
+                    return r;
+                  })
+                }
+                className={btnPri}
               >
-                {enviando ? "Registrando…" : `Sí, descontar ${piezasSeleccion.toLocaleString("es-MX")} piezas`}
+                {enviando ? "Registrando…" : "Registrar llegada"}
               </button>
-              <button type="button" onClick={() => setAbierto(false)} className="text-xs text-zinc-500 hover:text-zinc-900">
+              <button type="button" onClick={() => setPegando(false)} className="text-xs text-zinc-500 hover:text-zinc-900">
                 Cancelar
               </button>
             </div>
           </div>
         )}
-        {envio.confirmado_en && (
-          <div className="mt-2 flex items-center gap-3 text-xs">
+
+        {/* ---- Llegó con diferencias: decidir y cerrar ---- */}
+        {fase === "POR_CERRAR" && !pegando && (
+          <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50/60 p-3">
+            <p className="text-sm font-medium text-zinc-900">¿Qué pasó con lo que no llegó?</p>
+            <p className="text-xs text-zinc-600">Por cada producto que ML recibió de menos: si se quedó en tu bodega, esas piezas regresan a tu stock; si se perdió o llegó dañado, queda como merma (ya no están en tu bodega ni en Full).</p>
+            <ul className="mt-2 space-y-2">
+              {faltantes.map((l) => {
+                const diff = diferenciaLinea({ cantidad_planeada: l.planeadas, cantidad_recibida: l.recibidas });
+                const piezas = diff * (l.factor || 1);
+                return (
+                  <li key={l.clave} className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <span className="text-zinc-800">
+                      {l.titulo ?? l.inventory_id} · faltaron <strong>{piezas.toLocaleString("es-MX")} pzas</strong>
+                      {!l.sku && <span className="text-amber-700"> (sin ligar: se aplica cuando lo ligues)</span>}
+                    </span>
+                    <div className="w-64">
+                      <Selector
+                        defaultValue={decisiones[l.clave] ?? "QUEDO_EN_BODEGA"}
+                        onChange={(v) => setDecisiones((d) => ({ ...d, [l.clave]: v as DecisionDiferencia }))}
+                        opciones={[
+                          { value: "QUEDO_EN_BODEGA", label: "Se quedaron en mi bodega (regresan al stock)" },
+                          { value: "MERMA", label: "Se perdieron o llegaron dañadas (merma)" },
+                        ]}
+                      />
+                    </div>
+                  </li>
+                );
+              })}
+              {conDiferencia
+                .filter((l) => diferenciaLinea({ cantidad_planeada: l.planeadas, cantidad_recibida: l.recibidas }) < 0)
+                .map((l) => (
+                  <li key={l.clave} className="text-xs text-zinc-700">
+                    {l.titulo ?? l.inventory_id}: ML recibió {Math.abs(diferenciaLinea({ cantidad_planeada: l.planeadas, cantidad_recibida: l.recibidas })).toLocaleString("es-MX")} de más de lo declarado; esas piezas también salen de tu bodega.
+                  </li>
+                ))}
+            </ul>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                disabled={enviando}
+                onClick={() => {
+                  const decis = faltantes.flatMap((l) => l.lineaIds.map((lineaId) => ({ lineaId, decision: decisiones[l.clave] ?? ("QUEDO_EN_BODEGA" as DecisionDiferencia) })));
+                  void correr(async () => {
+                    const r = await cerrarEnvioMl(envio.inbound_id, decis);
+                    if (!r.error) setMensaje(`Listo: envío cerrado.${r.regresaron ? ` ${r.regresaron.toLocaleString("es-MX")} pzas regresaron a tu bodega.` : ""}${r.mermas ? ` ${r.mermas.toLocaleString("es-MX")} pzas quedaron como merma.` : ""}`);
+                    return r;
+                  });
+                }}
+                className={btnPri}
+              >
+                {enviando ? "Cerrando…" : "Cerrar envío"}
+              </button>
+              <button type="button" disabled={enviando} onClick={() => setPegando(true)} className={btnSec}>
+                Volver a pegar la tabla
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ---- Flujo viejo: capturado pero sin descontar ---- */}
+        {fase === "PENDIENTE_REGISTRAR" && (
+          <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50/60 p-3">
+            <p className="text-xs text-zinc-700">Este envío se capturó antes del cambio y todavía no se ha descontado de tu bodega. Dime cuándo salió y lo registro con las piezas declaradas{envio.estado === "RECIBIDO" || envio.estado === "CONTADO" ? "; como ML ya lo recibió, queda cerrado de una vez" : ""}.</p>
+            <div className="mt-2 flex flex-wrap items-end gap-3">
+              <div>
+                <label className="block text-[11px] font-medium text-zinc-500">Fecha en que salió</label>
+                <div className="mt-1 w-44">
+                  <CampoFecha name={`fecha_${envio.inbound_id}`} defaultValue={fechaSalida} max={hoy} onChange={setFechaSalida} />
+                </div>
+              </div>
+              {bodegas.length > 1 && (
+                <div className="w-48">
+                  <label className="block text-[11px] font-medium text-zinc-500">Bodega</label>
+                  <div className="mt-1">
+                    <Selector defaultValue={bodegaId} onChange={setBodegaId} opciones={bodegas.map((b) => ({ value: b.id, label: b.nombre }))} />
+                  </div>
+                </div>
+              )}
+              <button
+                type="button"
+                disabled={enviando}
+                onClick={() => {
+                  if (!window.confirm(`¿Descontar de tu bodega las ${totalDeclaradas.toLocaleString("es-MX")} piezas declaradas del envío ${envio.inbound_id}?`)) return;
+                  void correr(() => registrarSalidaEnvioMl(envio.inbound_id, fechaSalida || null, bodegaId || null), "Listo: ya se descontó de tu bodega.");
+                }}
+                className={btnPri}
+              >
+                Descontar de mi bodega
+              </button>
+              <button
+                type="button"
+                disabled={enviando}
+                onClick={() => {
+                  if (!window.confirm("¿Este envío NO salió de tu bodega (ej. una devolución que llegó a Full)? No se descuenta nada.")) return;
+                  void correr(() => ignorarEnvioMl(envio.inbound_id));
+                }}
+                className={btnSec}
+              >
+                No salió de mi bodega
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ---- Pie: ver salidas / deshacer ---- */}
+        <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
+          {envio.confirmado_en && (
             <Link href="/stock/movimientos" className="text-zinc-500 underline-offset-2 hover:underline">
               ver las salidas
             </Link>
+          )}
+          {fase !== "CANCELADO" && (
             <button
               type="button"
-              onClick={async () => {
-                if (!window.confirm("¿Deshacer la confirmación? Se borran las salidas de bodega de este envío y vuelve a quedar por confirmar.")) return;
-                const r = await deshacerConfirmacionMl(envio.inbound_id);
-                if (r.error) setError(r.error);
-                router.refresh();
+              disabled={enviando}
+              onClick={() => {
+                if (!window.confirm(`¿Deshacer el envío ${envio.inbound_id}? Se borran sus salidas de bodega (las piezas regresan a tu stock) y el envío se quita; lo puedes volver a capturar.`)) return;
+                void correr(() => deshacerEnvioMl(envio.inbound_id));
               }}
               className="text-zinc-400 hover:text-red-600"
             >
               deshacer
             </button>
-          </div>
-        )}
+          )}
+        </div>
         {mensaje && <p className="mt-2 text-xs text-emerald-700">{mensaje}</p>}
         {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
         <details className="mt-2">
-          <summary className="cursor-pointer text-[11px] text-zinc-400">datos crudos de Mercado Libre</summary>
-          <pre className="mt-1 max-h-48 overflow-auto rounded bg-zinc-100 p-2 text-[10px] text-zinc-600">{JSON.stringify({ envio: envio.crudo, estado_ml: envio.estado_ml, origen: envio.origen }, null, 1)}</pre>
+          <summary className="cursor-pointer text-[11px] text-zinc-400">datos crudos</summary>
+          <pre className="mt-1 max-h-48 overflow-auto rounded bg-zinc-100 p-2 text-[10px] text-zinc-600">{JSON.stringify({ envio: envio.crudo, estado: envio.estado, estado_ml: envio.estado_ml, origen: envio.origen, salio_en: envio.salio_en, confirmado_en: envio.confirmado_en, cerrado_en: envio.cerrado_en }, null, 1)}</pre>
         </details>
       </div>
     </details>

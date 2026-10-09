@@ -3,25 +3,19 @@ import { createClient } from "@/lib/supabase/server";
 import { resumenPorSku } from "@/lib/calculos-stock";
 import { obtenerPiezasPorCajaPorSku } from "@/lib/productos-stock";
 import { fechaTextoMx, formatoFechaMx } from "@/lib/fechas-mx";
-import { formatoFecha } from "@/lib/formato";
-import type { Bodega, ConfiguracionStock, MovimientoStock } from "@/lib/tipos";
-import { devolucionesPorConfirmar, enCaminoAFullPorSku, obtenerEnviosFull, obtenerRecepcionesPendientes, ventasPendientesPorLigar } from "@/lib/salidas-ml";
-import { BotonCancelarEnvio, BotonesDevolucion, BotonesDiferencia, BotonProcesarAhora, InterruptorVentasMl } from "./acciones-full";
-import { FormularioEnvioFull } from "./formulario-envio-full";
-import { TarjetaRecepcion } from "./tarjeta-recepcion";
-import { ConfirmarEnvio } from "./confirmar-envio";
-import { agruparLineas, diagnosticoEnviosFull, enviosPorConfirmar, obtenerEnviosFullMl, obtenerEstadoEnviosFull } from "@/lib/mercadolibre-envios-full";
-import { resolvedorSku } from "@/lib/salidas-ml";
+import type { Bodega, ConfiguracionStock, MovimientoStock, RecepcionFull } from "@/lib/tipos";
+import { devolucionesPorConfirmar, obtenerRecepcionesPendientes, resolvedorSku, ventasPendientesPorLigar } from "@/lib/salidas-ml";
+import { BotonesDevolucion, BotonProcesarAhora, InterruptorVentasMl } from "./acciones-full";
+import { agruparLineas, faseDe, generarSalidasPendientesEnvios, obtenerEnviosFullMl, recepcionesSinExplicar, subidasDetectadas } from "@/lib/mercadolibre-envios-full";
 import { AvisoSkusPendientes } from "@/app/mercadolibre/skus/aviso-skus";
-import { obtenerConexion } from "@/lib/mercadolibre-auth";
-import { formatoFechaHoraMx } from "@/lib/fechas-mx";
-import { BotonActualizarEnviosMl, BuscarEnvioMl, CapturarEnvioMl, ProbarEnvioMl, TarjetaEnvioMl, type EnvioParaPantalla } from "./envios-full-ml";
+import { AvisoSinExplicar, CapturarEnvioMl, TarjetaEnvioMl, type EnvioParaPantalla } from "./envios-full-ml";
 
 export const maxDuration = 60;
 
-/** Stock ↔ Mercado Libre: envíos a Full (la bodega se descuenta cuando ML
- * confirma), salidas automáticas por ventas que salen de la bodega, y las
- * devoluciones por confirmar. Regla de oro: nada sale sin motivo. */
+/** Stock ↔ Mercado Libre. Envíos a Full en dos momentos (sale de bodega →
+ * se descuenta; llega a Full → se concilia), salidas automáticas por ventas
+ * que salen de la bodega, y devoluciones por confirmar. Regla de oro: nada
+ * sale de bodega sin motivo registrado. */
 export default async function FullYMercadoLibre() {
   const supabase = await createClient();
   const [{ data: movimientos }, { data: bodegas }, { data: configuracion }, piezasPorCajaPorSku] = await Promise.all([
@@ -32,57 +26,65 @@ export default async function FullYMercadoLibre() {
   ]);
   const resumenes = resumenPorSku(movimientos ?? [], configuracion?.dias_espera ?? 60, piezasPorCajaPorSku);
   const nombrePorSku = new Map(resumenes.map((r) => [r.sku, r.nombre]));
+  const stockPorSku = new Map(resumenes.map((r) => [r.sku, r]));
+  const opcionesBodega = (bodegas ?? []).map((b) => ({ id: b.id, nombre: b.nombre }));
 
-  let recepciones: Awaited<ReturnType<typeof obtenerRecepcionesPendientes>> = [];
-  let envios: Awaited<ReturnType<typeof obtenerEnviosFull>> = [];
   let pendientes: Awaited<ReturnType<typeof ventasPendientesPorLigar>> = [];
   let devoluciones: Awaited<ReturnType<typeof devolucionesPorConfirmar>> = [];
   let errorLectura: string | null = null;
   try {
-    [recepciones, envios, pendientes, devoluciones] = await Promise.all([obtenerRecepcionesPendientes(), obtenerEnviosFull(), ventasPendientesPorLigar(), devolucionesPorConfirmar()]);
+    [pendientes, devoluciones] = await Promise.all([ventasPendientesPorLigar(), devolucionesPorConfirmar()]);
   } catch (e) {
     errorLectura = e instanceof Error ? e.message : "No se pudo leer la información de Mercado Libre.";
   }
 
-  // Envíos a Full leídos directo de Mercado Libre (migración 0042).
+  // Envíos a Full (migraciones 0042 y 0049).
   let enviosMl: EnvioParaPantalla[] = [];
-  let estadoEnviosMl: Awaited<ReturnType<typeof obtenerEstadoEnviosFull>> = null;
+  let recepciones: RecepcionFull[] = [];
+  let sinExplicar: RecepcionFull[] = [];
   let errorEnviosMl: string | null = null;
-  const conexion = await obtenerConexion().catch(() => null);
   try {
-    const [lista, resolvedor, estado] = await Promise.all([obtenerEnviosFullMl(), resolvedorSku(), obtenerEstadoEnviosFull()]);
-    estadoEnviosMl = estado;
-    const stockPorSku = new Map(resumenes.map((r) => [r.sku, r]));
-    enviosMl = lista.map(({ envio, lineas }) => ({
-      envio,
-      lineas: agruparLineas(lineas).map((l) => {
-        const sku = resolvedor.skuDe(l.item_id, l.variation_id, l.seller_sku);
-        const r = sku ? stockPorSku.get(sku) : undefined;
-        return { ...l, sku, nombreCrm: r?.nombre ?? null, stockBodega: r?.stockActual ?? null, piezasPorCaja: r?.piezasPorCaja ?? null, factor: resolvedor.factorDe(l.item_id, l.variation_id) };
-      }),
-    }));
+    let lista = await obtenerEnviosFullMl();
+    // Líneas que estaban sin ligar y ya resuelven: su salida se genera aquí mismo.
+    if (lista.some((e) => e.envio.confirmado_en && !e.envio.ignorado_en && e.lineas.some((l) => !l.salida_generada_en))) {
+      const r = await generarSalidasPendientesEnvios();
+      if (r.generadas) lista = await obtenerEnviosFullMl();
+    }
+    const [resolvedor, recs, sinExp] = await Promise.all([resolvedorSku(), obtenerRecepcionesPendientes(), recepcionesSinExplicar()]);
+    recepciones = recs;
+    sinExplicar = sinExp;
+    enviosMl = lista.map(({ envio, lineas }) => {
+      const subidas = subidasDetectadas(recepciones, envio);
+      return {
+        envio,
+        lineas: agruparLineas(lineas).map((l) => {
+          const sku = resolvedor.skuDe(l.item_id, l.variation_id, l.seller_sku);
+          const r = sku ? stockPorSku.get(sku) : undefined;
+          return {
+            ...l,
+            sku,
+            nombreCrm: r?.nombre ?? null,
+            stockBodega: r?.stockActual ?? null,
+            factor: resolvedor.factorDe(l.item_id, l.variation_id, l.seller_sku),
+            subioEnFull: l.inventory_id ? (subidas.get(l.inventory_id) ?? 0) : 0,
+          };
+        }),
+      };
+    });
   } catch (e) {
-    errorEnviosMl = e instanceof Error ? e.message : "No se pudieron leer los envíos de Mercado Libre.";
+    errorEnviosMl = e instanceof Error ? e.message : "No se pudieron leer los envíos a Full.";
   }
-  const diagnostico = diagnosticoEnviosFull(estadoEnviosMl?.endpoint_envios_full);
-  const porConfirmarMl = enviosPorConfirmar(enviosMl).map((e) => e.envio.inbound_id);
-  const enviosMlOrdenados = [...enviosMl.filter((e) => porConfirmarMl.includes(e.envio.inbound_id)), ...enviosMl.filter((e) => !porConfirmarMl.includes(e.envio.inbound_id))];
-  const enviosMlActivos = enviosMlOrdenados.filter((e) => !e.envio.confirmado_en && !e.envio.ignorado_en && e.envio.estado !== "CANCELADO");
-  const enviosMlCerrados = enviosMlOrdenados.filter((e) => !enviosMlActivos.includes(e));
+  const porFase = (fases: string[]) => enviosMl.filter((e) => fases.includes(faseDe(e.envio)));
+  const porCerrar = porFase(["POR_CERRAR"]);
+  const pendientesRegistrar = porFase(["PENDIENTE_REGISTRAR"]);
+  const enCamino = porFase(["EN_CAMINO"]);
+  const cerrados = porFase(["CERRADO", "IGNORADO", "CANCELADO"]);
+  const piezasEnCamino = enCamino.reduce((s, e) => s + e.lineas.reduce((t, l) => t + (l.planeadas ?? l.recibidas) * (l.factor || 1), 0), 0);
 
-  const enCamino = enCaminoAFullPorSku(envios);
-  const totalEnCamino = Array.from(enCamino.values()).reduce((s, v) => s + v, 0);
   const desde = configuracion?.salidas_ml_desde ?? null;
   const hoyTexto = fechaTextoMx(new Date());
   const salidasMl = (movimientos ?? []).filter((m) => m.orden_ml_id && m.tipo === "SALIDA");
   const salidasHoy = salidasMl.filter((m) => fechaTextoMx(new Date(m.creado_en)) === hoyTexto).reduce((s, m) => s + m.cantidad, 0);
-  const enviosPreparados = envios.filter((e) => e.envio.estado === "PREPARADO");
-  // Envíos en camino primero; los ya recibidos abajo, colapsados.
-  const enviosOrdenados = [...enviosPreparados, ...envios.filter((e) => e.envio.estado !== "PREPARADO")];
-  // Lo que ML ya detectó recibido, por SKU: solo una pista al confirmar un envío.
-  const mlReporta: Record<string, number> = {};
-  for (const r of recepciones) if (r.sku_crm) mlReporta[r.sku_crm] = (mlReporta[r.sku_crm] ?? 0) + r.cantidad;
-  const opcionesProducto = resumenes.map((r) => ({ sku: r.sku, nombre: r.nombre, stockActual: r.stockActual, piezasPorCaja: r.piezasPorCaja, imagenUrl: r.imagenUrl }));
 
   return (
     <div className="space-y-8">
@@ -92,189 +94,71 @@ export default async function FullYMercadoLibre() {
 
       <AvisoSkusPendientes skusCrm={new Set(resumenes.map((r) => r.sku))} />
 
-      {/* ---- Envíos a Full leídos de Mercado Libre ---- */}
-      <section id="envios-ml" className="space-y-3">
-        <div className="flex flex-wrap items-end justify-between gap-2">
-          <div>
-            <h2 className="text-lg font-semibold text-zinc-900">Envíos a Full</h2>
-            <p className="text-sm text-zinc-500">
-              Copia la tabla del envío desde tu panel de Mercado Libre y pégala aquí: queda con las cantidades exactas por producto; tú confirmas la salida de tu bodega con un clic — nada se descuenta sin tu confirmación.
-            </p>
-          </div>
-        </div>
-        <CapturarEnvioMl />
-        <details className="rounded-2xl border border-zinc-200 bg-white px-4 py-2">
-          <summary className="cursor-pointer text-xs text-zinc-500 hover:text-zinc-800">Estimar por lo que subió en Full (si no puedes copiar la tabla)</summary>
-          <div className="pb-2 pt-2">
-            <BuscarEnvioMl />
-          </div>
-        </details>
-        {errorEnviosMl && <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{errorEnviosMl} — si dice que falta una tabla, corre el SQL 0042 en Supabase.</div>}
-        <details className="group rounded-2xl border border-zinc-200 bg-zinc-50/60">
-          <summary className="cursor-pointer select-none px-5 py-3 text-sm text-zinc-500 hover:text-zinc-800">
-            <span className="mr-1 inline-block transition-transform group-open:rotate-90">▸</span>
-            Lectura automática desde Mercado Libre (en pruebas) y diagnóstico
-          </summary>
-          <div className="space-y-3 px-4 pb-4">
-            <p className="text-xs text-zinc-500">
-              Mercado Libre todavía no da por su API el contenido de tus envíos (todos los caminos contestan 404); esta lectura solo encuentra movimientos de stock. Queda aquí para seguir probando sin estorbar.
-            </p>
-            <div className="flex flex-col items-start gap-1">
-              <BotonActualizarEnviosMl conectado={Boolean(conexion)} />
-              {estadoEnviosMl?.ultima_sync_envios_full && <p className="text-[11px] text-zinc-400">última lectura {formatoFechaHoraMx(estadoEnviosMl.ultima_sync_envios_full)}</p>}
-              {estadoEnviosMl?.ultimo_error_envios_full && <p className="text-xs text-red-700">La última lectura falló: {estadoEnviosMl.ultimo_error_envios_full}</p>}
-            </div>
-            {diagnostico && diagnostico.intentos.length > 0 && (
-              <details className="text-[11px] text-zinc-500">
-                <summary className="cursor-pointer">Qué contestó Mercado Libre en la última lectura</summary>
-                <ul className="mt-1 space-y-1 font-mono">
-                  {diagnostico.intentos.map((t, i) => (
-                    <li key={i} className="break-all">
-                      {t}
-                    </li>
-                  ))}
-                </ul>
-              </details>
+      {/* ---- Envíos a Full ---- */}
+      <section id="envios-ml" className="space-y-4">
+        <div>
+          <h2 className="text-lg font-semibold text-zinc-900">Envíos a Full</h2>
+          <p className="text-sm text-zinc-500">
+            Cuando un envío sale de tu bodega, pega aquí la tabla del panel de Mercado Libre: se descuenta en ese momento con las piezas declaradas. Cuando ML lo recibe, lo cierras con un clic (o pegas la tabla si hubo diferencias).
+            {piezasEnCamino > 0 && (
+              <>
+                {" "}
+                Ahora mismo van <strong className="text-zinc-700">{piezasEnCamino.toLocaleString("es-MX")} piezas</strong> en camino a Full.
+              </>
             )}
-            <ProbarEnvioMl />
-          </div>
-        </details>
-        {enviosMlActivos.length === 0 && !errorEnviosMl ? (
-          <p className="rounded-xl border border-dashed border-zinc-300 bg-white p-6 text-center text-sm text-zinc-400">
-            {enviosMl.length === 0 ? "Todavía no hay envíos. Busca el primero por su número arriba." : "No hay envíos por confirmar."}
           </p>
-        ) : (
+        </div>
+        <CapturarEnvioMl bodegas={opcionesBodega} />
+        {errorEnviosMl && <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{errorEnviosMl} — si dice que falta una columna o una tabla, corre los SQL 0042 y 0049 en Supabase.</div>}
+        <AvisoSinExplicar recepciones={sinExplicar} />
+
+        {porCerrar.length > 0 && (
           <div className="space-y-3">
-            {enviosMlActivos.map((e) => (
-              <TarjetaEnvioMl key={e.envio.inbound_id} datos={e} bodegas={(bodegas ?? []).map((b) => ({ id: b.id, nombre: b.nombre }))} />
+            <h3 className="text-sm font-semibold text-amber-800">Llegaron a Full con diferencias por resolver ({porCerrar.length})</h3>
+            {porCerrar.map((e) => (
+              <TarjetaEnvioMl key={e.envio.inbound_id} datos={e} bodegas={opcionesBodega} />
             ))}
           </div>
         )}
-        {enviosMlCerrados.length > 0 && (
+        {pendientesRegistrar.length > 0 && (
+          <div className="space-y-3">
+            <h3 className="text-sm font-semibold text-amber-800">Capturados antes del cambio, falta descontarlos de bodega ({pendientesRegistrar.length})</h3>
+            {pendientesRegistrar.map((e) => (
+              <TarjetaEnvioMl key={e.envio.inbound_id} datos={e} bodegas={opcionesBodega} />
+            ))}
+          </div>
+        )}
+        <div className="space-y-3">
+          <h3 className="text-sm font-semibold text-zinc-700">En camino a Full ({enCamino.length})</h3>
+          {enCamino.length === 0 ? (
+            <p className="rounded-xl border border-dashed border-zinc-300 bg-white p-6 text-center text-sm text-zinc-400">No hay envíos en camino. Cuando salga uno, regístralo arriba.</p>
+          ) : (
+            enCamino.map((e) => <TarjetaEnvioMl key={e.envio.inbound_id} datos={e} bodegas={opcionesBodega} />)
+          )}
+        </div>
+        {cerrados.length > 0 && (
           <details className="group rounded-2xl border border-zinc-200 bg-zinc-50/60">
             <summary className="cursor-pointer select-none px-5 py-3 text-sm text-zinc-500 hover:text-zinc-800">
               <span className="mr-1 inline-block transition-transform group-open:rotate-90">▸</span>
-              Envíos ya confirmados, descartados o cancelados ({enviosMlCerrados.length})
+              Envíos cerrados ({cerrados.length})
             </summary>
             <div className="space-y-3 px-2 pb-2">
-              {enviosMlCerrados.map((e) => (
-                <TarjetaEnvioMl key={e.envio.inbound_id} datos={e} bodegas={(bodegas ?? []).map((b) => ({ id: b.id, nombre: b.nombre }))} />
+              {cerrados.map((e) => (
+                <TarjetaEnvioMl key={e.envio.inbound_id} datos={e} bodegas={opcionesBodega} />
               ))}
             </div>
           </details>
         )}
       </section>
 
-      {/* ---- Envíos armados a mano en el CRM (opcional) ---- */}
+      {/* ---- Ventas de ML que salen de bodega ---- */}
       <section className="space-y-3">
         <div className="flex flex-wrap items-end justify-between gap-2">
           <div>
-            <h2 className="text-lg font-semibold text-zinc-900">Envíos armados en el CRM (opcional)</h2>
-            <p className="text-sm text-zinc-500">
-              {totalEnCamino > 0 ? <>{totalEnCamino.toLocaleString("es-MX")} piezas en camino a Full (todavía cuentan en tu bodega). Si confirmas el envío desde Mercado Libre arriba, estas líneas se cierran solas.</> : "Ya no hace falta armar el envío aquí: se lee de Mercado Libre. Queda por si quieres llevar un control propio con color de etiqueta."}
-            </p>
+            <h2 className="text-lg font-semibold text-zinc-900">Ventas de Mercado Libre que salen de tu bodega</h2>
+            <p className="text-sm text-zinc-500">Colecta, Flex, Punto de envío y Acordado: cuando el envío ya salió, la salida se registra sola, ligada al número de venta. Las ventas desde Full las descuenta Mercado Libre.</p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <BotonProcesarAhora />
-            <FormularioEnvioFull opciones={opcionesProducto} bodegas={bodegas ?? []} />
-          </div>
-        </div>
-        {envios.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-zinc-300 bg-white p-6 text-center text-sm text-zinc-400">Todavía no hay envíos registrados.</p>
-        ) : (
-          <div className="space-y-3">
-            {enviosOrdenados.map(({ envio, lineas }) => {
-              const enviadas = lineas.reduce((s, l) => s + l.cantidad_enviada, 0);
-              const recibidas = lineas.reduce((s, l) => s + l.cantidad_recibida, 0);
-              return (
-                <details key={envio.id} open={envio.estado === "PREPARADO"} className="group rounded-2xl border border-zinc-200 bg-white shadow-sm">
-                  <summary className="flex cursor-pointer select-none flex-wrap items-center justify-between gap-2 px-5 py-3">
-                    <div className="flex items-center gap-3">
-                      <span className="inline-block transition-transform group-open:rotate-90">▸</span>
-                      <div>
-                        <p className="text-sm font-medium text-zinc-900">
-                          Envío #{envio.numero} · {formatoFecha(envio.fecha)}
-                          {envio.color_etiqueta && <span className="ml-2 rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-600">{envio.color_etiqueta}</span>}
-                        </p>
-                        <p className="text-xs text-zinc-400">
-                          {lineas.length} producto(s) · {recibidas.toLocaleString("es-MX")} de {enviadas.toLocaleString("es-MX")} piezas confirmadas por ML{envio.notas ? ` · ${envio.notas}` : ""}
-                        </p>
-                      </div>
-                    </div>
-                    <span className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset ${envio.estado === "RECIBIDO" ? "bg-emerald-50 text-emerald-700 ring-emerald-600/20" : "bg-amber-50 text-amber-700 ring-amber-600/20"}`}>
-                      {envio.estado === "RECIBIDO" ? "Recibido en Full" : "En camino"}
-                    </span>
-                  </summary>
-                  <div className="border-t border-zinc-100 px-5 py-3">
-                    <ul className="divide-y divide-zinc-50">
-                      {lineas.map((l) => {
-                        const faltante = l.cantidad_enviada - l.cantidad_recibida - l.merma;
-                        return (
-                          <li key={l.id} className="flex flex-wrap items-center justify-between gap-3 py-2 text-sm">
-                            <div className="flex items-center gap-3">
-                              {l.imagen_url ? (
-                                // eslint-disable-next-line @next/next/no-img-element -- miniatura
-                                <img src={l.imagen_url} alt="" className="h-9 w-9 rounded-lg object-cover" />
-                              ) : (
-                                <div className="h-9 w-9 rounded-lg bg-zinc-100" />
-                              )}
-                              <div>
-                                <p className="text-zinc-900">{l.nombre}</p>
-                                <p className="text-xs text-zinc-400">{l.sku}</p>
-                              </div>
-                            </div>
-                            <div className="flex flex-wrap items-center gap-3 text-xs">
-                              <span className="text-zinc-500">
-                                enviadas <strong className="text-zinc-900">{l.cantidad_enviada}</strong> · confirmadas <strong className="text-emerald-700">{l.cantidad_recibida}</strong>
-                                {l.merma > 0 && <> · merma <strong className="text-red-600">{l.merma}</strong></>}
-                              </span>
-                              {!l.resuelta && faltante > 0 && l.cantidad_recibida > 0 && <BotonesDiferencia lineaId={l.id} faltante={faltante} />}
-                              {!l.resuelta && l.cantidad_recibida === 0 && <span className="text-zinc-400">en camino</span>}
-                              {l.resuelta && <span className="text-emerald-700">✓</span>}
-                            </div>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                    {envio.estado === "PREPARADO" && (
-                      <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-                        <ConfirmarEnvio envioId={envio.id} numero={envio.numero} lineas={lineas} mlReporta={mlReporta} />
-                        {recibidas === 0 && <BotonCancelarEnvio envioId={envio.id} numero={envio.numero} />}
-                      </div>
-                    )}
-                  </div>
-                </details>
-              );
-            })}
-          </div>
-        )}
-      </section>
-
-      {/* ---- Entradas a Full que detectó ML y no cuadran con ningún envío ---- */}
-      {recepciones.length > 0 && (
-        <details className="group rounded-2xl border border-zinc-200 bg-zinc-50/60">
-          <summary className="cursor-pointer select-none px-5 py-3 text-sm text-zinc-600 hover:text-zinc-900">
-            <span className="mr-1 inline-block transition-transform group-open:rotate-90">▸</span>
-            Mercado Libre detectó {recepciones.length} entrada(s) a Full por producto — normalmente se explican al dar por recibido un envío; revisa aquí solo las que no cuadren (ej. una devolución que llegó a Full)
-          </summary>
-          <div className="grid gap-3 px-3 pb-3">
-            {recepciones.map((r) => (
-              <TarjetaRecepcion
-                key={r.id}
-                recepcion={r}
-                enviosPreparados={enviosPreparados.map((e) => ({ id: e.envio.id, etiqueta: `Envío #${e.envio.numero} · ${formatoFecha(e.envio.fecha)}${e.envio.color_etiqueta ? ` · ${e.envio.color_etiqueta}` : ""}`, skus: e.lineas.filter((l) => !l.resuelta).map((l) => l.sku) }))}
-                productos={resumenes.map((r) => ({ sku: r.sku, nombre: r.nombre }))}
-              />
-            ))}
-          </div>
-        </details>
-      )}
-
-      {/* ---- Ventas de ML que salen de bodega ---- */}
-      <section className="space-y-3">
-        <div>
-          <h2 className="text-lg font-semibold text-zinc-900">Ventas de Mercado Libre que salen de tu bodega</h2>
-          <p className="text-sm text-zinc-500">Colecta, Flex, Punto de envío y Acordado: cuando el envío ya salió, la salida se registra sola, ligada al número de venta.</p>
+          <BotonProcesarAhora />
         </div>
         <div className={`rounded-2xl border p-5 ${desde ? "border-emerald-200 bg-emerald-50" : "border-zinc-200 bg-white"}`}>
           <p className="text-sm font-medium text-zinc-900">
@@ -294,7 +178,7 @@ export default async function FullYMercadoLibre() {
           <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
             <p className="text-sm font-medium text-amber-900">{pendientes.length} venta(s) esperando liga: la publicación no está ligada a un producto del CRM</p>
             <p className="text-xs text-amber-800">
-              No se pierden: en cuanto ligues el producto en <Link href="/mercadolibre/stock?filtro=sinligar" className="underline">Mercado Libre → Publicaciones</Link>, sus salidas se generan solas en la siguiente revisión.
+              No se pierden: en cuanto ligues el producto en <Link href="/mercadolibre/skus" className="underline">Mercado Libre → Ligar SKUs</Link>, sus salidas se generan solas en la siguiente revisión.
             </p>
             <ul className="mt-2 space-y-1 text-xs text-amber-900">
               {pendientes.slice(0, 20).map((p) => (
