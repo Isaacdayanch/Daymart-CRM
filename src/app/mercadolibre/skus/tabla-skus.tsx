@@ -313,20 +313,25 @@ export function TablaSkus({
   const [q, setQ] = useState(qInicial);
   const [errorOlvidados, setErrorOlvidados] = useState<string | null>(null);
   const opciones: Opcion[] = productos.map((p) => ({ sku: p.sku, nombre: p.nombre, stockActual: p.stockActual, imagenUrl: p.imagenUrl }));
-  const texto = q.trim().toLowerCase();
-  const coincideGrupo = (g: GrupoSkuMl) => !texto || [g.sellerSku, g.skuCrm, g.nombreCrm, ...g.publicaciones.map((p) => `${p.titulo ?? ""} ${p.variacion ?? ""} ${p.item_id} ${p.skuCrm ?? ""}`)].some((t) => t?.toLowerCase().includes(texto));
-  const coincidePub = (p: PublicacionResumen) => !texto || `${p.titulo ?? ""} ${p.variacion ?? ""} ${p.item_id} ${p.skuCrm ?? ""} ${p.nombreCrm ?? ""}`.toLowerCase().includes(texto);
+  // Sin acentos ni mayúsculas: "aerobico" encuentra "Aeróbico".
+  const normalizar = (t: string | null | undefined) => (t ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  const texto = normalizar(q.trim());
+  const coincideGrupo = (g: GrupoSkuMl) => !texto || [g.sellerSku, g.skuCrm, g.nombreCrm, ...g.publicaciones.map((p) => `${p.titulo ?? ""} ${p.variacion ?? ""} ${p.item_id} ${p.skuCrm ?? ""} ${p.nombreCrm ?? ""}`)].some((t) => normalizar(t).includes(texto));
+  const coincidePub = (p: PublicacionResumen) => !texto || normalizar(`${p.titulo ?? ""} ${p.variacion ?? ""} ${p.item_id} ${p.skuCrm ?? ""} ${p.nombreCrm ?? ""}`).includes(texto);
 
   // Grupos: lo pendiente de verdad arriba; lo inactivo y lo olvidado aparte.
+  // CON BÚSQUEDA se muestra TODO lo que coincida (activas, inactivas y
+  // olvidadas) en una sola lista: nada se esconde en un desplegable.
+  const buscando = texto.length > 0;
   const gruposVivos = grupos.filter((g) => !g.ignorado);
-  const inactivosPendientes = gruposVivos.filter((g) => g.estado === "pendiente" && !g.activa && coincideGrupo(g));
-  const visibles = gruposVivos.filter((g) => (filtro === "todos" ? true : esPendienteReal(g))).filter(coincideGrupo).filter((g) => filtro === "todos" || !inactivosPendientes.includes(g));
+  const inactivosPendientes = buscando ? [] : gruposVivos.filter((g) => g.estado === "pendiente" && !g.activa);
+  const visibles = buscando ? grupos.filter(coincideGrupo) : gruposVivos.filter((g) => (filtro === "todos" ? true : esPendienteReal(g))).filter((g) => filtro === "todos" || !inactivosPendientes.includes(g));
   const olvidadosGrupos = grupos.filter((g) => g.ignorado && coincideGrupo(g));
   // Publicaciones sin SKU en ML: con búsqueda se muestran en la lista principal, para que nada "desaparezca".
   const sinSkuVivas = sinSku.filter((p) => !p.ignorado);
-  const sinSkuCoinciden = texto ? sinSkuVivas.filter(coincidePub) : [];
+  const sinSkuCoinciden = buscando ? sinSku.filter(coincidePub) : [];
   const sinSkuPendientes = sinSkuVivas.filter(esPublicacionPendienteReal);
-  const sinSkuInactivas = sinSkuVivas.filter((p) => !p.skuCrm && p.estado !== "active");
+  const sinSkuInactivas = buscando ? [] : sinSkuVivas.filter((p) => !p.skuCrm && p.estado !== "active");
   const olvidadasPubs = sinSku.filter((p) => p.ignorado && coincidePub(p));
   const ligados = grupos.filter((g) => g.estado === "ligado").length;
   const iguales = grupos.filter((g) => g.estado === "igual").length;
@@ -360,7 +365,27 @@ export function TablaSkus({
 
       <ul className="space-y-3">
         {visibles.map((g) => (
-          <FilaGrupo key={g.sellerSku} g={g} opciones={opciones} />
+          <li key={g.sellerSku} className="space-y-1">
+            {g.ignorado && (
+              <p className="text-[11px] text-zinc-500">
+                Este producto está en &ldquo;Olvidados&rdquo;.{" "}
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const r = await recordarLigaMl(ignorados.find((i) => i.seller_sku === g.sellerSku)?.clave ?? `sku:${g.sellerSku}|0`);
+                    if (r.error) setErrorOlvidados(r.error);
+                    router.refresh();
+                  }}
+                  className="text-[#2D3277] underline-offset-2 hover:underline"
+                >
+                  volver a mostrar
+                </button>
+              </p>
+            )}
+            <ul>
+              <FilaGrupo g={g} opciones={opciones} />
+            </ul>
+          </li>
         ))}
         {texto && sinSkuCoinciden.length > 0 && (
           <li className="rounded-xl border border-zinc-200 bg-zinc-50/60 p-4">
@@ -435,7 +460,7 @@ export function TablaSkus({
         </details>
       )}
 
-      {totalOlvidados > 0 && (
+      {totalOlvidados > 0 && !buscando && (
         <details className="rounded-xl border border-zinc-200 bg-zinc-50/60 px-4 py-3">
           <summary className="cursor-pointer text-sm text-zinc-600 hover:text-zinc-900">Olvidados ({totalOlvidados}) · no te interesa ligarlos por ahora</summary>
           <ul className="mt-2 divide-y divide-zinc-100 text-xs">

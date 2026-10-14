@@ -48,6 +48,9 @@ export async function crearContenedor(formData: FormData) {
     contenedor_id: contenedor.id,
     estado: formData.get("estado") as EstadoContenedor,
   });
+  // Fecha estimada de llegada (migración 0051), aparte para que sin el SQL se cree igual.
+  const eta = texto(formData, "fecha_estimada_llegada");
+  if (eta) await supabase.from("contenedores").update({ fecha_estimada_llegada: eta }).eq("id", contenedor.id);
 
   const montos = formData.getAll("abono_monto").map(Number);
   const tiposCambio = formData.getAll("abono_tipo_cambio").map(Number);

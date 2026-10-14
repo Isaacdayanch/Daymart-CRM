@@ -48,6 +48,8 @@ export interface Contenedor {
    * (migración 0047). 21,000 kg = carretera México; 68 m³ = 40' alto. */
   limite_peso_kg?: number | null;
   capacidad_cbm?: number | null;
+  /** Fecha estimada de llegada (YYYY-MM-DD, migración 0051): aviso cuando faltan ≤ 7 días. */
+  fecha_estimada_llegada?: string | null;
   eliminado_en: string | null;
   stock_generado_en: string | null;
   creado_en: string;

@@ -3,6 +3,8 @@ import { createClient } from "@/lib/supabase/server";
 import { costoTotalContenedor } from "@/lib/calculos";
 import { reconciliacionContenedor } from "@/lib/calculos-stock";
 import { formatoPesos, ESTILO_ESTADO } from "@/lib/formato";
+import { AvisoLlegadas } from "./aviso-llegadas";
+import { ESTADOS_EN_CAMINO, formatoFechaCorta } from "@/lib/avisos-contenedores";
 import { ESTADOS_CONTENEDOR, type Contenedor, type MovimientoStock, type PagoMercancia } from "@/lib/tipos";
 import { obtenerPerfilActual } from "@/lib/perfil";
 import { MenuMas } from "../menu-mas";
@@ -102,6 +104,7 @@ export default async function ListaContenedores() {
           </div>
         )}
 
+        <AvisoLlegadas />
         {contenedores && contenedores.length > 0 && (
           <ul className="grid gap-3 sm:grid-cols-2">
             {contenedores.map((contenedor) => (
@@ -118,6 +121,9 @@ export default async function ListaContenedores() {
                       <p className="text-sm text-zinc-500">
                         {contenedor.booking || "Sin booking"}
                       </p>
+                      {contenedor.fecha_estimada_llegada && ESTADOS_EN_CAMINO.includes(contenedor.estado) && (
+                        <p className="mt-0.5 text-xs text-[#2D3277]">Llega aprox. {formatoFechaCorta(contenedor.fecha_estimada_llegada)}</p>
+                      )}
                     </div>
                     <span
                       className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset ${ESTILO_ESTADO[contenedor.estado]}`}

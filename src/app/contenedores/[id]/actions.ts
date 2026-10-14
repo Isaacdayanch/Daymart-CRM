@@ -459,6 +459,8 @@ export async function actualizarContenedor(contenedorId: string, formData: FormD
       capacidad_cbm: numero(formData, "capacidad_cbm") || CAPACIDAD_CBM_DEFAULT,
     })
     .eq("id", contenedorId);
+  // Fecha estimada de llegada (migración 0051), igual aparte.
+  await supabase.from("contenedores").update({ fecha_estimada_llegada: texto(formData, "fecha_estimada_llegada") || null }).eq("id", contenedorId);
 
   await aplicarCreditoProveedor(supabase, contenedorId);
   await recalcularCostoEntradasContenedor(contenedorId);
@@ -468,16 +470,47 @@ export async function actualizarContenedor(contenedorId: string, formData: FormD
 /** fechaSalida (YYYY-MM-DD) solo aplica al pasar a "En tránsito" — es el
  * día en que el contenedor salió de China, de ahí corren los días de
  * crédito del proveedor. */
-export async function cambiarEstado(contenedorId: string, estado: EstadoContenedor, fechaSalida?: string) {
+export async function cambiarEstado(contenedorId: string, estado: EstadoContenedor, fechaSalida?: string, fechaLlegada?: string | null): Promise<{ error: string | null }> {
   const supabase = await createClient();
   const fecha =
     estado === "EN_TRANSITO" && fechaSalida ? new Date(`${fechaSalida}T12:00:00`).toISOString() : undefined;
-  await registrarHistorialSiCambia(supabase, contenedorId, estado, fecha);
-  await supabase.from("contenedores").update({ estado }).eq("id", contenedorId);
-  if (estado === "EN_TRANSITO") await aplicarCreditoProveedor(supabase, contenedorId, fecha);
+  const avisos: string[] = [];
+  // El historial de fechas se intenta primero (necesita leer el estado
+  // anterior), pero si truena NO detiene el cambio de estado (14 oct: el
+  // contenedor 15 "no cambiaba" y nadie se enteraba por qué).
+  try {
+    await registrarHistorialSiCambia(supabase, contenedorId, estado, fecha);
+  } catch (e) {
+    avisos.push(`el historial de fechas no se pudo guardar (${e instanceof Error ? e.message : "error"})`);
+  }
+  const { error } = await supabase.from("contenedores").update({ estado }).eq("id", contenedorId);
+  if (error) return { error: `No se pudo cambiar el estado: ${error.message}` };
+  if (fechaLlegada) {
+    const { error: errorEta } = await supabase.from("contenedores").update({ fecha_estimada_llegada: fechaLlegada }).eq("id", contenedorId);
+    if (errorEta) avisos.push(/fecha_estimada_llegada/.test(errorEta.message) ? "la fecha estimada de llegada no se guardó: falta correr el SQL 0051" : `la fecha estimada no se guardó (${errorEta.message})`);
+  }
+  if (estado === "EN_TRANSITO") {
+    try {
+      await aplicarCreditoProveedor(supabase, contenedorId, fecha);
+    } catch (e) {
+      avisos.push(`el crédito del proveedor no se pudo aplicar (${e instanceof Error ? e.message : "error"})`);
+    }
+  }
   revalidatePath(`/contenedores/${contenedorId}`);
   revalidatePath("/contenedores");
   revalidatePath("/");
+  return { error: avisos.length ? `El estado sí cambió, pero ${avisos.join("; ")}.` : null };
+}
+
+/** Fecha estimada de llegada (YYYY-MM-DD o vacío para quitarla). */
+export async function guardarFechaLlegada(contenedorId: string, fecha: string | null): Promise<{ error: string | null }> {
+  const supabase = await createClient();
+  const { error } = await supabase.from("contenedores").update({ fecha_estimada_llegada: fecha || null }).eq("id", contenedorId);
+  if (error) return { error: /fecha_estimada_llegada/.test(error.message) ? "Falta correr el SQL 0051 en Supabase para guardar la fecha estimada de llegada." : error.message };
+  revalidatePath(`/contenedores/${contenedorId}`);
+  revalidatePath("/contenedores");
+  revalidatePath("/");
+  return { error: null };
 }
 
 /** Manda el contenedor a la papelera (no se borra de verdad, se puede restaurar). */

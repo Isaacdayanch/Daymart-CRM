@@ -1,5 +1,6 @@
 "use client";
 
+import { CampoFecha } from "@/components/campo-fecha";
 import { CampoNumero } from "@/components/campo-numero";
 import { CampoMonto } from "@/components/campo-monto";
 import { Selector } from "@/components/selector";
@@ -75,6 +76,13 @@ export function FormularioContenedor({
             Ej. 60 — corren desde el día en que marques el contenedor &ldquo;En tránsito&rdquo;. Los abonos que
             sigan pendientes reciben su fecha límite y aparecen como deuda en Finanzas → Proveedores.
           </p>
+        </div>
+        <div className="mt-3">
+          <label className="block text-xs font-medium text-zinc-500">Fecha estimada de llegada (opcional)</label>
+          <div className="mt-1 w-48">
+            <CampoFecha name="fecha_estimada_llegada" defaultValue={contenedor.fecha_estimada_llegada ?? ""} />
+          </div>
+          <p className="mt-1 text-[11px] text-zinc-400">Cuando falten 7 días o menos te aviso en Contenedores y en el inicio.</p>
         </div>
       </div>
 

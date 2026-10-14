@@ -9,6 +9,7 @@ import type { ConfiguracionStock, CuentaFinanciera, MovimientoFinanciero, Movimi
 import { MenuMas } from "./menu-mas";
 import { obtenerResumenFull } from "@/lib/mercadolibre-stock";
 import { Logo } from "@/components/logo";
+import { AvisoLlegadas } from "@/app/contenedores/aviso-llegadas";
 
 const ACCESOS = [
   {
@@ -113,6 +114,7 @@ export default async function Dashboard() {
       </header>
 
       <main className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
+        <AvisoLlegadas />
         <div className="mb-10">
           <p className="text-sm font-medium text-zinc-400">Bienvenido a</p>
           <div className="mt-1">

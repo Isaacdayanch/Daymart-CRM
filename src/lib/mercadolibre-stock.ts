@@ -643,9 +643,18 @@ export async function buscarPublicacionesEnMl(texto: string): Promise<Publicacio
   } catch {
     // sin resultados por SKU
   }
-  if (!encontrados.size) return [];
-  const { data } = await supabase.from("mercadolibre_publicaciones").select("item_id").in("item_id", Array.from(encontrados.keys())).returns<{ item_id: string }[]>();
-  const enCopia = new Set((data ?? []).map((d) => d.item_id));
+  // 3) La copia local, por título o SKU sin acentos: si ya está en el CRM
+  //    con otro nombre, aquí se ve bajo qué título.
+  const normalizar = (t: string | null | undefined) => (t ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  const q2 = normalizar(q);
+  const { data: locales } = await supabase.from("mercadolibre_publicaciones").select("item_id, titulo, variacion, estado, precio, imagen_url, seller_sku").returns<Pick<PublicacionMl, "item_id" | "titulo" | "variacion" | "estado" | "precio" | "imagen_url" | "seller_sku">[]>();
+  const enCopia = new Set((locales ?? []).map((l) => l.item_id));
+  for (const l of locales ?? []) {
+    if (encontrados.has(l.item_id)) continue;
+    if (normalizar(`${l.titulo ?? ""} ${l.variacion ?? ""} ${l.seller_sku ?? ""} ${l.item_id}`).includes(q2)) {
+      encontrados.set(l.item_id, { item_id: l.item_id, titulo: [l.titulo, l.variacion].filter(Boolean).join(" · ") || null, estado: l.estado, precio: l.precio ?? null, imagen_url: l.imagen_url, seller_sku: l.seller_sku, enCopia: true });
+    }
+  }
   return Array.from(encontrados.values()).map((e) => ({ ...e, enCopia: enCopia.has(e.item_id) }));
 }
 

@@ -161,6 +161,7 @@ export default async function DetalleContenedor({
             estado={contenedor.estado}
             stockGeneradoEn={contenedor.stock_generado_en}
             creditoDias={contenedor.credito_dias}
+            fechaEstimadaLlegada={contenedor.fecha_estimada_llegada ?? null}
             soloLectura={!verDinero}
           />
           <div className="rounded-xl border border-zinc-200 bg-white p-4">
