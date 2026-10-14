@@ -104,6 +104,52 @@ export async function sincronizarLoteStock(ids: string[]) {
   }
 }
 
+/** "Revisar contra Mercado Libre": cuántas publicaciones tiene ML y cuántas el CRM, y cuáles faltan. */
+export async function compararPublicacionesMl() {
+  if (!(await soloDueno())) return { error: "Solo el dueño puede hacer esto.", enMl: 0, enCrm: 0, faltantes: [] as string[], sobrantes: [] as string[] };
+  try {
+    const { compararConMl } = await import("@/lib/mercadolibre-stock");
+    return { error: null, ...(await compararConMl()) };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "No se pudo comparar.", enMl: 0, enCrm: 0, faltantes: [] as string[], sobrantes: [] as string[] };
+  }
+}
+
+/** Trae (o vuelve a traer) publicaciones concretas de ML, de 20 en 20, con pausa para no pasarse de la cuota. */
+export async function traerPublicacionesMl(ids: string[]) {
+  if (!(await soloDueno())) return { error: "Solo el dueño puede hacer esto.", traidas: 0, fallidas: [] as string[] };
+  const { sincronizarLotePublicaciones } = await import("@/lib/mercadolibre-stock");
+  const lista = Array.from(new Set(ids.map((i) => i.trim().toUpperCase()).filter(Boolean))).slice(0, 60);
+  let traidas = 0;
+  const fallidas: string[] = [];
+  let error: string | null = null;
+  for (let i = 0; i < lista.length; i += 20) {
+    const lote = lista.slice(i, i + 20);
+    try {
+      const r = await sincronizarLotePublicaciones(lote);
+      traidas += lote.length - r.fallidos.length;
+      fallidas.push(...r.fallidos);
+    } catch (e) {
+      fallidas.push(...lote);
+      error = e instanceof Error ? e.message : "Falló un lote.";
+    }
+    if (i + 20 < lista.length) await new Promise((r) => setTimeout(r, 400));
+  }
+  revalidarLigas();
+  return { error, traidas, fallidas };
+}
+
+/** Buscar una publicación en Mercado Libre por nombre o SKU (para traerla si falta en la copia). */
+export async function buscarPublicacionMl(texto: string) {
+  if (!(await soloDueno())) return { error: "Solo el dueño puede hacer esto.", resultados: [] as import("@/lib/mercadolibre-stock").PublicacionEncontradaMl[] };
+  try {
+    const { buscarPublicacionesEnMl } = await import("@/lib/mercadolibre-stock");
+    return { error: null, resultados: await buscarPublicacionesEnMl(texto) };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "No se pudo buscar.", resultados: [] as import("@/lib/mercadolibre-stock").PublicacionEncontradaMl[] };
+  }
+}
+
 export async function terminarSyncStock(inicioIso?: string, conservarNoVistas = false) {
   if (!(await soloDueno())) return { error: "Solo el dueño puede hacer esto." };
   const { terminarSyncPublicaciones } = await import("@/lib/mercadolibre-stock");

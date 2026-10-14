@@ -173,7 +173,15 @@ export function CapturarEnvioMl({ bodegas }: { bodegas: BodegaOpcion[] }) {
                       <p className="text-xs text-zinc-400">
                         Código ML <span className="font-mono">{l.inventoryId}</span>
                         {l.sellerSku && <> · SKU ML {l.sellerSku}</>}
-                        {!l.tituloMl && <span className="text-amber-700"> · no está en tus publicaciones sincronizadas (dale “Actualizar” en Publicaciones)</span>}
+                        {!l.tituloMl && (
+                          <span className="text-amber-700">
+                            {" "}
+                            · no está en la copia de publicaciones del CRM:{" "}
+                            <Link href="/mercadolibre/skus#faltantes" target="_blank" className="underline">
+                              revisar contra Mercado Libre y traerla
+                            </Link>
+                          </span>
+                        )}
                       </p>
                       <p className="text-xs">
                         {l.skuCrm ? (

@@ -23,6 +23,7 @@ import { formatoFechaHoraMx } from "@/lib/fechas-mx";
 import { formatoPesos } from "@/lib/formato";
 import type { ConfiguracionStock, MovimientoStock } from "@/lib/tipos";
 import { BotonSincronizarStock } from "./boton-sincronizar-stock";
+import { RevisarFaltantes } from "./revisar-faltantes";
 import { LigaProducto } from "./liga-producto";
 import { AvisoSkusPendientes } from "../skus/aviso-skus";
 
@@ -298,6 +299,7 @@ export default async function StockMercadoLibre({
           {sync?.ultima_sync_stock && <p className="text-[11px] text-zinc-400">actualizado {formatoFechaHoraMx(sync.ultima_sync_stock)} · se actualiza solo cada hora</p>}
         </div>
       </div>
+      <RevisarFaltantes conectado={Boolean(conexion)} />
 
       {!conexion && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">

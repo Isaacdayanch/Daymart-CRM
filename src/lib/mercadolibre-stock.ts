@@ -180,12 +180,13 @@ function skuDe(campo: string | null | undefined, atributos: { id?: string; value
   return (campo && campo.trim()) || (attr && attr.trim()) || null;
 }
 
-/** Todos los IDs de publicaciones del vendedor (activas, pausadas, etc.). */
-async function idsPublicaciones(mlUserId: number) {
+/** Recorre la búsqueda de publicaciones del vendedor (scan) con un filtro opcional. */
+async function escanearIds(mlUserId: number, status?: string) {
   const ids: string[] = [];
   let scrollId: string | null = null;
-  for (let vuelta = 0; vuelta < 200; vuelta++) {
+  for (let vuelta = 0; vuelta < 300; vuelta++) {
     const params = new URLSearchParams({ search_type: "scan", limit: "100" });
+    if (status) params.set("status", status);
     if (scrollId) params.set("scroll_id", scrollId);
     const r = await mercadolibreGet<{ results?: string[]; scroll_id?: string }>(`/users/${mlUserId}/items/search?${params}`);
     const lote = r.results ?? [];
@@ -193,7 +194,24 @@ async function idsPublicaciones(mlUserId: number) {
     if (!lote.length || !r.scroll_id) break;
     scrollId = r.scroll_id;
   }
-  return Array.from(new Set(ids));
+  return ids;
+}
+
+/** Todos los IDs de publicaciones del vendedor. Se junta la búsqueda sin
+ * filtro con una por cada estado (activas, pausadas, finalizadas): así no
+ * depende de qué devuelve Mercado Libre "por defecto" (14 oct; Isaac:
+ * "muchísimas publicaciones no las veo en el CRM"). */
+async function idsPublicaciones(mlUserId: number) {
+  const todos = new Set<string>();
+  for (const status of [undefined, "active", "paused", "closed"]) {
+    try {
+      for (const id of await escanearIds(mlUserId, status)) todos.add(id);
+    } catch (e) {
+      // Un filtro que ML rechace no debe tumbar la lista completa.
+      if (status === undefined) throw e;
+    }
+  }
+  return Array.from(todos);
 }
 
 async function stockFull(inventoryId: string, cache: Map<string, StockFullApi | null>) {
@@ -379,17 +397,23 @@ export async function sincronizarLotePublicaciones(ids: string[]): Promise<{ ren
     }
 
     // Solo se reemplazan las publicaciones que SÍ se leyeron; las fallidas
-    // conservan su copia anterior.
-    const { error: errorBorrar } = await supabase.from("mercadolibre_publicaciones").delete().in("item_id", Array.from(leidos));
+    // conservan su copia anterior. Antes de borrar se respalda lo que había:
+    // si el insert nuevo falla, se restaura (antes, un insert fallido dejaba
+    // las publicaciones borradas y "desaparecían" del sistema).
+    const idsLeidos = Array.from(leidos);
+    const { data: respaldo } = await supabase.from("mercadolibre_publicaciones").select("*").in("item_id", idsLeidos).returns<Record<string, unknown>[]>();
+    const { error: errorBorrar } = await supabase.from("mercadolibre_publicaciones").delete().in("item_id", idsLeidos);
     if (errorBorrar) throw new Error(errorBorrar.message);
     if (filas.length) {
-      const { error } = await supabase.from("mercadolibre_publicaciones").insert(filas);
-      if (error) {
+      let { error } = await supabase.from("mercadolibre_publicaciones").insert(filas);
+      if (error && COLUMNAS_0040.some((c) => error!.message.includes(c))) {
         // SQL 0040 sin correr: se reintenta sin las columnas nuevas.
-        if (!COLUMNAS_0040.some((c) => error.message.includes(c))) throw new Error(error.message);
         const sinNuevas = filas.map((f) => Object.fromEntries(Object.entries(f).filter(([k]) => !COLUMNAS_0040.includes(k))));
-        const { error: error2 } = await supabase.from("mercadolibre_publicaciones").insert(sinNuevas);
-        if (error2) throw new Error(error2.message);
+        ({ error } = await supabase.from("mercadolibre_publicaciones").insert(sinNuevas));
+      }
+      if (error) {
+        if (respaldo?.length) await supabase.from("mercadolibre_publicaciones").insert(respaldo);
+        throw new Error(`No se pudo guardar el lote (se restauró la copia anterior): ${error.message}`);
       }
     }
     // Foto para el Análisis de venta (migración 0046). Si falla (ej. SQL sin
@@ -554,6 +578,75 @@ export async function avanzarSyncPublicaciones(opciones: { presupuestoMs?: numbe
     return { estado: "termino" as const, procesadas: cursor.ids.length, total: cursor.ids.length };
   }
   return { estado: "avanzo" as const, procesadas: Math.min(cursor.indice, cursor.ids.length), total: cursor.ids.length };
+}
+
+/** Qué publicaciones tiene Mercado Libre que el CRM no (y al revés). Para
+ * el botón "Revisar contra Mercado Libre" (14 oct). */
+export async function compararConMl(): Promise<{ enMl: number; enCrm: number; faltantes: string[]; sobrantes: string[] }> {
+  const supabase = createServiceClient();
+  const ids = await listarIdsPublicaciones();
+  const { data } = await supabase.from("mercadolibre_publicaciones").select("item_id").returns<{ item_id: string }[]>();
+  const locales = new Set((data ?? []).map((d) => d.item_id));
+  const enMl = new Set(ids);
+  return {
+    enMl: enMl.size,
+    enCrm: locales.size,
+    faltantes: ids.filter((id) => !locales.has(id)),
+    sobrantes: Array.from(locales).filter((id) => !enMl.has(id)),
+  };
+}
+
+export interface PublicacionEncontradaMl {
+  item_id: string;
+  titulo: string | null;
+  estado: string | null;
+  precio: number | null;
+  imagen_url: string | null;
+  seller_sku: string | null;
+  /** Ya está en la copia local del CRM. */
+  enCopia: boolean;
+}
+
+/** Busca publicaciones del vendedor en Mercado Libre por nombre o SKU
+ * (búsqueda pública del sitio filtrada por vendedor, que solo lista las
+ * activas, + búsqueda del vendedor por SKU). Dice cuáles ya están en la
+ * copia local, para traer las que falten. */
+export async function buscarPublicacionesEnMl(texto: string): Promise<PublicacionEncontradaMl[]> {
+  const conexion = await obtenerConexion();
+  if (!conexion) throw new Error("Mercado Libre no está conectado.");
+  const q = texto.trim();
+  if (!q) return [];
+  const supabase = createServiceClient();
+  const encontrados = new Map<string, PublicacionEncontradaMl>();
+  // 1) Búsqueda pública del sitio por vendedor (solo activas).
+  try {
+    const r = await mercadolibreGet<{ results?: { id: string; title?: string; price?: number; thumbnail?: string; status?: string }[] }>(
+      `/sites/MLM/search?seller_id=${conexion.ml_user_id}&q=${encodeURIComponent(q)}&limit=50`,
+    );
+    for (const it of r.results ?? []) {
+      encontrados.set(it.id, { item_id: it.id, titulo: it.title ?? null, estado: it.status ?? "active", precio: it.price ?? null, imagen_url: it.thumbnail ?? null, seller_sku: null, enCopia: false });
+    }
+  } catch {
+    // si la búsqueda pública falla, queda la de SKU
+  }
+  // 2) Búsqueda del vendedor por SKU (cualquier estado).
+  try {
+    const r = await mercadolibreGet<{ results?: string[] }>(`/users/${conexion.ml_user_id}/items/search?seller_sku=${encodeURIComponent(q)}&limit=50`);
+    const ids = (r.results ?? []).filter((id) => !encontrados.has(id));
+    if (ids.length) {
+      const detalle = await mercadolibreGet<{ code: number; body: ItemApi }[]>(`/items?ids=${ids.slice(0, 20).join(",")}&attributes=id,title,price,status,thumbnail,seller_custom_field,attributes`);
+      for (const d of detalle) {
+        if (d.code !== 200 || !d.body) continue;
+        encontrados.set(d.body.id, { item_id: d.body.id, titulo: d.body.title ?? null, estado: d.body.status ?? null, precio: d.body.price ?? null, imagen_url: d.body.thumbnail ?? null, seller_sku: skuDe(d.body.seller_custom_field, d.body.attributes), enCopia: false });
+      }
+    }
+  } catch {
+    // sin resultados por SKU
+  }
+  if (!encontrados.size) return [];
+  const { data } = await supabase.from("mercadolibre_publicaciones").select("item_id").in("item_id", Array.from(encontrados.keys())).returns<{ item_id: string }[]>();
+  const enCopia = new Set((data ?? []).map((d) => d.item_id));
+  return Array.from(encontrados.values()).map((e) => ({ ...e, enCopia: enCopia.has(e.item_id) }));
 }
 
 export async function obtenerPublicaciones(): Promise<PublicacionMl[]> {

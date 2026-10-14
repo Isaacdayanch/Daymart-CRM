@@ -7,6 +7,7 @@ import { obtenerIgnorados, obtenerPublicaciones, obtenerVinculos, type LigaIgnor
 import type { ConfiguracionStock, MovimientoStock } from "@/lib/tipos";
 import { TablaSkus } from "./tabla-skus";
 import { BotonSincronizarStock } from "../stock/boton-sincronizar-stock";
+import { RevisarFaltantes } from "../stock/revisar-faltantes";
 import { obtenerConexion } from "@/lib/mercadolibre-auth";
 import { obtenerEstadoSync } from "@/lib/mercadolibre-ordenes";
 import { formatoFechaHoraMx } from "@/lib/fechas-mx";
@@ -64,6 +65,7 @@ export default async function LigarSkus({ searchParams }: { searchParams: Promis
         </p>
         <BotonSincronizarStock conectado={Boolean(conexion)} />
       </div>
+      <RevisarFaltantes conectado={Boolean(conexion)} />
       {error && <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
       <TablaSkus grupos={grupos} sinSku={sinSku} productos={productos} pendientes={pendientes} ignorados={ignorados} qInicial={q ?? ""} />
     </div>
