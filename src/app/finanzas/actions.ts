@@ -6,6 +6,8 @@ import { texto } from "@/lib/form-helpers";
 import type { EnvioChina, Moneda, MovimientoDeudaProveedor, MovimientoFinanciero, TipoCuentaFinanciera, TipoMovimientoFinanciero } from "@/lib/tipos";
 import { saldoCuenta } from "@/lib/calculos-financieras";
 import { CATEGORIA_AJUSTE } from "@/lib/estado-cuenta";
+import { comisionSospechosa, mensajeComisionSospechosa } from "@/lib/comisiones";
+import { formatoPesos } from "@/lib/formato";
 import { recalcularCostoEntradasContenedor } from "@/app/contenedores/[id]/actions";
 
 export async function agregarCuenta(formData: FormData) {
@@ -125,6 +127,14 @@ function revalidarFinanzas() {
   revalidatePath("/");
 }
 
+/** Candado contra montos al revés (caso real del 15 oct: Isaac puso la
+ * comisión de $4,200 en el campo del neto y el sistema guardó la
+ * transferencia por $4,200 y la comisión por $295,800). Una comisión que
+ * se come más de la mitad del monto no se guarda: se regresa el aviso. */
+function errorComisionSospechosa(comision: number, monto: number): string | null {
+  return comisionSospechosa(comision, monto) ? mensajeComisionSospechosa(comision, monto, formatoPesos) : null;
+}
+
 export async function agregarCategoria(formData: FormData) {
   const supabase = await createClient();
   const nombre = texto(formData, "nombre");
@@ -227,6 +237,10 @@ export async function registrarMovimiento(formData: FormData) {
   }
   if (tieneComision && (!Number.isFinite(montoNeto) || montoNeto <= 0 || montoNeto >= monto)) {
     return { error: "El monto neto debe ser mayor a cero y menor al monto que se debitó." };
+  }
+  if (tieneComision) {
+    const aviso = errorComisionSospechosa(monto - montoNeto, monto);
+    if (aviso) return { error: aviso };
   }
 
   const { data: principal, error: errorPrincipal } = await supabase
@@ -501,6 +515,10 @@ export async function registrarPagoFactura(formData: FormData) {
   }
   if (tieneComision && (!Number.isFinite(montoNeto) || montoNeto <= 0 || montoNeto >= monto)) {
     return { error: "El monto neto debe ser mayor a cero y menor al monto que se debitó." };
+  }
+  if (tieneComision) {
+    const aviso = errorComisionSospechosa(monto - montoNeto, monto);
+    if (aviso) return { error: aviso };
   }
 
   const { data: factura } = await supabase
@@ -950,8 +968,13 @@ export async function registrarEnvioCuentaPuente(formData: FormData) {
   if (!proveedor) return { error: "Elige a qué proveedor va." };
   if (!Number.isFinite(montoPesos) || montoPesos <= 0) return { error: "El monto en pesos no es válido." };
   if (!Number.isFinite(montoAbono) || montoAbono <= 0) return { error: "El monto a abonar no es válido." };
+  if (comisionPesos < 0) return { error: "La comisión no es válida." };
 
   const totalPesos = montoPesos + comisionPesos;
+  {
+    const aviso = errorComisionSospechosa(comisionPesos, totalPesos);
+    if (aviso) return { error: aviso };
+  }
   const fechaCampo = formData.get("fecha");
   const fecha =
     typeof fechaCampo === "string" && fechaCampo
@@ -1115,6 +1138,10 @@ export async function mandarDineroChina(formData: FormData) {
   const comisionPesos = comisionDe(formData, montoPesos);
   if (comisionPesos === null && via === "DIRECTO") return { error: "Si es directo, pon la comisión (o 0). “La sé después” solo aplica cuando va a través de alguien." };
   if (comisionPesos !== null && (comisionPesos < 0 || comisionPesos >= montoPesos)) return { error: "La comisión no es válida." };
+  if (comisionPesos !== null) {
+    const aviso = errorComisionSospechosa(comisionPesos, montoPesos);
+    if (aviso) return { error: aviso };
+  }
 
   let movimientoTransferenciaId: string | null = null;
   if (via === "PUENTE") {
@@ -1187,6 +1214,10 @@ export async function completarEnvioChina(envioId: string, formData: FormData) {
   if (envio.estado !== "PENDIENTE") return { error: "Este envío ya se completó." };
   const comisionPesos = comisionDe(formData, envio.monto_pesos);
   if (comisionPesos === null) return { error: "Pon la comisión (puede ser 0)." };
+  {
+    const aviso = errorComisionSospechosa(comisionPesos, envio.monto_pesos);
+    if (aviso) return { error: aviso };
+  }
   const dolaresCampo = Number(formData.get("monto_dolares"));
   const montoDolares = Number.isFinite(dolaresCampo) && dolaresCampo > 0 ? dolaresCampo : envio.monto_dolares;
   const fechaCampo = texto(formData, "fecha");
@@ -1226,6 +1257,10 @@ export async function completarComisionMovimiento(movimientoId: string, formData
   const comision = comisionDe(formData, m.monto);
   if (comision === null) return { error: "Pon la comisión." };
   if (comision < 0 || comision >= m.monto) return { error: "La comisión no es válida." };
+  {
+    const aviso = errorComisionSospechosa(comision, m.monto);
+    if (aviso) return { error: aviso };
+  }
   const neto = Math.round((m.monto - comision) * 100) / 100;
 
   if (comision > 0) {
@@ -1250,6 +1285,68 @@ export async function completarComisionMovimiento(movimientoId: string, formData
   revalidarFinanzas();
   revalidatePath("/finanzas/facturas");
   return { error: null };
+}
+
+/** Intercambia los montos de una comisión y su movimiento principal cuando
+ * quedaron al revés (caso real del 15 oct: transferencia por $4,200 y
+ * comisión por $295,800). Es la MISMA transacción en dos renglones, así que
+ * se corrige en una sola operación: el principal toma el monto de la
+ * comisión y la comisión el del principal. Si el principal es un pago de
+ * factura y el abono a la factura era el neto (igual al principal), el abono
+ * también se corrige; si era el bruto (neto + comisión) se deja igual. Solo
+ * aplica a movimientos sueltos o de pago de factura — los de abonos de
+ * contenedor, Proveedores, envíos a China o cobros de venta se corrigen
+ * desde su pantalla, porque ahí hay tipo de cambio y deuda de por medio. */
+export async function intercambiarMontosComision(comisionId: string) {
+  const supabase = await createClient();
+  const { data: comision } = await supabase.from("movimientos_financieros").select("*").eq("id", comisionId).maybeSingle<MovimientoFinanciero>();
+  if (!comision) return { error: "No se encontró la comisión." };
+  if (comision.referencia_tipo !== "COMISION" || !comision.referencia_id) return { error: "Este movimiento no es la comisión de otro movimiento." };
+  const { data: principal } = await supabase.from("movimientos_financieros").select("*").eq("id", comision.referencia_id).maybeSingle<MovimientoFinanciero>();
+  if (!principal) return { error: "No se encontró el movimiento al que pertenece esta comisión." };
+
+  const [{ count: enMercancia }, { count: enDeuda }, { count: enCobro }, { count: enEnvioTransfer }, { count: enEnvioSalida }] = await Promise.all([
+    supabase.from("pagos_mercancia").select("id", { count: "exact", head: true }).eq("movimiento_financiero_id", principal.id),
+    supabase.from("movimientos_deuda_proveedor").select("id", { count: "exact", head: true }).eq("movimiento_financiero_id", principal.id),
+    supabase.from("cobros_venta").select("id", { count: "exact", head: true }).eq("movimiento_financiero_id", principal.id),
+    supabase.from("envios_china").select("id", { count: "exact", head: true }).eq("movimiento_transferencia_id", principal.id),
+    supabase.from("envios_china").select("id", { count: "exact", head: true }).eq("movimiento_envio_id", principal.id),
+  ]);
+  if (enMercancia || enDeuda || enCobro || enEnvioTransfer || enEnvioSalida) {
+    return { error: "Este movimiento viene de un abono de contenedor, de Proveedores, de un pago a China o de un cobro de venta — corrígelo desde esa pantalla." };
+  }
+
+  const montoPrincipalViejo = principal.monto;
+  const montoComisionVieja = comision.monto;
+  const { error: errorPrincipal } = await supabase.from("movimientos_financieros").update({ monto: montoComisionVieja }).eq("id", principal.id);
+  if (errorPrincipal) return { error: errorPrincipal.message };
+  const { error: errorComision } = await supabase.from("movimientos_financieros").update({ monto: montoPrincipalViejo }).eq("id", comision.id);
+  if (errorComision) {
+    // Se regresa el principal para no dejar los dos con el mismo monto.
+    await supabase.from("movimientos_financieros").update({ monto: montoPrincipalViejo }).eq("id", principal.id);
+    return { error: errorComision.message };
+  }
+
+  // Pago de factura ligado: si el abono era el neto, ahora es el neto nuevo.
+  const { data: pago } = await supabase
+    .from("pagos_factura")
+    .select("id, monto")
+    .eq("movimiento_financiero_id", principal.id)
+    .maybeSingle<{ id: string; monto: number }>();
+  let notaFactura: string | null = null;
+  if (pago) {
+    if (Math.abs(pago.monto - montoPrincipalViejo) < 0.01) {
+      const { error: errorPago } = await supabase.from("pagos_factura").update({ monto: montoComisionVieja }).eq("id", pago.id);
+      if (errorPago) return { error: `Se intercambiaron los montos, pero no se pudo corregir el abono a la factura: ${errorPago.message}` };
+      notaFactura = `El abono a la factura también se corrigió a ${formatoPesos(montoComisionVieja)}.`;
+    } else {
+      notaFactura = `El abono a la factura se dejó en ${formatoPesos(pago.monto)} (era el monto completo, no cambia).`;
+    }
+  }
+
+  revalidarFinanzas();
+  revalidatePath("/finanzas/facturas");
+  return { error: null, nota: notaFactura };
 }
 
 /** Un abono a un proveedor sí es dinero real: genera su salida en Finanzas

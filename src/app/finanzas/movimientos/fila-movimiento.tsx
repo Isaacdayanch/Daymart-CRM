@@ -6,7 +6,7 @@ import { formatoDolares, formatoPesos } from "@/lib/formato";
 import { fechaTextoMx } from "@/lib/fechas-mx";
 import { CATEGORIA_AJUSTE } from "@/lib/estado-cuenta";
 import type { CategoriaFinanciera, CuentaFinanciera, MovimientoFinanciero } from "@/lib/tipos";
-import { eliminarMovimiento } from "../actions";
+import { eliminarMovimiento, intercambiarMontosComision } from "../actions";
 import { FormularioComision } from "../formulario-comision";
 import { FormularioEditarMovimiento } from "./formulario-editar-movimiento";
 
@@ -31,6 +31,8 @@ export function FilaMovimiento({
   cuentaDestinoNombre,
   categoriaNombre,
   origenLigado,
+  principal = null,
+  comisionLigada = null,
 }: {
   movimiento: MovimientoFinanciero;
   cuentas: CuentaFinanciera[];
@@ -40,10 +42,21 @@ export function FilaMovimiento({
   categoriaNombre: string;
   /** Si viene de otra pantalla (pago de factura, abono a proveedor…), de dónde. */
   origenLigado: string | null;
+  /** Si ESTE renglón es la comisión de otro movimiento, ese movimiento. */
+  principal?: MovimientoFinanciero | null;
+  /** Si este movimiento tiene una comisión guardada aparte, esa comisión. */
+  comisionLigada?: MovimientoFinanciero | null;
 }) {
   const router = useRouter();
   const [editando, setEditando] = useState(false);
   const [comision, setComision] = useState(false);
+  const [intercambiando, setIntercambiando] = useState(false);
+  const [errorIntercambio, setErrorIntercambio] = useState<string | null>(null);
+  const formato = (n: number) => (m.moneda === "USD" ? formatoDolares(n) : formatoPesos(n));
+  // Comisión más grande que el movimiento al que pertenece = casi seguro
+  // quedaron al revés (caso real del 15 oct). Se ofrece intercambiarlos aquí
+  // mismo, en una sola operación, en vez de editar dos renglones a mano.
+  const alReves = Boolean(principal && m.monto > principal.monto);
   // Día y mes en calendario de Ciudad de México (igual que el estado de cuenta).
   const [, mesTexto, diaTexto] = fechaTextoMx(new Date(m.fecha)).split("-");
   const esEntrada = m.tipo === "ENTRADA";
@@ -110,7 +123,40 @@ export function FilaMovimiento({
             )}
             {categoriaNombre !== "—" && m.contraparte && <> · {categoriaNombre}</>}
             {origenLigado && <> · viene de {origenLigado}, se corrige desde ahí</>}
+            {principal && (
+              <>
+                {" · "}comisión de la {ETIQUETA_TIPO[principal.tipo]?.toLowerCase() ?? "transacción"} de {formato(principal.monto)}
+              </>
+            )}
+            {comisionLigada && <> · + comisión {formato(comisionLigada.monto)} aparte</>}
           </p>
+          {alReves && principal && (
+            <div className="mt-2 rounded-lg border border-red-200 bg-red-50 p-2.5 text-xs text-red-800">
+              <p>
+                Esta comisión ({formato(m.monto)}) es más grande que el movimiento al que pertenece ({formato(principal.monto)}). Casi seguro quedaron al revés.
+              </p>
+              <button
+                type="button"
+                disabled={intercambiando}
+                onClick={async () => {
+                  if (!confirm(`¿Intercambiar los montos? El movimiento quedará en ${formato(m.monto)} y la comisión en ${formato(principal.monto)}.`)) return;
+                  setIntercambiando(true);
+                  setErrorIntercambio(null);
+                  const r = await intercambiarMontosComision(m.id);
+                  setIntercambiando(false);
+                  if (r?.error) setErrorIntercambio(r.error);
+                  else {
+                    if (r?.nota) alert(r.nota);
+                    router.refresh();
+                  }
+                }}
+                className="mt-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                {intercambiando ? "Corrigiendo…" : `Intercambiar: movimiento ${formato(m.monto)} · comisión ${formato(principal.monto)}`}
+              </button>
+              {errorIntercambio && <p className="mt-1.5">{errorIntercambio}</p>}
+            </div>
+          )}
         </div>
 
         {/* Monto + acciones */}

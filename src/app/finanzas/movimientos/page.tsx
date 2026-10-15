@@ -59,6 +59,13 @@ export default async function MovimientosFinanzas({ searchParams }: { searchPara
   anotar(cobrosVenta, "un cobro de venta");
   anotar((enviosChina ?? []).map((e) => ({ movimiento_financiero_id: e.movimiento_transferencia_id })), "un pago a proveedores pendiente");
 
+  // Comisiones ligadas: una comisión (referencia_tipo COMISION) apunta a su
+  // movimiento principal. Se pasan los dos lados a la fila para decir "comisión
+  // de la transferencia de $X" y, si quedaron al revés, ofrecer intercambiarlos.
+  const porId = new Map(todos.map((m) => [m.id, m]));
+  const comisionPorPrincipal = new Map<string, MovimientoFinanciero>();
+  for (const m of todos) if (m.referencia_tipo === "COMISION" && m.referencia_id) comisionPorPrincipal.set(m.referencia_id, m);
+
   // Agrupado por mes, para que el ojo encuentre rápido dónde va.
   const porMes = new Map<string, MovimientoFinanciero[]>();
   for (const m of listaMovimientos) {
@@ -114,6 +121,8 @@ export default async function MovimientosFinanzas({ searchParams }: { searchPara
                   cuentaDestinoNombre={cuentasPorId.get(m.cuenta_destino_id ?? "") ?? "—"}
                   categoriaNombre={categoriasPorId.get(m.categoria_id ?? "") ?? "—"}
                   origenLigado={origenLigado.get(m.id) ?? null}
+                  principal={m.referencia_tipo === "COMISION" && m.referencia_id ? (porId.get(m.referencia_id) ?? null) : null}
+                  comisionLigada={comisionPorPrincipal.get(m.id) ?? null}
                 />
               ))}
             </ul>

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { CampoMonto } from "@/components/campo-monto";
 import { formatoPesos } from "@/lib/formato";
+import { comisionSospechosa, mensajeComisionSospechosa } from "@/lib/comisiones";
 import { completarComisionMovimiento } from "./actions";
 
 /** Mini formulario para ponerle la comisión a un movimiento marcado "la sé
@@ -20,6 +21,7 @@ export function FormularioComision({ movimientoId, monto, alTerminar }: { movimi
   const [enviando, setEnviando] = useState(false);
   const v = Number(valor) || 0;
   const comision = modo === "PORCENTAJE" ? Math.round(monto * v) / 100 : modo === "MONTO" ? v : monto - v;
+  const sospechosa = v > 0 && comisionSospechosa(comision, monto);
 
   return (
     <form
@@ -79,11 +81,13 @@ export function FormularioComision({ movimientoId, monto, alTerminar }: { movimi
           </button>
         )}
       </div>
-      {valor && comision >= 0 && comision < monto && (
+      {valor && sospechosa ? (
+        <p className="w-full rounded-lg border border-red-200 bg-red-50 p-2 text-[11px] text-red-700">{mensajeComisionSospechosa(comision, monto, formatoPesos)}</p>
+      ) : valor && comision >= 0 && comision < monto ? (
         <p className="w-full text-[11px] text-zinc-500">
           Comisión {formatoPesos(comision)}: esta transacción queda en {formatoPesos(monto - comision)} y la comisión se anota aparte en “Comisiones”, ligada a ella.
         </p>
-      )}
+      ) : null}
       {error && <p className="w-full text-xs text-red-600">{error}</p>}
     </form>
   );

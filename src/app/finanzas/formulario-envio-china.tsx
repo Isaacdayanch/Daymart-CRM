@@ -7,6 +7,7 @@ import { CampoMonto } from "@/components/campo-monto";
 import { CampoSugerencias } from "@/components/campo-sugerencias";
 import { Selector } from "@/components/selector";
 import { formatoFecha, formatoPesos } from "@/lib/formato";
+import { comisionSospechosa, mensajeComisionSospechosa } from "@/lib/comisiones";
 import type { CuentaFinanciera, Moneda } from "@/lib/tipos";
 import { claveProveedor, textoUltimoPago, type UltimosPagos } from "@/lib/ultimos-pagos";
 import { mandarDineroChina } from "./actions";
@@ -223,14 +224,16 @@ export function FormularioEnvioChina({ cuentas, datos, facturas, cuentaInicial }
           )}
           {(modo === "MONTO" || modo === "NETO") && <CampoMonto name="comision_valor" value={valor} onChange={setValor} className="block w-40 rounded-lg border border-zinc-300 px-3 py-1.5 text-sm" />}
         </div>
-        <p className="mt-2 text-[11px] text-zinc-500">
+        <p className={`mt-2 text-[11px] ${modo !== "DESPUES" && comision !== null && comisionSospechosa(comision, montoNum) ? "rounded-lg border border-red-200 bg-red-50 p-2 text-red-700" : "text-zinc-500"}`}>
           {modo === "DESPUES"
             ? via === "PUENTE"
               ? "Hoy se registra la transferencia a la cuenta puente. Queda un aviso ámbar hasta que pongas la comisión del recibo."
               : "Si es directo, necesitas poner la comisión (o 0)."
-            : montoNum > 0 && comision !== null && comision >= 0 && comision < montoNum
-              ? `Salen ${formatoPesos(montoNum)}: al proveedor llegan ${formatoPesos(neto ?? 0)} y ${formatoPesos(comision)} de comisión se absorben al costo de la mercancía.`
-              : "Pon el monto y la comisión para ver el cálculo."}
+            : montoNum > 0 && comision !== null && comisionSospechosa(comision, montoNum)
+              ? mensajeComisionSospechosa(comision, montoNum, formatoPesos)
+              : montoNum > 0 && comision !== null && comision >= 0 && comision < montoNum
+                ? `Salen ${formatoPesos(montoNum)}: al proveedor llegan ${formatoPesos(neto ?? 0)} y ${formatoPesos(comision)} de comisión se absorben al costo de la mercancía.`
+                : "Pon el monto y la comisión para ver el cálculo."}
         </p>
       </div>
 

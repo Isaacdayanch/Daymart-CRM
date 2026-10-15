@@ -7,6 +7,7 @@ import { CampoMonto } from "@/components/campo-monto";
 import { Selector } from "@/components/selector";
 import { SelectorCategoria } from "./selector-categoria";
 import { formatoPesos } from "@/lib/formato";
+import { comisionSospechosa, mensajeComisionSospechosa } from "@/lib/comisiones";
 import type { CategoriaFinanciera, CuentaFinanciera, TipoMovimientoFinanciero } from "@/lib/tipos";
 import { registrarMovimiento, registrarPagoFactura } from "./actions";
 import { FormularioEnvioChina, type DatosChina } from "./formulario-envio-china";
@@ -291,9 +292,11 @@ export function FormularioMovimiento({
                     <CampoMonto value={netoManual} onChange={setNetoManual} className={claseCampo} />
                   </div>
                 )}
-                <p className="text-[11px] text-zinc-500">
+                <p className={`text-[11px] ${modoComision !== "DESPUES" && comisionSospechosa(comisionCalculada, montoNum) ? "rounded-lg border border-red-200 bg-red-50 p-2 text-red-700" : "text-zinc-500"}`}>
                   {modoComision === "DESPUES" ? (
                     <>Se registra por el monto completo y queda un aviso ámbar “falta registrar la comisión”. Cuando la sepas, la pones ahí y el sistema separa la comisión sola.</>
+                  ) : montoNum > 0 && comisionSospechosa(comisionCalculada, montoNum) ? (
+                    mensajeComisionSospechosa(comisionCalculada, montoNum, formatoPesos)
                   ) : montoNum > 0 && comisionCalculada > 0 && comisionCalculada < montoNum ? (
                     <>
                       Se debitan <strong>{formatoPesos(montoNum)}</strong>: llegan <strong>{formatoPesos(netoCalculado)}</strong> y <strong>{formatoPesos(comisionCalculada)}</strong> se guardan solos como gasto en “Comisiones”.

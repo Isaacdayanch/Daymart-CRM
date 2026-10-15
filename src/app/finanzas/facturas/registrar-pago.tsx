@@ -7,6 +7,7 @@ import { CampoMonto } from "@/components/campo-monto";
 import { Selector } from "@/components/selector";
 import { SelectorCategoria } from "../selector-categoria";
 import { formatoDolares, formatoFecha, formatoPesos } from "@/lib/formato";
+import { comisionSospechosa, mensajeComisionSospechosa } from "@/lib/comisiones";
 import type { CategoriaFinanciera, CuentaFinanciera } from "@/lib/tipos";
 import { claveProveedor, textoUltimoPago, type UltimosPagos } from "@/lib/ultimos-pagos";
 import { registrarPagoFactura } from "../actions";
@@ -45,10 +46,26 @@ export function RegistrarPago({
   const cuentaPropuesta = sugerido ? (sugerido.cuentaId ?? "") : (cuentas[0]?.id ?? "");
   const puentePropuesta = sugerido?.cuentaPuenteId ?? cuentas[1]?.id ?? cuentas[0]?.id ?? "";
   const [tieneComision, setTieneComision] = useState(false);
+  // La comisión se captura como en el registro de movimientos: porcentaje,
+  // monto de la comisión o neto que llegó. Al servidor siempre viaja el neto
+  // (monto − comisión). Antes aquí solo se podía poner el neto, e Isaac puso
+  // la comisión en ese campo (15 oct): la transferencia se guardó por $4,200
+  // y la comisión por $295,800. Ahora se ve en vivo qué se va a guardar y, si
+  // la comisión se come más de la mitad, se avisa en rojo y no se guarda.
+  const [monto, setMonto] = useState("");
+  const [modoComision, setModoComision] = useState<"PORCENTAJE" | "MONTO" | "NETO">("MONTO");
+  const [valorComision, setValorComision] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
   const [version, setVersion] = useState(0);
   const hoyTexto = new Date().toISOString().slice(0, 10);
+  const montoNum = Number(monto) || 0;
+  const valorNum = Number(valorComision) || 0;
+  const comisionCalculada =
+    modoComision === "PORCENTAJE" ? Math.round(montoNum * valorNum) / 100 : modoComision === "MONTO" ? valorNum : montoNum - valorNum;
+  const netoCalculado = Math.round((montoNum - comisionCalculada) * 100) / 100;
+  const comisionLista = montoNum > 0 && comisionCalculada > 0 && comisionCalculada < montoNum;
+  const sospechosa = comisionLista && comisionSospechosa(comisionCalculada, montoNum);
 
   if (facturas.length === 0) return null;
 
@@ -78,11 +95,22 @@ export function RegistrarPago({
           setEnviando(true);
           setError(null);
           formData.set("tiene_comision", tieneComision ? "true" : "false");
+          if (tieneComision) {
+            if (!comisionLista) {
+              setEnviando(false);
+              setError("Pon la comisión (o el neto que llegó) para registrar el pago.");
+              return;
+            }
+            formData.set("monto_neto", String(netoCalculado));
+          }
           const resultado = await registrarPagoFactura(formData);
           setEnviando(false);
           if (resultado?.error) setError(resultado.error);
           else {
             setVersion((v) => v + 1);
+            setMonto("");
+            setValorComision("");
+            setTieneComision(false);
             router.refresh();
           }
         }}
@@ -116,7 +144,7 @@ export function RegistrarPago({
           <label className="block text-xs font-medium text-zinc-500">
             {modo === "PUENTE" && tieneComision ? "Monto que se debitó" : "Monto que pagas"}
           </label>
-          <CampoMonto name="monto" required className={claseCampo} />
+          <CampoMonto name="monto" value={monto} onChange={setMonto} required className={claseCampo} />
         </div>
         <div>
           <label className="block text-xs font-medium text-zinc-500">Cuenta de origen</label>
@@ -173,12 +201,61 @@ export function RegistrarPago({
               ¿La cuenta puente te cobró comisión al depositar?
             </label>
             {tieneComision && (
-              <div className="mt-3">
-                <label className="block text-xs font-medium text-zinc-500">Monto neto que de verdad se abonó ahí</label>
-                <CampoMonto name="monto_neto" required className={claseCampo} />
-                <p className="mt-1 text-[11px] text-zinc-400">
-                  La diferencia se guarda sola como gasto en &ldquo;Comisiones&rdquo;.
-                </p>
+              <div className="mt-3 space-y-3">
+                <div className="flex overflow-hidden rounded-lg border border-zinc-300 text-xs">
+                  {(
+                    [
+                      ["MONTO", "Monto de la comisión"],
+                      ["PORCENTAJE", "Porcentaje"],
+                      ["NETO", "Neto que llegó"],
+                    ] as const
+                  ).map(([valor, etiqueta]) => (
+                    <button
+                      key={valor}
+                      type="button"
+                      onClick={() => {
+                        setModoComision(valor);
+                        setValorComision("");
+                      }}
+                      className={`flex-1 px-3 py-1.5 ${modoComision === valor ? "bg-zinc-900 text-white" : "bg-white text-zinc-600 hover:text-zinc-900"}`}
+                    >
+                      {etiqueta}
+                    </button>
+                  ))}
+                </div>
+                {modoComision === "PORCENTAJE" ? (
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-500">Comisión (%)</label>
+                    <div className="relative mt-1 w-40">
+                      <input
+                        type="number"
+                        step="0.01"
+                        min={0}
+                        value={valorComision}
+                        onChange={(e) => setValorComision(e.target.value)}
+                        placeholder="Ej. 1.4"
+                        className="block w-full rounded-lg border border-zinc-300 px-3 py-2 pr-8 text-sm focus:border-zinc-500 focus:ring-zinc-500"
+                      />
+                      <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-zinc-400">%</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-500">
+                      {modoComision === "MONTO" ? "Comisión (monto)" : "Monto neto que de verdad llegó a la cuenta puente"}
+                    </label>
+                    <CampoMonto value={valorComision} onChange={setValorComision} className={claseCampo} />
+                  </div>
+                )}
+                {sospechosa ? (
+                  <p className="rounded-lg border border-red-200 bg-red-50 p-2 text-[11px] text-red-700">{mensajeComisionSospechosa(comisionCalculada, montoNum, formatoPesos)}</p>
+                ) : comisionLista ? (
+                  <p className="text-[11px] text-zinc-500">
+                    Se debitan <strong>{formatoPesos(montoNum)}</strong>: a la cuenta puente llegan <strong>{formatoPesos(netoCalculado)}</strong> y <strong>{formatoPesos(comisionCalculada)}</strong> se guardan solos como gasto en &ldquo;Comisiones&rdquo;. A la factura se le abona el monto completo.
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-zinc-400">Pon el monto y la comisión para ver qué se va a guardar.</p>
+                )}
               </div>
             )}
           </div>
