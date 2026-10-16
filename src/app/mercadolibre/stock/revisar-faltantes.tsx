@@ -107,7 +107,7 @@ export function RevisarFaltantes({ conectado }: { conectado: boolean }) {
           void buscar();
         }}
       >
-        <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar en Mercado Libre por nombre o SKU (ej. step aeróbico)" className="w-full rounded-lg border border-zinc-300 px-3 py-1.5 text-sm sm:w-96" />
+        <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Nombre, SKU o número de publicación (ej. 2230571531)" className="w-full rounded-lg border border-zinc-300 px-3 py-1.5 text-sm sm:w-96" />
         <button type="submit" disabled={!conectado || buscando || !q.trim()} className={btnSec}>
           {buscando ? "Buscando…" : "Buscar en ML"}
         </button>
@@ -131,10 +131,13 @@ export function RevisarFaltantes({ conectado }: { conectado: boolean }) {
                     {r.estado && r.estado !== "active" && <span className="ml-1 rounded bg-zinc-100 px-1">{r.estado}</span>}
                     {r.seller_sku && <> · SKU {r.seller_sku}</>}
                   </span>
+                  {r.nota && <span className="block text-[11px] text-amber-700">{r.nota}</span>}
                 </span>
               </span>
               {r.enCopia ? (
                 <span className="text-emerald-700">ya está en el CRM</span>
+              ) : r.traible === false ? (
+                <span className="text-zinc-400">no se puede traer</span>
               ) : (
                 <button type="button" disabled={Boolean(trayendo)} onClick={() => traer([r.item_id])} className={btnPri}>
                   Traer al CRM

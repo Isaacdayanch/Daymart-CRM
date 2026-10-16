@@ -178,8 +178,9 @@ export function CapturarEnvioMl({ bodegas }: { bodegas: BodegaOpcion[] }) {
                             {" "}
                             · no está en la copia de publicaciones del CRM:{" "}
                             <Link href="/mercadolibre/skus#faltantes" target="_blank" className="underline">
-                              revisar contra Mercado Libre y traerla
-                            </Link>
+                              búscala por su número de publicación y tráela
+                            </Link>{" "}
+                            (en el panel de Full, &ldquo;Publicaciones con este producto&rdquo;)
                           </span>
                         )}
                       </p>

@@ -122,6 +122,7 @@ export function factorDePublicacion(itemId: string, variationId: number | null, 
 
 interface ItemApi {
   id: string;
+  seller_id?: number;
   title?: string;
   price?: number;
   original_price?: number | null;
@@ -605,6 +606,19 @@ export interface PublicacionEncontradaMl {
   seller_sku: string | null;
   /** Ya está en la copia local del CRM. */
   enCopia: boolean;
+  /** Aviso en lenguaje de Isaac (ej. "Mercado Libre contestó 404", "es de otra cuenta"). */
+  nota?: string | null;
+  /** Se puede traer al CRM (Mercado Libre sí la devolvió). */
+  traible?: boolean;
+}
+
+/** Números de publicación escritos en un texto: "MLM2230571531",
+ * "#2230571531", "2230571531, 4188608504" (como los lista el panel de Full
+ * en "Publicaciones con este producto"). Siempre se devuelven con MLM. */
+export function idsPublicacionEnTexto(texto: string): string[] {
+  const ids = new Set<string>();
+  for (const m of texto.matchAll(/(?<![A-Z0-9])(?:MLM\s*-?\s*)?#?(\d{8,13})(?![0-9])/gi)) ids.add(`MLM${m[1]}`);
+  return Array.from(ids);
 }
 
 /** Busca publicaciones del vendedor en Mercado Libre por nombre o SKU
@@ -618,13 +632,67 @@ export async function buscarPublicacionesEnMl(texto: string): Promise<Publicacio
   if (!q) return [];
   const supabase = createServiceClient();
   const encontrados = new Map<string, PublicacionEncontradaMl>();
+  // 0) Por número de publicación (16 oct; Isaac: "los steps no me los
+  //    encuentra… te mando el número: #2230571531, #4188608504"): se pide
+  //    directo a /items, sin depender del scan ni de la búsqueda pública.
+  //    Así se trae una publicación aunque esté pausada, en revisión o el
+  //    scan no la haya listado.
+  const idsTexto = idsPublicacionEnTexto(q);
+  if (idsTexto.length > 0) {
+    try {
+      const detalle = await mercadolibreGet<{ code: number; body: ItemApi & { message?: string } }[]>(
+        `/items?ids=${idsTexto.slice(0, 20).join(",")}&attributes=id,seller_id,title,price,status,thumbnail,seller_custom_field,attributes`,
+      );
+      for (let i = 0; i < idsTexto.length && i < 20; i++) {
+        const d = detalle[i];
+        const id = idsTexto[i];
+        if (d && d.code === 200 && d.body?.id) {
+          const ajena = d.body.seller_id !== undefined && String(d.body.seller_id) !== String(conexion.ml_user_id);
+          encontrados.set(d.body.id, {
+            item_id: d.body.id,
+            titulo: d.body.title ?? null,
+            estado: d.body.status ?? null,
+            precio: d.body.price ?? null,
+            imagen_url: d.body.thumbnail ?? null,
+            seller_sku: skuDe(d.body.seller_custom_field, d.body.attributes),
+            enCopia: false,
+            nota: ajena ? "Esta publicación es de OTRA cuenta de Mercado Libre, no de la conectada." : null,
+            traible: !ajena,
+          });
+        } else {
+          const code = d?.code;
+          encontrados.set(id, {
+            item_id: id,
+            titulo: null,
+            estado: null,
+            precio: null,
+            imagen_url: null,
+            seller_sku: null,
+            enCopia: false,
+            nota:
+              code === 404
+                ? "Mercado Libre dice que no existe una publicación con ese número (404). Revisa el número: debe ser el que aparece en el link de la publicación, después de MLM."
+                : code === 403
+                  ? "Mercado Libre no deja verla (403): suele ser una publicación de otra cuenta."
+                  : `Mercado Libre contestó ${code ?? "sin respuesta"}${d?.body?.message ? `: ${d.body.message}` : ""}.`,
+            traible: false,
+          });
+        }
+      }
+    } catch (e) {
+      for (const id of idsTexto) {
+        if (!encontrados.has(id)) encontrados.set(id, { item_id: id, titulo: null, estado: null, precio: null, imagen_url: null, seller_sku: null, enCopia: false, nota: `No se pudo consultar: ${e instanceof Error ? e.message : "error"}`, traible: false });
+      }
+    }
+  }
   // 1) Búsqueda pública del sitio por vendedor (solo activas).
   try {
     const r = await mercadolibreGet<{ results?: { id: string; title?: string; price?: number; thumbnail?: string; status?: string }[] }>(
       `/sites/MLM/search?seller_id=${conexion.ml_user_id}&q=${encodeURIComponent(q)}&limit=50`,
     );
     for (const it of r.results ?? []) {
-      encontrados.set(it.id, { item_id: it.id, titulo: it.title ?? null, estado: it.status ?? "active", precio: it.price ?? null, imagen_url: it.thumbnail ?? null, seller_sku: null, enCopia: false });
+      if (encontrados.has(it.id)) continue;
+      encontrados.set(it.id, { item_id: it.id, titulo: it.title ?? null, estado: it.status ?? "active", precio: it.price ?? null, imagen_url: it.thumbnail ?? null, seller_sku: null, enCopia: false, traible: true });
     }
   } catch {
     // si la búsqueda pública falla, queda la de SKU
@@ -637,7 +705,7 @@ export async function buscarPublicacionesEnMl(texto: string): Promise<Publicacio
       const detalle = await mercadolibreGet<{ code: number; body: ItemApi }[]>(`/items?ids=${ids.slice(0, 20).join(",")}&attributes=id,title,price,status,thumbnail,seller_custom_field,attributes`);
       for (const d of detalle) {
         if (d.code !== 200 || !d.body) continue;
-        encontrados.set(d.body.id, { item_id: d.body.id, titulo: d.body.title ?? null, estado: d.body.status ?? null, precio: d.body.price ?? null, imagen_url: d.body.thumbnail ?? null, seller_sku: skuDe(d.body.seller_custom_field, d.body.attributes), enCopia: false });
+        encontrados.set(d.body.id, { item_id: d.body.id, titulo: d.body.title ?? null, estado: d.body.status ?? null, precio: d.body.price ?? null, imagen_url: d.body.thumbnail ?? null, seller_sku: skuDe(d.body.seller_custom_field, d.body.attributes), enCopia: false, traible: true });
       }
     }
   } catch {
@@ -651,11 +719,12 @@ export async function buscarPublicacionesEnMl(texto: string): Promise<Publicacio
   const enCopia = new Set((locales ?? []).map((l) => l.item_id));
   for (const l of locales ?? []) {
     if (encontrados.has(l.item_id)) continue;
-    if (normalizar(`${l.titulo ?? ""} ${l.variacion ?? ""} ${l.seller_sku ?? ""} ${l.item_id}`).includes(q2)) {
-      encontrados.set(l.item_id, { item_id: l.item_id, titulo: [l.titulo, l.variacion].filter(Boolean).join(" · ") || null, estado: l.estado, precio: l.precio ?? null, imagen_url: l.imagen_url, seller_sku: l.seller_sku, enCopia: true });
+    const coincideId = idsTexto.includes(l.item_id);
+    if (coincideId || normalizar(`${l.titulo ?? ""} ${l.variacion ?? ""} ${l.seller_sku ?? ""} ${l.item_id}`).includes(q2)) {
+      encontrados.set(l.item_id, { item_id: l.item_id, titulo: [l.titulo, l.variacion].filter(Boolean).join(" · ") || null, estado: l.estado, precio: l.precio ?? null, imagen_url: l.imagen_url, seller_sku: l.seller_sku, enCopia: true, traible: true });
     }
   }
-  return Array.from(encontrados.values()).map((e) => ({ ...e, enCopia: enCopia.has(e.item_id) }));
+  return Array.from(encontrados.values()).map((e) => ({ ...e, enCopia: enCopia.has(e.item_id), traible: e.traible ?? true }));
 }
 
 export async function obtenerPublicaciones(): Promise<PublicacionMl[]> {
