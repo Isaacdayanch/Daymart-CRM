@@ -3,11 +3,14 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { CampoMonto } from "@/components/campo-monto";
+import { CampoNumero } from "@/components/campo-numero";
 import { CampoSugerencias } from "@/components/campo-sugerencias";
 import { Selector } from "@/components/selector";
 import type { Marca, ProductoCatalogo } from "@/lib/tipos";
 import { actualizarProductoCatalogo } from "./actions";
 import { EliminarProducto } from "./eliminar-producto";
+import { FusionarProducto, type OpcionFusion } from "./fusionar-producto";
 
 const claseCampo = "mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500";
 
@@ -18,6 +21,7 @@ export function FilaCatalogo({
   lineas,
   stock,
   puedeQuitar = false,
+  opcionesFusion = [],
 }: {
   producto: ProductoCatalogo;
   marcas: Marca[];
@@ -26,6 +30,8 @@ export function FilaCatalogo({
   stock: number | null;
   /** Solo dueño: muestra "quitar producto" (confirmando con el SKU). */
   puedeQuitar?: boolean;
+  /** Productos con los que se puede fusionar (duplicados). */
+  opcionesFusion?: OpcionFusion[];
 }) {
   const router = useRouter();
   const [editando, setEditando] = useState(false);
@@ -76,8 +82,36 @@ export function FilaCatalogo({
               placeholder="Ej. Espejo de cuerpo completo 160 × 50 cm, marco de aluminio negro, incluye soporte de pared"
               className={claseCampo}
             />
-            <p className="mt-1 text-[11px] text-zinc-400">Las medidas de arriba (largo × ancho × alto) son de la caja de importación; aquí va cómo es la pieza para el cliente.</p>
+            <p className="mt-1 text-[11px] text-zinc-400">Aquí va cómo es la pieza para el cliente; las medidas de abajo son de la caja de importación.</p>
           </div>
+          <div>
+            <label className="block text-xs font-medium text-zinc-500">Piezas por caja</label>
+            <CampoNumero name="piezas_por_caja" defaultValue={p.piezas_por_caja || 1} className={claseCampo} />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-zinc-500">Caja: largo (cm)</label>
+            <CampoNumero name="largo_cm" defaultValue={p.largo_cm || undefined} className={claseCampo} />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-zinc-500">Caja: ancho (cm)</label>
+            <CampoNumero name="ancho_cm" defaultValue={p.ancho_cm || undefined} className={claseCampo} />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-zinc-500">Caja: alto (cm)</label>
+            <CampoNumero name="alto_cm" defaultValue={p.alto_cm || undefined} className={claseCampo} />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-zinc-500">Peso por pieza (kg)</label>
+            <CampoNumero name="peso_kg" defaultValue={p.peso_kg || undefined} className={claseCampo} />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-zinc-500">Precio mínimo de venta (sin IVA)</label>
+            <CampoMonto name="precio_venta" defaultValue={p.precio_venta || undefined} className={claseCampo} />
+            <p className="mt-1 text-[11px] text-zinc-400">Vacío = sin precio (no sale en los links de vendedores).</p>
+          </div>
+          <p className="text-[11px] text-zinc-400 sm:col-span-2 lg:col-span-4">
+            Piezas por caja, medidas y peso también se actualizan en los contenedores que todavía no se reciben (los ya recibidos no se tocan, para no mover su costo).
+          </p>
           <div className="flex items-end gap-2">
             <button type="submit" className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700">
               Guardar
@@ -89,8 +123,9 @@ export function FilaCatalogo({
           {error && <p className="text-xs text-red-600 lg:col-span-4">{error}</p>}
         </form>
         {puedeQuitar && (
-          <div className="mt-3 border-t border-zinc-200 pt-3">
+          <div className="mt-3 flex flex-wrap items-start gap-x-4 gap-y-2 border-t border-zinc-200 pt-3">
             <EliminarProducto sku={p.sku} nombre={p.nombre} compacto />
+            <FusionarProducto sku={p.sku} nombre={p.nombre} opciones={opcionesFusion} compacto />
           </div>
         )}
       </li>
@@ -120,6 +155,12 @@ export function FilaCatalogo({
           {p.categoria && <span>· {p.categoria}</span>}
         </p>
         {p.descripcion && <p className="mt-0.5 truncate text-xs text-zinc-400">{p.descripcion}</p>}
+        <p className="mt-0.5 text-[11px] text-zinc-400">
+          {p.piezas_por_caja > 1 && <>{p.piezas_por_caja} pzas/caja · </>}
+          {p.largo_cm && p.ancho_cm && p.alto_cm ? <>caja {p.largo_cm} × {p.ancho_cm} × {p.alto_cm} cm</> : <span className="text-amber-600">sin medidas de caja</span>}
+          {p.peso_kg ? <> · {p.peso_kg} kg/pza</> : null}
+          {p.precio_venta ? <> · precio mín. ${p.precio_venta.toLocaleString("es-MX")}</> : <> · sin precio</>}
+        </p>
       </div>
       <div className="shrink-0 text-right">
         <p className="text-sm font-semibold tabular-nums text-zinc-900">{stock === null ? "—" : `${stock.toLocaleString("es-MX")} pzas`}</p>

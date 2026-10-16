@@ -4,6 +4,9 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { texto } from "@/lib/form-helpers";
 import { obtenerPerfilActual } from "@/lib/perfil";
+import { camposFichaDeFormulario, guardarCamposFicha } from "@/lib/ficha-producto";
+import { stockActual } from "@/lib/calculos-stock";
+import type { MovimientoStock } from "@/lib/tipos";
 
 async function esDueno() {
   const perfil = await obtenerPerfilActual();
@@ -83,9 +86,14 @@ export async function actualizarProductoCatalogo(sku: string, formData: FormData
   if (error) return { error: error.message };
   await supabase.from("movimientos_stock").update({ nombre }).eq("sku", sku);
   await supabase.from("productos").update({ nombre, marca_id: marcaId, ...(categoria ? { categoria } : {}) }).eq("sku", sku);
+  // Piezas por caja, medidas, peso y precio (Isaac, 16 oct: "¿en dónde
+  // corrijo las medidas y el precio?").
+  const { avisos } = await guardarCamposFicha(supabase, sku, nombre, camposFichaDeFormulario(formData));
   refrescar();
   revalidatePath("/stock/movimientos");
-  return { error: null };
+  revalidatePath(`/stock/producto/${encodeURIComponent(sku)}`);
+  revalidatePath("/vendedores/precios");
+  return { error: avisos.length ? avisos.join(" ") : null };
 }
 
 
@@ -153,7 +161,7 @@ export async function eliminarProductoStock(sku: string, formData: FormData) {
   if (enviosAbiertos.size > 0) ataduras.push(`va en el envío a Full #${Array.from(enviosAbiertos).join(", #")} que sigue en camino`);
   if ((pendientes ?? []).length > 0) ataduras.push("tiene mercancía pendiente en China (Stock → Pendientes)");
   if (ataduras.length > 0) {
-    return { error: `No se puede quitar «${sku}»: ${ataduras.join("; ")}. Si es un duplicado, lo que conviene es quitar el otro.` };
+    return { error: `No se puede quitar «${sku}»: ${ataduras.join("; ")}. Si es un duplicado, usa «fusionar con otro producto»: junta todo su historial en el bueno.` };
   }
 
   // Todo lo que tiene es capturado a mano: se borra.
@@ -185,4 +193,193 @@ export async function eliminarProductoStock(sku: string, formData: FormData) {
   revalidatePath("/vendedores/precios");
   revalidatePath("/");
   return { error: null, movimientosBorrados: movs.length };
+}
+
+// ---------------------------------------------------------------------------
+// Fusionar dos productos duplicados (Isaac, 16 oct: "los yoga blocks los
+// tengo duplicados… ¿me lo puedes corregir?")
+// ---------------------------------------------------------------------------
+
+export interface ResumenFusion {
+  sku: string;
+  nombre: string;
+  imagenUrl: string | null;
+  enCatalogo: boolean;
+  stock: number;
+  movimientos: number;
+  /** Movimientos marcados como "histórico de antes del sistema". */
+  historicos: number;
+  ligasMl: number;
+  contenedores: number[];
+  precioVenta: number | null;
+}
+
+async function servicioMl() {
+  try {
+    const { createServiceClient } = await import("@/lib/supabase/servicio");
+    return createServiceClient();
+  } catch {
+    return null;
+  }
+}
+
+async function resumenParaFusion(supabase: Awaited<ReturnType<typeof createClient>>, sku: string): Promise<ResumenFusion> {
+  const [{ data: ficha }, { data: movs }, { data: enContenedores }] = await Promise.all([
+    supabase.from("productos_catalogo").select("sku, nombre, imagen_url, precio_venta").eq("sku", sku).is("eliminado_en", null).maybeSingle<{ sku: string; nombre: string; imagen_url: string | null; precio_venta: number | null }>(),
+    supabase.from("movimientos_stock").select("*").eq("sku", sku).returns<MovimientoStock[]>(),
+    supabase
+      .from("productos")
+      .select("contenedor:contenedores(numero, eliminado_en)")
+      .eq("sku", sku)
+      .returns<{ contenedor: { numero: number; eliminado_en: string | null } | { numero: number; eliminado_en: string | null }[] | null }[]>(),
+  ]);
+  const movimientos = movs ?? [];
+  const numeros = new Set<number>();
+  for (const r of enContenedores ?? []) {
+    const c = Array.isArray(r.contenedor) ? r.contenedor[0] : r.contenedor;
+    if (c && !c.eliminado_en) numeros.add(c.numero);
+  }
+  let ligasMl = 0;
+  const servicio = await servicioMl();
+  if (servicio) {
+    const [{ count: a }, { count: b }] = await Promise.all([
+      servicio.from("mercadolibre_vinculos").select("item_id", { count: "exact", head: true }).eq("sku_crm", sku),
+      servicio.from("mercadolibre_sku_vinculos").select("seller_sku", { count: "exact", head: true }).eq("sku_crm", sku),
+    ]);
+    ligasMl = (a ?? 0) + (b ?? 0);
+  }
+  const reciente = [...movimientos].sort((x, y) => (x.creado_en < y.creado_en ? 1 : -1))[0];
+  return {
+    sku,
+    nombre: ficha?.nombre ?? reciente?.nombre ?? sku,
+    imagenUrl: ficha?.imagen_url ?? reciente?.imagen_url ?? null,
+    enCatalogo: Boolean(ficha),
+    stock: stockActual(movimientos),
+    movimientos: movimientos.length,
+    historicos: movimientos.filter((m) => m.historico).length,
+    ligasMl,
+    contenedores: Array.from(numeros).sort((x, y) => x - y),
+    precioVenta: ficha?.precio_venta ?? null,
+  };
+}
+
+/** Qué pasaría si se fusiona `skuQuitar` dentro de `skuConservar`. No guarda nada. */
+export async function previsualizarFusion(skuQuitar: string, skuConservar: string) {
+  if (!(await esDueno())) return { error: "Solo el dueño puede fusionar productos." };
+  if (!skuQuitar || !skuConservar) return { error: "Elige con qué producto se va a fusionar." };
+  if (skuQuitar.trim().toUpperCase() === skuConservar.trim().toUpperCase()) return { error: "Son el mismo producto: elige otro." };
+  const supabase = await createClient();
+  const [quitar, conservar] = await Promise.all([resumenParaFusion(supabase, skuQuitar), resumenParaFusion(supabase, skuConservar)]);
+  if (quitar.movimientos === 0 && !quitar.enCatalogo) return { error: `No encontré el producto «${skuQuitar}».` };
+  if (conservar.movimientos === 0 && !conservar.enCatalogo) return { error: `No encontré el producto «${skuConservar}».` };
+  // Regla del histórico: una sola "foto de antes del sistema" por producto.
+  // Si los dos tienen, se queda el del que se conserva y el otro se descarta.
+  const historicoSeDescarta = quitar.historicos > 0 && conservar.historicos > 0;
+  return { error: null, quitar, conservar, historicoSeDescarta };
+}
+
+/** Junta TODO lo de `skuQuitar` (movimientos de stock, ligas con Mercado
+ * Libre, precios/comisiones de vendedores, productos de contenedores,
+ * pendientes de China, líneas de ventas y de envíos a Full) en
+ * `skuConservar`, completa la ficha del bueno con lo que le falte (foto,
+ * medidas, precio…) y deja la ficha del duplicado como eliminada. No borra
+ * historial: lo MUEVE. Única excepción: si los dos tienen "histórico de antes
+ * del sistema", el del duplicado se descarta (si no, el stock saldría doble).
+ * Se confirma escribiendo el SKU que se va a quitar. */
+export async function fusionarProductos(skuQuitar: string, skuConservar: string, formData: FormData) {
+  if (!(await esDueno())) return { error: "Solo el dueño puede fusionar productos." };
+  const confirmacion = (texto(formData, "confirmacion") ?? "").toUpperCase();
+  if (confirmacion !== skuQuitar.trim().toUpperCase()) return { error: `Para fusionar escribe exactamente el SKU que se quita: ${skuQuitar}` };
+  const previa = await previsualizarFusion(skuQuitar, skuConservar);
+  if (previa.error || !previa.quitar || !previa.conservar) return { error: previa.error ?? "No se pudo revisar la fusión." };
+  const supabase = await createClient();
+  const hechos: string[] = [];
+
+  // 1) Movimientos de stock: el histórico duplicado se descarta, el resto se mueve.
+  if (previa.historicoSeDescarta) {
+    const { error, count } = await supabase.from("movimientos_stock").delete({ count: "exact" }).eq("sku", skuQuitar).eq("historico", true);
+    if (error) return { error: `No se pudo descartar el histórico duplicado: ${error.message}` };
+    hechos.push(`se descartó el histórico de «${skuQuitar}» (${count ?? 0} renglones) porque «${skuConservar}» ya tenía el suyo`);
+  }
+  {
+    const { error, count } = await supabase
+      .from("movimientos_stock")
+      .update({ sku: skuConservar, nombre: previa.conservar.nombre }, { count: "exact" })
+      .eq("sku", skuQuitar);
+    if (error) return { error: `No se pudieron mover los movimientos de stock: ${error.message}` };
+    hechos.push(`${count ?? 0} movimiento(s) de stock pasaron a «${skuConservar}»`);
+  }
+
+  // 2) Productos de contenedores, pendientes de China, ventas, envíos a Full.
+  const { error: errorProductos, count: productosMovidos } = await supabase.from("productos").update({ sku: skuConservar }, { count: "exact" }).eq("sku", skuQuitar);
+  if (errorProductos) return { error: `Se movió el stock, pero no los productos de contenedores: ${errorProductos.message}` };
+  if (productosMovidos) hechos.push(`${productosMovidos} producto(s) de contenedor ahora llevan el SKU «${skuConservar}»`);
+  await supabase.from("pendientes_china").update({ sku: skuConservar }).eq("sku", skuQuitar);
+  await supabase.from("venta_lineas").update({ sku: skuConservar }).eq("sku", skuQuitar);
+  await supabase.from("envios_full_lineas").update({ sku: skuConservar }).eq("sku", skuQuitar);
+
+  // 3) Precios y comisiones de vendedores: si el bueno ya tiene el renglón
+  //    de ese vendedor, gana el bueno y el del duplicado se borra.
+  for (const tabla of ["precios_vendedor", "comisiones_vendedor_producto"] as const) {
+    const { data: filas } = await supabase.from(tabla).select("vendedor_id").eq("sku", skuQuitar).returns<{ vendedor_id: string }[]>();
+    for (const f of filas ?? []) {
+      const { count } = await supabase.from(tabla).select("sku", { count: "exact", head: true }).eq("sku", skuConservar).eq("vendedor_id", f.vendedor_id);
+      if (count) await supabase.from(tabla).delete().eq("sku", skuQuitar).eq("vendedor_id", f.vendedor_id);
+      else await supabase.from(tabla).update({ sku: skuConservar }).eq("sku", skuQuitar).eq("vendedor_id", f.vendedor_id);
+    }
+  }
+
+  // 4) Ligas con Mercado Libre (tablas sin políticas: service role).
+  const servicio = await servicioMl();
+  if (servicio) {
+    const { count: a } = await servicio.from("mercadolibre_vinculos").update({ sku_crm: skuConservar }, { count: "exact" }).eq("sku_crm", skuQuitar);
+    const { count: b } = await servicio.from("mercadolibre_sku_vinculos").update({ sku_crm: skuConservar }, { count: "exact" }).eq("sku_crm", skuQuitar);
+    await servicio.from("mercadolibre_full_recepciones").update({ sku_crm: skuConservar }).eq("sku_crm", skuQuitar);
+    const ligas = (a ?? 0) + (b ?? 0);
+    if (ligas) hechos.push(`${ligas} liga(s) con Mercado Libre ahora apuntan a «${skuConservar}»`);
+  } else if (previa.quitar.ligasMl > 0) {
+    hechos.push("las ligas con Mercado Libre no se pudieron mover desde aquí (vuelve a ligarlas en Ligar SKUs)");
+  }
+
+  // 5) Ficha del catálogo: el bueno se completa con lo que le falte y el
+  //    duplicado queda eliminado (soft delete).
+  const { data: fichas } = await supabase.from("productos_catalogo").select("*").in("sku", [skuQuitar, skuConservar]);
+  const fichaQuitar = (fichas ?? []).find((f: { sku: string }) => f.sku === skuQuitar) as Record<string, unknown> | undefined;
+  const fichaConservar = (fichas ?? []).find((f: { sku: string }) => f.sku === skuConservar) as Record<string, unknown> | undefined;
+  if (fichaQuitar) {
+    if (fichaConservar) {
+      const completar: Record<string, unknown> = {};
+      for (const campo of ["imagen_url", "marca_id", "linea", "categoria", "memo", "descripcion", "precio_venta", "peso_kg"]) {
+        const actual = fichaConservar[campo];
+        const otro = fichaQuitar[campo];
+        if ((actual === null || actual === undefined || actual === "") && otro !== null && otro !== undefined && otro !== "") completar[campo] = otro;
+      }
+      for (const campo of ["largo_cm", "ancho_cm", "alto_cm"]) {
+        if (!Number(fichaConservar[campo]) && Number(fichaQuitar[campo])) completar[campo] = fichaQuitar[campo];
+      }
+      if ((Number(fichaConservar.piezas_por_caja) || 1) === 1 && Number(fichaQuitar.piezas_por_caja) > 1) completar.piezas_por_caja = fichaQuitar.piezas_por_caja;
+      if (Object.keys(completar).length > 0) {
+        await supabase.from("productos_catalogo").update({ ...completar, actualizado_en: new Date().toISOString() }).eq("sku", skuConservar);
+        hechos.push(`la ficha de «${skuConservar}» se completó con: ${Object.keys(completar).join(", ")}`);
+      }
+    } else {
+      // El bueno no tenía ficha: la del duplicado pasa a ser la suya.
+      const { error } = await supabase.from("productos_catalogo").update({ sku: skuConservar, actualizado_en: new Date().toISOString() }).eq("sku", skuQuitar);
+      if (!error) hechos.push(`la ficha del catálogo ahora es de «${skuConservar}»`);
+    }
+    if (fichaConservar) {
+      const { error } = await supabase.from("productos_catalogo").update({ eliminado_en: new Date().toISOString() }).eq("sku", skuQuitar);
+      if (error) return { error: `Todo se movió, pero la ficha de «${skuQuitar}» no se pudo quitar: ${error.message}` };
+    }
+  }
+
+  refrescar();
+  revalidatePath("/stock/movimientos");
+  revalidatePath("/stock/full");
+  revalidatePath("/mercadolibre/stock");
+  revalidatePath("/mercadolibre/skus");
+  revalidatePath("/vendedores/precios");
+  revalidatePath(`/stock/producto/${encodeURIComponent(skuConservar)}`);
+  revalidatePath("/");
+  return { error: null, hechos, skuConservar };
 }

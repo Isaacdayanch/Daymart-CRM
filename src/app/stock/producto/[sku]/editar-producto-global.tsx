@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { CampoImagen } from "@/components/campo-imagen";
+import { CampoMonto } from "@/components/campo-monto";
+import { CampoNumero } from "@/components/campo-numero";
 import { actualizarProductoGlobal } from "../../actions";
 
 const claseCampo =
@@ -20,6 +22,12 @@ interface DatosProducto {
   piezas_por_caja: number;
   fabrica: string | null;
   proveedor: string | null;
+  /** De la ficha del catálogo (medidas de la caja, peso, precio mínimo). */
+  largo_cm?: number | null;
+  ancho_cm?: number | null;
+  alto_cm?: number | null;
+  peso_kg?: number | null;
+  precio_venta?: number | null;
 }
 
 export function EditarProductoGlobal({ sku, producto }: { sku: string; producto: DatosProducto }) {
@@ -95,6 +103,27 @@ export function EditarProductoGlobal({ sku, producto }: { sku: string; producto:
           <div>
             <label className="block text-xs font-medium text-zinc-500">Proveedor</label>
             <input type="text" name="proveedor" defaultValue={producto.proveedor ?? ""} className={claseCampo} />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-zinc-500">Caja: largo (cm)</label>
+            <CampoNumero name="largo_cm" defaultValue={producto.largo_cm || undefined} className={claseCampo} />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-zinc-500">Caja: ancho (cm)</label>
+            <CampoNumero name="ancho_cm" defaultValue={producto.ancho_cm || undefined} className={claseCampo} />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-zinc-500">Caja: alto (cm)</label>
+            <CampoNumero name="alto_cm" defaultValue={producto.alto_cm || undefined} className={claseCampo} />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-zinc-500">Peso por pieza (kg)</label>
+            <CampoNumero name="peso_kg" defaultValue={producto.peso_kg || undefined} className={claseCampo} />
+          </div>
+          <div className="sm:col-span-2">
+            <label className="block text-xs font-medium text-zinc-500">Precio mínimo de venta (sin IVA, para vendedores)</label>
+            <CampoMonto name="precio_venta" defaultValue={producto.precio_venta || undefined} className={claseCampo} />
+            <p className="mt-1 text-[11px] text-zinc-400">Vacío = sin precio. Las medidas y el peso también se actualizan en los contenedores que todavía no se reciben.</p>
           </div>
         </div>
       </div>

@@ -33,6 +33,12 @@ export default async function CatalogoProductos({ searchParams }: { searchParams
   ]);
   const resumenes = resumenPorSku(movimientos ?? [], configuracion?.dias_espera ?? 60, piezasPorCajaPorSku);
   const stockPorSku = new Map(resumenes.map((r) => [r.sku, r.stockActual]));
+  // Para "fusionar con otro producto": todos los productos (catálogo + SKUs
+  // que solo viven en movimientos), con foto y stock de hoy.
+  const opcionesFusion = new Map<string, { sku: string; nombre: string; stockActual: number; imagenUrl: string | null }>();
+  for (const p of catalogo) opcionesFusion.set(p.sku, { sku: p.sku, nombre: p.nombre, stockActual: stockPorSku.get(p.sku) ?? 0, imagenUrl: p.imagen_url });
+  for (const r of resumenes) if (!opcionesFusion.has(r.sku)) opcionesFusion.set(r.sku, { sku: r.sku, nombre: r.nombre, stockActual: r.stockActual, imagenUrl: r.imagenUrl });
+  const listaFusion = Array.from(opcionesFusion.values()).sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
 
 
   const categorias = Array.from(new Set(catalogo.map((p) => p.categoria).filter((c): c is string => Boolean(c)))).sort();
@@ -60,7 +66,7 @@ export default async function CatalogoProductos({ searchParams }: { searchParams
         <div className="border-b border-zinc-100 p-5">
           <h2 className="text-sm font-semibold text-zinc-900">Catálogo de productos</h2>
           <p className="mt-0.5 text-xs text-zinc-500">
-            Un registro por SKU. Se llena solo desde Contenedores y altas manuales; aquí corriges nombre, marca, línea, categoría y la descripción de la pieza (y en «editar» puedes quitar un producto duplicado, confirmando con su SKU). Los precios para vendedores viven en{" "}
+            Un registro por SKU. Se llena solo desde Contenedores y altas manuales; en «editar» corriges nombre, marca, línea, categoría, descripción, piezas por caja, medidas de la caja, peso y precio mínimo de venta — y si un producto está duplicado, lo fusionas con el bueno o lo quitas (confirmando con su SKU). La lista completa de precios con rentabilidad vive en{" "}
             <Link href="/vendedores/precios" className="underline-offset-2 hover:underline">
               Vendedores → Lista de precios
             </Link>
@@ -85,7 +91,7 @@ export default async function CatalogoProductos({ searchParams }: { searchParams
         </div>
         <ul className="divide-y divide-zinc-100">
           {lista.map((p) => (
-            <FilaCatalogo key={p.sku} producto={p} marcas={marcas} categorias={categorias} lineas={lineas} stock={stockPorSku.get(p.sku) ?? null} puedeQuitar={esDueno} />
+            <FilaCatalogo key={p.sku} producto={p} marcas={marcas} categorias={categorias} lineas={lineas} stock={stockPorSku.get(p.sku) ?? null} puedeQuitar={esDueno} opcionesFusion={listaFusion} />
           ))}
           {lista.length === 0 && <li className="px-5 py-10 text-center text-sm text-zinc-400">{catalogo.length ? "Nada con ese filtro." : "El catálogo está vacío."}</li>}
         </ul>

@@ -7,6 +7,7 @@ import { nombreArchivoSeguro, texto } from "@/lib/form-helpers";
 import { completarColumnasOmitidas, insertarMovimientosStock } from "@/lib/movimientos-stock";
 import { costoPromedioPonderado, stockActual } from "@/lib/calculos-stock";
 import { guardarEnCatalogo } from "@/lib/catalogo";
+import { camposFichaDeFormulario, guardarCamposFicha } from "@/lib/ficha-producto";
 import type { MovimientoStock } from "@/lib/tipos";
 
 export async function agregarBodega(formData: FormData) {
@@ -541,15 +542,28 @@ export async function actualizarProductoGlobal(skuActual: string, formData: Form
     .eq("sku", skuActual);
   if (errorMovimientos) return { error: errorMovimientos.message };
 
+  // Ficha del catálogo: si cambió el SKU, la ficha vieja pasa al nuevo (si
+  // no, quedaría una ficha huérfana con el SKU viejo). Luego se guardan
+  // nombre/categoría/foto y los campos físicos + precio (Isaac, 16 oct:
+  // "¿en dónde corrijo las medidas y el precio?").
+  if (skuNuevo !== skuActual) {
+    await supabase.from("productos_catalogo").update({ sku: skuNuevo, actualizado_en: new Date().toISOString() }).eq("sku", skuActual);
+  }
+  await guardarEnCatalogo(supabase, { sku: skuNuevo, nombre, categoria, imagen_url: imagenSubida });
+  const { avisos } = await guardarCamposFicha(supabase, skuNuevo, nombre, camposFichaDeFormulario(formData));
+
   for (const p of afectados ?? []) {
     if (p.contenedor_id) revalidatePath(`/contenedores/${p.contenedor_id}`);
   }
   revalidatePath("/stock");
   revalidatePath("/stock/movimientos");
+  revalidatePath("/stock/catalogo");
+  revalidatePath("/vendedores/precios");
   revalidatePath(`/stock/producto/${encodeURIComponent(skuActual)}`);
   revalidatePath(`/stock/producto/${encodeURIComponent(skuNuevo)}`);
 
-  return { error: errorImagen ? `La foto no se pudo subir: ${errorImagen}` : null, skuNuevo };
+  const problemas = [...(errorImagen ? [`La foto no se pudo subir: ${errorImagen}`] : []), ...avisos];
+  return { error: problemas.length ? problemas.join(" ") : null, skuNuevo };
 }
 
 /** Corrige el costo de una entrada cargada a mano (ej. "Agregar stock

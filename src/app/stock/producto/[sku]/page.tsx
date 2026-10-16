@@ -5,13 +5,14 @@ import { costoPromedioPonderado, stockActual } from "@/lib/calculos-stock";
 import { formatoPesos, formatoFecha, formatoCajas } from "@/lib/formato";
 import { obtenerPerfilActual } from "@/lib/perfil";
 import { Logo } from "@/components/logo";
-import type { Bodega, Contenedor, MovimientoStock, Producto } from "@/lib/tipos";
+import type { Bodega, Contenedor, MovimientoStock, Producto, ProductoCatalogo } from "@/lib/tipos";
 import { EditarProductoGlobal } from "./editar-producto-global";
 import { AjustarCantidad } from "./ajustar-cantidad";
 import { AgregarHistorico } from "./agregar-historico";
 import { registradoEnSistema } from "@/lib/calculos-historico";
 import { EditarCostoManual } from "./editar-costo-manual";
 import { EliminarProducto } from "@/app/stock/catalogo/eliminar-producto";
+import { FusionarProducto } from "@/app/stock/catalogo/fusionar-producto";
 import { DesgloseStock } from "./desglose-stock";
 
 export default async function DetalleProducto({ params }: { params: Promise<{ sku: string }> }) {
@@ -21,7 +22,7 @@ export default async function DetalleProducto({ params }: { params: Promise<{ sk
   const perfil = await obtenerPerfilActual();
   const verDinero = perfil?.rol !== "operadora";
 
-  const [{ data: movimientos }, { data: contenedores }, { data: productoReferencia }, { data: bodegas }] =
+  const [{ data: movimientos }, { data: contenedores }, { data: productoReferencia }, { data: bodegas }, { data: ficha }, { data: catalogo }, { data: todosMovimientos }] =
     await Promise.all([
       supabase
         .from("movimientos_stock")
@@ -38,6 +39,11 @@ export default async function DetalleProducto({ params }: { params: Promise<{ sk
         .limit(1)
         .maybeSingle<Producto>(),
       supabase.from("bodegas").select("*").is("eliminado_en", null).order("nombre").returns<Bodega[]>(),
+      // Ficha del catálogo (medidas, peso, precio) — puede no existir si falta el SQL 0038.
+      supabase.from("productos_catalogo").select("*").eq("sku", sku).maybeSingle<ProductoCatalogo>(),
+      // Para "fusionar con otro producto".
+      supabase.from("productos_catalogo").select("sku, nombre, imagen_url").is("eliminado_en", null).order("nombre").returns<{ sku: string; nombre: string; imagen_url: string | null }[]>(),
+      supabase.from("movimientos_stock").select("*").returns<MovimientoStock[]>(),
     ]);
 
   const listaMovimientos = movimientos ?? [];
@@ -58,15 +64,38 @@ export default async function DetalleProducto({ params }: { params: Promise<{ sk
   // "Agregar stock manual" o "Carga masiva"), igual se arma algo editable
   // a partir del movimiento más reciente — que no exista en "productos"
   // no debe bloquear el botón de editar.
-  const productoParaEditar = productoReferencia ?? {
-    sku,
-    nombre: masReciente.nombre,
-    imagen_url: masReciente.imagen_url,
-    categoria: null,
-    piezas_por_caja: piezasPorCaja,
-    fabrica: null,
-    proveedor: null,
+  const productoParaEditar = {
+    ...(productoReferencia ?? {
+      sku,
+      nombre: masReciente.nombre,
+      imagen_url: masReciente.imagen_url,
+      categoria: null,
+      piezas_por_caja: piezasPorCaja,
+      fabrica: null,
+      proveedor: null,
+    }),
+    // Medidas, peso y precio salen de la ficha del catálogo (respaldo: el
+    // último producto de contenedor con ese SKU).
+    largo_cm: ficha?.largo_cm || productoReferencia?.largo_cm || null,
+    ancho_cm: ficha?.ancho_cm || productoReferencia?.ancho_cm || null,
+    alto_cm: ficha?.alto_cm || productoReferencia?.alto_cm || null,
+    peso_kg: ficha?.peso_kg ?? productoReferencia?.peso_kg ?? null,
+    precio_venta: ficha?.precio_venta ?? null,
   };
+
+  // Opciones para "fusionar con otro producto": todo el catálogo + SKUs que
+  // solo viven en movimientos, con su stock de hoy.
+  const movimientosPorSku = new Map<string, MovimientoStock[]>();
+  for (const m of todosMovimientos ?? []) movimientosPorSku.set(m.sku, [...(movimientosPorSku.get(m.sku) ?? []), m]);
+  const opcionesFusion = new Map<string, { sku: string; nombre: string; stockActual: number; imagenUrl: string | null }>();
+  for (const c of catalogo ?? []) opcionesFusion.set(c.sku, { sku: c.sku, nombre: c.nombre, stockActual: stockActual(movimientosPorSku.get(c.sku) ?? []), imagenUrl: c.imagen_url });
+  for (const [s, movs] of movimientosPorSku) {
+    if (!opcionesFusion.has(s)) {
+      const ultimo = [...movs].sort((a, b) => (a.creado_en < b.creado_en ? 1 : -1))[0];
+      opcionesFusion.set(s, { sku: s, nombre: ultimo.nombre, stockActual: stockActual(movs), imagenUrl: ultimo.imagen_url });
+    }
+  }
+  const listaFusion = Array.from(opcionesFusion.values()).sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
 
   const bodegasConStock = (bodegas ?? []).map((b) => ({
     id: b.id,
@@ -298,9 +327,12 @@ export default async function DetalleProducto({ params }: { params: Promise<{ sk
         </div>
 
         {verDinero && (
-          <div className="flex items-center justify-between rounded-xl border border-zinc-200 bg-white px-5 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-zinc-200 bg-white px-5 py-3">
             <p className="text-xs text-zinc-500">¿Este producto está duplicado o se dio de alta por error?</p>
-            <EliminarProducto sku={sku} nombre={masReciente.nombre} />
+            <div className="flex flex-wrap items-start gap-x-4 gap-y-2">
+              <FusionarProducto sku={sku} nombre={masReciente.nombre} opciones={listaFusion} />
+              <EliminarProducto sku={sku} nombre={masReciente.nombre} />
+            </div>
           </div>
         )}
       </main>
