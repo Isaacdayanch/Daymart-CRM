@@ -7,6 +7,7 @@ import { SelectorProducto } from "@/app/stock/salidas/selector-producto";
 import { esPendienteReal, esPublicacionPendienteReal, type GrupoSkuMl, type ProductoCrmResumen, type PublicacionResumen } from "@/lib/mercadolibre-skus";
 import type { LigaIgnorada } from "@/lib/mercadolibre-stock";
 import { desvincularPublicacion, ligarSkuMl, ligarVariante, olvidarPublicacionMl, olvidarSkuMl, quitarLigaSkuMl, recordarLigaMl } from "../actions";
+import { NuevoProductoMl, type CatalogoParaNuevo } from "../stock/nuevo-producto-ml";
 
 type Opcion = { sku: string; nombre: string; stockActual: number; imagenUrl: string | null };
 
@@ -73,14 +74,29 @@ function BotonOlvidar({ titulo, onOlvidar }: { titulo: string; onOlvidar: () => 
 
 /** Una variante (color/talla) ligada por su cuenta. `permitirOlvidar` solo
  * para publicaciones sin SKU en ML (las que sí tienen SKU se olvidan por SKU). */
-function FilaVariante({ p, opciones, permitirOlvidar = false }: { p: PublicacionResumen; opciones: Opcion[]; permitirOlvidar?: boolean }) {
+function FilaVariante({ p, opciones, permitirOlvidar = false, catalogo }: { p: PublicacionResumen; opciones: Opcion[]; permitirOlvidar?: boolean; catalogo?: CatalogoParaNuevo }) {
   const router = useRouter();
   const propia = p.origen === "manual";
   const [editando, setEditando] = useState(!p.skuCrm);
+  const [creando, setCreando] = useState(false);
   const [elegido, setElegido] = useState(p.skuCrm ?? p.sugerencia?.sku ?? "");
   const [factor, setFactor] = useState(String(p.factor || 1));
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // "+ Nuevo producto con estos datos" para ESTA variante: se liga por
+  // publicación (sin SKU de ML), para no jalar a las demás variantes.
+  if (creando && catalogo) {
+    return (
+      <li className="rounded-lg border border-amber-200 bg-amber-50/60 p-3">
+        <NuevoProductoMl
+          datos={{ itemId: p.item_id, variationId: p.variation_id, titulo: p.titulo, variacion: p.variacion, imagenUrl: p.imagen_url, sellerSku: null, otras: [] }}
+          catalogo={catalogo}
+          alCerrar={() => setCreando(false)}
+        />
+      </li>
+    );
+  }
 
   async function guardar() {
     setGuardando(true);
@@ -112,6 +128,14 @@ function FilaVariante({ p, opciones, permitirOlvidar = false }: { p: Publicacion
                 </p>
               )}
               <SelectorProducto opciones={opciones} value={elegido} onChange={setElegido} panelClase="left-0 w-full" />
+              {catalogo && (
+                <p className="text-[11px] text-zinc-500">
+                  ¿No está en Stock todavía?{" "}
+                  <button type="button" onClick={() => setCreando(true)} className="font-medium text-[#2D3277] underline-offset-2 hover:underline">
+                    + Nuevo producto con estos datos
+                  </button>
+                </p>
+              )}
               <CampoFactor valor={factor} onChange={setFactor} />
               <div className="flex items-center gap-2 text-xs">
                 <button type="button" disabled={!elegido || guardando} onClick={guardar} className="rounded-lg bg-zinc-900 px-3 py-1.5 font-medium text-white hover:bg-zinc-700 disabled:opacity-50">
@@ -160,16 +184,44 @@ function FilaVariante({ p, opciones, permitirOlvidar = false }: { p: Publicacion
   );
 }
 
-function FilaGrupo({ g, opciones }: { g: GrupoSkuMl; opciones: Opcion[] }) {
+function FilaGrupo({ g, opciones, catalogo }: { g: GrupoSkuMl; opciones: Opcion[]; catalogo?: CatalogoParaNuevo }) {
   const router = useRouter();
   const tienePropias = g.publicaciones.some((p) => p.origen === "manual");
   // Con variantes (colores/tallas) se liga cada una por separado por defecto.
   const [porVariante, setPorVariante] = useState(g.conVariantes);
   const [editando, setEditando] = useState(g.estado === "pendiente");
+  const [creando, setCreando] = useState(false);
   const [elegido, setElegido] = useState(g.skuCrm ?? g.sugerencia?.sku ?? "");
   const [factor, setFactor] = useState(String(g.factor || 1));
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // "+ Nuevo producto con estos datos" para TODO el SKU: se crea con la
+  // primera publicación y se liga por SKU de ML (aplica a todas las del grupo).
+  if (creando && catalogo && g.publicaciones[0]) {
+    const primera = g.publicaciones[0];
+    return (
+      <li className="rounded-xl border border-amber-200 bg-amber-50/40 p-4">
+        <p className="mb-2 flex items-center gap-2">
+          <span className="rounded-md bg-zinc-900 px-2 py-0.5 font-mono text-xs font-semibold text-white">{g.sellerSku}</span>
+          <span className="text-[11px] text-zinc-500">se crea el producto y se liga a este SKU de ML ({g.publicaciones.length} publicación(es))</span>
+        </p>
+        <NuevoProductoMl
+          datos={{
+            itemId: primera.item_id,
+            variationId: primera.variation_id,
+            titulo: primera.titulo,
+            variacion: g.conVariantes ? null : primera.variacion,
+            imagenUrl: primera.imagen_url,
+            sellerSku: g.sellerSku,
+            otras: g.publicaciones.slice(1).map((p) => ({ itemId: p.item_id, variationId: p.variation_id })),
+          }}
+          catalogo={catalogo}
+          alCerrar={() => setCreando(false)}
+        />
+      </li>
+    );
+  }
 
   async function guardar() {
     setGuardando(true);
@@ -210,7 +262,7 @@ function FilaGrupo({ g, opciones }: { g: GrupoSkuMl; opciones: Opcion[] }) {
         <p className="mt-1 text-[11px] text-zinc-500">Cada color/variante se liga a su propio producto del CRM. Esa liga manda sobre la del SKU.</p>
         <ul className="mt-2 space-y-2">
           {g.publicaciones.map((p) => (
-            <FilaVariante key={p.id} p={p} opciones={opciones} />
+            <FilaVariante key={p.id} p={p} opciones={opciones} catalogo={catalogo} />
           ))}
         </ul>
       </li>
@@ -242,6 +294,14 @@ function FilaGrupo({ g, opciones }: { g: GrupoSkuMl; opciones: Opcion[] }) {
                 )}
               </p>
               <SelectorProducto opciones={opciones} value={elegido} onChange={setElegido} panelClase="left-0 w-full" />
+              {catalogo && (
+                <p className="text-[11px] text-zinc-500">
+                  ¿No está en Stock todavía?{" "}
+                  <button type="button" onClick={() => setCreando(true)} className="font-medium text-[#2D3277] underline-offset-2 hover:underline">
+                    + Nuevo producto con estos datos
+                  </button>
+                </p>
+              )}
               <CampoFactor valor={factor} onChange={setFactor} />
               <div className="flex items-center gap-2 text-xs">
                 <button type="button" disabled={!elegido || guardando} onClick={guardar} className="rounded-lg bg-zinc-900 px-3 py-1.5 font-medium text-white hover:bg-zinc-700 disabled:opacity-50">
@@ -299,6 +359,7 @@ export function TablaSkus({
   pendientes,
   ignorados,
   qInicial = "",
+  catalogo,
 }: {
   grupos: GrupoSkuMl[];
   sinSku: PublicacionResumen[];
@@ -306,6 +367,8 @@ export function TablaSkus({
   pendientes: number;
   ignorados: LigaIgnorada[];
   qInicial?: string;
+  /** Marcas, categorías, bodegas y SKUs existentes para "+ Nuevo producto con estos datos". */
+  catalogo?: CatalogoParaNuevo;
 }) {
   const router = useRouter();
   // Si llega con búsqueda (ej. desde la vista previa de un envío), se muestran todos los grupos que coincidan.
@@ -383,7 +446,7 @@ export function TablaSkus({
               </p>
             )}
             <ul>
-              <FilaGrupo g={g} opciones={opciones} />
+              <FilaGrupo g={g} opciones={opciones} catalogo={catalogo} />
             </ul>
           </li>
         ))}
@@ -392,7 +455,7 @@ export function TablaSkus({
             <p className="text-xs font-medium text-zinc-700">Publicaciones sin SKU en Mercado Libre que coinciden con “{q.trim()}” ({sinSkuCoinciden.length})</p>
             <ul className="mt-2 space-y-2">
               {sinSkuCoinciden.map((p) => (
-                <FilaVariante key={p.id} p={p} opciones={opciones} permitirOlvidar />
+                <FilaVariante key={p.id} p={p} opciones={opciones} permitirOlvidar catalogo={catalogo} />
               ))}
             </ul>
           </li>
@@ -403,7 +466,7 @@ export function TablaSkus({
             <p className="mt-1 text-[11px] text-zinc-500">Lo mejor es ponerles su SKU en Mercado Libre (el mismo del CRM, uno por color) y quedan ligadas solas al sincronizar. Mientras, lígalas aquí u “olvídalas”.</p>
             <ul className="mt-2 space-y-2">
               {sinSkuPendientes.map((p) => (
-                <FilaVariante key={p.id} p={p} opciones={opciones} permitirOlvidar />
+                <FilaVariante key={p.id} p={p} opciones={opciones} permitirOlvidar catalogo={catalogo} />
               ))}
             </ul>
           </li>
@@ -431,7 +494,7 @@ export function TablaSkus({
           <p className="mt-1 text-xs text-zinc-500">Lo mejor es ponerles su SKU en Mercado Libre (el mismo del CRM, uno por color/variante) y quedan ligadas solas al sincronizar.</p>
           <ul className="mt-2 space-y-2">
             {sinSkuVivas.map((p) => (
-              <FilaVariante key={p.id} p={p} opciones={opciones} permitirOlvidar />
+              <FilaVariante key={p.id} p={p} opciones={opciones} permitirOlvidar catalogo={catalogo} />
             ))}
           </ul>
           <p className="mt-2 text-[11px] text-zinc-400">
@@ -451,10 +514,10 @@ export function TablaSkus({
           </summary>
           <ul className="mt-2 space-y-3">
             {inactivosPendientes.map((g) => (
-              <FilaGrupo key={g.sellerSku} g={g} opciones={opciones} />
+              <FilaGrupo key={g.sellerSku} g={g} opciones={opciones} catalogo={catalogo} />
             ))}
             {sinSkuInactivas.map((p) => (
-              <FilaVariante key={p.id} p={p} opciones={opciones} permitirOlvidar />
+              <FilaVariante key={p.id} p={p} opciones={opciones} permitirOlvidar catalogo={catalogo} />
             ))}
           </ul>
         </details>

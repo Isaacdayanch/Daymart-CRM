@@ -1,6 +1,8 @@
 import { createClient } from "@/lib/supabase/server";
 import { resumenPorSku } from "@/lib/calculos-stock";
-import { obtenerCatalogo } from "@/lib/catalogo";
+import { obtenerCatalogo, obtenerMarcas, skusExistentes } from "@/lib/catalogo";
+import { obtenerSugerenciasCatalogo } from "@/lib/catalogo-proveedores";
+import type { Bodega } from "@/lib/tipos";
 import { obtenerPiezasPorCajaPorSku } from "@/lib/productos-stock";
 import { agruparPorSkuMl, esPendienteReal, esPublicacionPendienteReal, type ProductoCrmResumen } from "@/lib/mercadolibre-skus";
 import { obtenerIgnorados, obtenerPublicaciones, obtenerVinculos, type LigaIgnorada } from "@/lib/mercadolibre-stock";
@@ -20,12 +22,25 @@ export const maxDuration = 60;
 export default async function LigarSkus({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
   const { q } = await searchParams;
   const supabase = await createClient();
-  const [{ data: movimientos }, { data: configuracion }, piezasPorCajaPorSku, catalogo] = await Promise.all([
+  const [{ data: movimientos }, { data: configuracion }, piezasPorCajaPorSku, catalogo, marcas, sugerencias, { data: bodegas }, skusTodos] = await Promise.all([
     supabase.from("movimientos_stock").select("*").returns<MovimientoStock[]>(),
     supabase.from("configuracion_stock").select("*").maybeSingle<ConfiguracionStock>(),
     obtenerPiezasPorCajaPorSku(supabase),
     obtenerCatalogo(supabase).catch(() => []),
+    obtenerMarcas(supabase).catch(() => []),
+    obtenerSugerenciasCatalogo(supabase).catch(() => ({ categorias: [] as string[] })),
+    supabase.from("bodegas").select("*").is("eliminado_en", null).order("nombre").returns<Bodega[]>(),
+    skusExistentes(supabase).catch(() => new Set<string>()),
   ]);
+  // Para "+ Nuevo producto con estos datos" desde aquí mismo (16 oct; Isaac se
+  // atoró ligando los steps porque el producto no existía en Stock y la
+  // opción solo estaba en Publicaciones).
+  const catalogoParaNuevo = {
+    marcas: marcas.map((m) => ({ id: m.id, nombre: m.nombre, codigo: m.codigo })),
+    categorias: sugerencias.categorias,
+    bodegas: (bodegas ?? []).map((b) => ({ id: b.id, nombre: b.nombre })),
+    skusExistentes: Array.from(skusTodos),
+  };
   const resumenes = resumenPorSku(movimientos ?? [], configuracion?.dias_espera ?? 60, piezasPorCajaPorSku);
   const porSku = new Map<string, ProductoCrmResumen>();
   for (const p of catalogo) porSku.set(p.sku, { sku: p.sku, nombre: p.nombre, imagenUrl: p.imagen_url, stockActual: 0 });
@@ -67,7 +82,7 @@ export default async function LigarSkus({ searchParams }: { searchParams: Promis
       </div>
       <RevisarFaltantes conectado={Boolean(conexion)} />
       {error && <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
-      <TablaSkus grupos={grupos} sinSku={sinSku} productos={productos} pendientes={pendientes} ignorados={ignorados} qInicial={q ?? ""} />
+      <TablaSkus grupos={grupos} sinSku={sinSku} productos={productos} pendientes={pendientes} ignorados={ignorados} qInicial={q ?? ""} catalogo={catalogoParaNuevo} />
     </div>
   );
 }
