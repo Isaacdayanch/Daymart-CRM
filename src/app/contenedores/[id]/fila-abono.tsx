@@ -10,6 +10,7 @@ import { formatoFecha, formatoPesos } from "@/lib/formato";
 import type { PagoMercancia } from "@/lib/tipos";
 import { actualizarAbono, eliminarAbono } from "./actions";
 
+import { BotonGuardar } from "@/components/boton-guardar";
 const claseCampo =
   "mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500";
 
@@ -74,13 +75,9 @@ export function FilaAbono({ contenedorId, abono }: { contenedorId: string; abono
             </div>
           )}
           <div className="flex items-center gap-2">
-            <button
-              type="submit"
-              disabled={enviando}
-              className="rounded-lg bg-zinc-900 px-3 py-2 text-xs font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
-            >
-              {enviando ? "..." : "Guardar"}
-            </button>
+            <BotonGuardar cargando={enviando} textoCargando="…" className="rounded-lg bg-zinc-900 px-3 py-2 text-xs font-medium text-white hover:bg-zinc-700">
+              Guardar
+            </BotonGuardar>
             <button type="button" onClick={() => setEditando(false)} className="text-xs text-zinc-400 hover:text-zinc-700">
               Cancelar
             </button>

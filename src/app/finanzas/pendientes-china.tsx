@@ -9,6 +9,7 @@ import type { EnvioChina, MovimientoFinanciero } from "@/lib/tipos";
 import { cancelarEnvioChina, completarEnvioChina } from "./actions";
 import { FormularioComision } from "./formulario-comision";
 
+import { BotonGuardar } from "@/components/boton-guardar";
 /** Aviso ámbar: transacciones a las que les falta la comisión — envíos a
  * China (al completarlos se hace el abono al proveedor y al contenedor) y
  * movimientos sueltos marcados "la sé después". */
@@ -150,9 +151,9 @@ function FilaPendiente({ envio: e, nombresCuentas }: { envio: EnvioChina; nombre
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button type="submit" disabled={enviando} className="rounded-lg bg-zinc-900 px-4 py-2 text-xs font-medium text-white hover:bg-zinc-700 disabled:opacity-50">
-              {enviando ? "Guardando…" : "Completar envío"}
-            </button>
+            <BotonGuardar cargando={enviando} className="rounded-lg bg-zinc-900 px-4 py-2 text-xs font-medium text-white hover:bg-zinc-700">
+              Completar envío
+            </BotonGuardar>
             <button type="button" onClick={() => setAbierto(false)} className="text-xs text-zinc-400 hover:text-zinc-700">
               Cancelar
             </button>

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { SelectorProducto } from "@/app/stock/salidas/selector-producto";
+import { BotonGuardar } from "@/components/boton-guardar";
 import { fusionarProductos, previsualizarFusion, type ResumenFusion } from "./actions";
 
 export interface OpcionFusion {
@@ -138,13 +139,9 @@ export function FusionarProducto({ sku, nombre, opciones, compacto = false }: { 
             className="block w-full rounded-lg border border-violet-300 bg-white px-3 py-2 font-mono text-sm focus:border-violet-500 focus:ring-violet-500 sm:w-72"
           />
           <div className="flex flex-wrap items-center gap-3">
-            <button
-              type="submit"
-              disabled={!coincide || enviando}
-              className="rounded-lg bg-violet-700 px-4 py-2 text-sm font-medium text-white hover:bg-violet-800 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {enviando ? "Fusionando…" : `Fusionar: quitar ${sku} y dejar ${conservar}`}
-            </button>
+            <BotonGuardar cargando={enviando} disabled={!coincide} textoCargando="Fusionando…" className="rounded-lg bg-violet-700 px-4 py-2 text-sm font-medium text-white hover:bg-violet-800">
+              {`Fusionar: quitar ${sku} y dejar ${conservar}`}
+            </BotonGuardar>
             <button type="button" onClick={() => setPrevia(null)} className="text-xs text-zinc-500 hover:text-zinc-900">
               Cambiar producto
             </button>

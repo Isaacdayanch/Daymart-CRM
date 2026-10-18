@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { eliminarProductoStock } from "./actions";
 
+import { BotonGuardar } from "@/components/boton-guardar";
 /** "Quitar este producto" (solo dueño). A propósito no es un solo clic:
  * se abre un bloque de confirmación donde hay que escribir el SKU exacto.
  * Pensado para productos duplicados o dados de alta por error. */
@@ -58,13 +59,9 @@ export function EliminarProducto({ sku, nombre, compacto = false }: { sku: strin
         className="mt-1 block w-full rounded-lg border border-red-300 bg-white px-3 py-2 font-mono text-sm focus:border-red-500 focus:ring-red-500 sm:w-72"
       />
       <div className="mt-3 flex flex-wrap items-center gap-3">
-        <button
-          type="submit"
-          disabled={!coincide || enviando}
-          className="rounded-lg bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          {enviando ? "Quitando…" : "Quitar definitivamente"}
-        </button>
+        <BotonGuardar cargando={enviando} disabled={!coincide} textoCargando="Quitando…" className="rounded-lg bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-800">
+          Quitar definitivamente
+        </BotonGuardar>
         <button type="button" onClick={() => { setAbierto(false); setConfirmacion(""); setError(null); }} className="text-xs text-zinc-500 hover:text-zinc-900">
           Cancelar
         </button>

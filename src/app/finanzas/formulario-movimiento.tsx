@@ -12,6 +12,7 @@ import type { CategoriaFinanciera, CuentaFinanciera, TipoMovimientoFinanciero } 
 import { registrarMovimiento, registrarPagoFactura } from "./actions";
 import { FormularioEnvioChina, type DatosChina } from "./formulario-envio-china";
 
+import { BotonGuardar } from "@/components/boton-guardar";
 export interface FacturaAbierta {
   id: string;
   etiqueta: string;
@@ -313,13 +314,9 @@ export function FormularioMovimiento({
         {error && <p className="text-sm text-red-600">{error}</p>}
 
         <div className="flex justify-end pt-1">
-          <button
-            type="submit"
-            disabled={enviando}
-            className="rounded-xl bg-zinc-900 px-5 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-zinc-700 disabled:opacity-50"
-          >
-            {enviando ? "Guardando..." : "Registrar"}
-          </button>
+          <BotonGuardar cargando={enviando} className="rounded-xl bg-zinc-900 px-5 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-zinc-700">
+            Registrar
+          </BotonGuardar>
         </div>
       </form>
       )}

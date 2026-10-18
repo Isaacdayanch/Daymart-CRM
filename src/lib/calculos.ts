@@ -147,6 +147,69 @@ export function costoPorCbmContenedor(
   return (fletePesos(contenedor) + contenedor.aduana_pesos + otrosGastosPesos(contenedor)) / cbmTotal;
 }
 
+// --- Costo estimado mientras el contenedor se configura (migración 0052) ---
+// Isaac (18 oct): "no puedo ver el costo de los productos hasta no terminar de
+// configurar el contenedor… con un solo producto no se ve bien". Con pocos
+// productos, TODO el flete y la aduana caían sobre ellos (se dividen entre el
+// CBM cargado). Mientras el contenedor está "Configurándose" y no se ha
+// marcado terminado, se reparten como si el contenedor fuera lleno
+// (`capacidad_cbm`, 68 m³ por defecto): cada producto nuevo ya da una idea
+// real de su costo. Si todavía no hay abonos de mercancía, el tipo de cambio
+// sale de `tipo_cambio_estimado` (o del flete). Al "Terminar de configurar"
+// (o al pasar a En tránsito) el reparto es sobre los m³ reales.
+
+export interface BaseCostoContenedor {
+  costoPorCbm: number;
+  tipoCambio: number;
+  /** true mientras algún dato sea una aproximación (capacidad o tipo de cambio estimado). */
+  estimado: boolean;
+  /** Una línea por cada aproximación aplicada, en lenguaje de Isaac. */
+  motivos: string[];
+  /** m³ entre los que se repartió flete + aduana + otros gastos. */
+  cbmBase: number;
+  /** El contenedor sigue en configuración (estimación por capacidad activa). */
+  enConfiguracion: boolean;
+}
+
+export function enConfiguracion(contenedor: Pick<Contenedor, "estado" | "configuracion_terminada_en">) {
+  return contenedor.estado === "CONFIGURANDOSE" && !contenedor.configuracion_terminada_en;
+}
+
+export function baseCostoContenedor(
+  contenedor: Pick<
+    Contenedor,
+    "estado" | "configuracion_terminada_en" | "capacidad_cbm" | "tipo_cambio_estimado" | "flete_dolares" | "flete_tipo_cambio" | "aduana_pesos" | "otros_gastos_dolares" | "otros_gastos_tipo_cambio"
+  >,
+  productos: Producto[],
+  pagos: PagoMercancia[],
+): BaseCostoContenedor {
+  const cbmReal = cbmTotalContenedor(productos);
+  const gastos = fletePesos(contenedor) + contenedor.aduana_pesos + otrosGastosPesos(contenedor);
+  const configurando = enConfiguracion(contenedor);
+  const motivos: string[] = [];
+  let cbmBase = cbmReal;
+  if (configurando) {
+    const capacidad = Number(contenedor.capacidad_cbm) || CAPACIDAD_CBM_DEFAULT;
+    if (cbmReal < capacidad) {
+      cbmBase = capacidad;
+      motivos.push(`el flete y la aduana se reparten como si el contenedor fuera lleno (${capacidad} m³; llevas ${cbmReal.toFixed(2)} m³)`);
+    }
+  }
+  const costoPorCbm = cbmBase > 0 ? gastos / cbmBase : 0;
+  if (gastos <= 0) motivos.push("todavía no hay flete ni aduana capturados: el costo por pieza solo trae el precio del producto");
+  let tipoCambio = tipoCambioPromedioMercancia(pagos);
+  if (!tipoCambio) {
+    const estimadoTc = Number(contenedor.tipo_cambio_estimado) || Number(contenedor.flete_tipo_cambio) || 0;
+    tipoCambio = estimadoTc;
+    motivos.push(
+      estimadoTc
+        ? `tipo de cambio estimado de ${estimadoTc.toFixed(2)} (todavía no hay abonos de mercancía)`
+        : "no hay abonos ni tipo de cambio estimado: el precio en dólares se está contando en $0 — pon un tipo de cambio estimado en Editar",
+    );
+  }
+  return { costoPorCbm, tipoCambio, estimado: motivos.length > 0, motivos, cbmBase, enConfiguracion: configurando };
+}
+
 /** Gasto de flete+aduana repartido a este producto, por pieza. */
 export function gastoRepartidoPorPieza(
   producto: Producto,

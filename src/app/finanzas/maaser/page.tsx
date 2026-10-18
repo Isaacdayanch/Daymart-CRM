@@ -6,6 +6,7 @@ import { totalGanancias, totalPagadoMaaser } from "@/lib/calculos-maaser";
 import type { CategoriaFinanciera, MovimientoFinanciero, RegistroGanancia } from "@/lib/tipos";
 import { agregarRegistroGanancia, eliminarRegistroGanancia } from "../actions";
 
+import { BotonGuardar } from "@/components/boton-guardar";
 const claseCampo =
   "mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500";
 
@@ -76,12 +77,9 @@ export default async function MaaserFinanzas() {
             <label className="block text-xs font-medium text-zinc-500">Notas</label>
             <input type="text" name="notas" placeholder="Ej. Ganancia de agosto" className={claseCampo} />
           </div>
-          <button
-            type="submit"
-            className="h-fit rounded-xl bg-zinc-900 px-5 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-zinc-700"
-          >
+          <BotonGuardar className="h-fit rounded-xl bg-zinc-900 px-5 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-zinc-700">
             Agregar
-          </button>
+          </BotonGuardar>
         </form>
       </div>
 

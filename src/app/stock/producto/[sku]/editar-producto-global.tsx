@@ -7,6 +7,7 @@ import { CampoMonto } from "@/components/campo-monto";
 import { CampoNumero } from "@/components/campo-numero";
 import { actualizarProductoGlobal } from "../../actions";
 
+import { BotonGuardar } from "@/components/boton-guardar";
 const claseCampo =
   "mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500";
 
@@ -138,13 +139,9 @@ export function EditarProductoGlobal({ sku, producto }: { sku: string; producto:
         >
           Cancelar
         </button>
-        <button
-          type="submit"
-          disabled={enviando}
-          className="rounded-lg bg-zinc-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
-        >
-          {enviando ? "Guardando..." : "Guardar en todos los contenedores"}
-        </button>
+        <BotonGuardar cargando={enviando} className="rounded-lg bg-zinc-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-700">
+          Guardar en todos los contenedores
+        </BotonGuardar>
       </div>
     </form>
   );

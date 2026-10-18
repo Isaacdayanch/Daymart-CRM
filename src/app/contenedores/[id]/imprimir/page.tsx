@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { cartones, cbmProducto, cbmTotalContenedor, costoFinalPorPieza, costoPorCbmContenedor, pesoProducto, pesoTotalContenedor, tipoCambioPromedioMercancia } from "@/lib/calculos";
+import { baseCostoContenedor, cartones, cbmProducto, cbmTotalContenedor, costoFinalPorPieza, pesoProducto, pesoTotalContenedor } from "@/lib/calculos";
 import { formatoFecha, formatoPesos } from "@/lib/formato";
 import type { Contenedor, PagoMercancia, Producto } from "@/lib/tipos";
 import { BotonImprimir } from "./boton-imprimir";
@@ -35,8 +35,9 @@ export default async function ImprimirContenedor({
 
   const listaProductos = productos ?? [];
   const listaAbonos = abonos ?? [];
-  const costoPorCbm = costoPorCbmContenedor(contenedor, listaProductos);
-  const tipoCambioMercancia = tipoCambioPromedioMercancia(listaAbonos);
+  const base = baseCostoContenedor(contenedor, listaProductos, listaAbonos);
+  const costoPorCbm = base.costoPorCbm;
+  const tipoCambioMercancia = base.tipoCambio;
   const cbmTotal = cbmTotalContenedor(listaProductos);
   const cantidadTotal = listaProductos.reduce((suma, p) => suma + p.cantidad, 0);
   const pesoTotal = pesoTotalContenedor(listaProductos);
@@ -95,7 +96,7 @@ export default async function ImprimirContenedor({
               <th className="py-2 pr-2 font-medium text-right">CBM</th>
               <th className="py-2 pr-2 font-medium text-right">Peso (kg)</th>
               {conPrecios && <th className="py-2 pr-2 font-medium text-right">Precio USD</th>}
-              {conPrecios && <th className="py-2 pr-2 font-medium text-right">Costo final/pieza</th>}
+              {conPrecios && <th className="py-2 pr-2 font-medium text-right">{base.estimado ? "Costo/pieza (estimado)" : "Costo final/pieza"}</th>}
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-200">

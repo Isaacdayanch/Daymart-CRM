@@ -79,7 +79,7 @@ export async function guardarCamposFicha(supabase: SupabaseClient, sku: string, 
   if (campos.alto) cambiosProducto.alto_cm = campos.alto;
   if (campos.peso !== undefined) cambiosProducto.peso_kg = campos.peso > 0 ? campos.peso : null;
   if (Object.keys(cambiosProducto).length > 0) {
-    const { data: vivos } = await supabase.from("contenedores").select("id").neq("estado", "Recibido en bodega").is("eliminado_en", null);
+    const { data: vivos } = await supabase.from("contenedores").select("id").neq("estado", "RECIBIDO_BODEGA").is("eliminado_en", null);
     const ids = (vivos ?? []).map((c: { id: string }) => c.id);
     if (ids.length > 0) {
       let { error } = await supabase.from("productos").update(cambiosProducto).eq("sku", sku).in("contenedor_id", ids);

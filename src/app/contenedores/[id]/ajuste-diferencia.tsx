@@ -5,6 +5,7 @@ import { CampoMonto } from "@/components/campo-monto";
 import { formatoPesos } from "@/lib/formato";
 import { actualizarAjusteDiferencia, calcularPendienteChinaPagado } from "./actions";
 
+import { BotonGuardar } from "@/components/boton-guardar";
 const NOTA_DEFAULT = "Gastos extraordinarios — fletes internos China, ajustes de proveedor";
 
 const claseCampo =
@@ -111,9 +112,9 @@ export function AjusteDiferencia({
           className={claseCampo}
         />
       </div>
-      <button type="submit" className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700">
+      <BotonGuardar className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700">
         Guardar
-      </button>
+      </BotonGuardar>
       <button
         type="button"
         onClick={() => {

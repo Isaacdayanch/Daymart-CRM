@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import type { CategoriaFinanciera } from "@/lib/tipos";
 import { agregarCategoria, eliminarCategoria, renombrarCategoria } from "../actions";
 
+import { BotonGuardar } from "@/components/boton-guardar";
 export default async function CategoriasFinanzas() {
   const supabase = await createClient();
   const { data: categorias } = await supabase
@@ -28,12 +29,9 @@ export default async function CategoriasFinanzas() {
             placeholder="Ej. Renta de oficina"
             className="block w-full max-w-xs rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500"
           />
-          <button
-            type="submit"
-            className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-700"
-          >
+          <BotonGuardar className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-700">
             Agregar
-          </button>
+          </BotonGuardar>
         </form>
       </div>
 

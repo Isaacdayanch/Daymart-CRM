@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Logo } from "@/components/logo";
 import { iniciarSesion } from "./actions";
 
+import { BotonGuardar } from "@/components/boton-guardar";
 export default function Login() {
   const [error, setError] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
@@ -47,13 +48,9 @@ export default function Login() {
             />
           </div>
           {error && <p className="text-sm text-red-600">{error}</p>}
-          <button
-            type="submit"
-            disabled={enviando}
-            className="w-full rounded-xl bg-zinc-900 px-5 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-zinc-700 disabled:opacity-50"
-          >
-            {enviando ? "Entrando..." : "Entrar"}
-          </button>
+          <BotonGuardar cargando={enviando} textoCargando="Entrando…" className="w-full rounded-xl bg-zinc-900 px-5 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-zinc-700">
+            Entrar
+          </BotonGuardar>
         </form>
       </div>
     </div>

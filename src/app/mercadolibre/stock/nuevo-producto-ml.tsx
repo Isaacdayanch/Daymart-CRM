@@ -9,6 +9,7 @@ import { Selector } from "@/components/selector";
 import { skuLibre, skuNuevo, skuSugerido } from "@/lib/calculos";
 import { crearProductoDesdeMl } from "../actions";
 
+import { BotonGuardar } from "@/components/boton-guardar";
 const claseCampo = "mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500";
 
 export interface DatosMlParaProducto {
@@ -179,9 +180,9 @@ export function NuevoProductoMl({ datos, catalogo, alCerrar }: { datos: DatosMlP
       )}
 
       <div className="flex items-center gap-3">
-        <button type="submit" disabled={enviando || !sku || !nombre} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50">
-          {enviando ? "Creando…" : "Crear producto y ligar"}
-        </button>
+        <BotonGuardar cargando={enviando} disabled={!sku || !nombre} textoCargando="Creando…" className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700">
+          Crear producto y ligar
+        </BotonGuardar>
         <button type="button" onClick={alCerrar} className="text-xs text-zinc-500 hover:text-zinc-900">
           Cancelar
         </button>

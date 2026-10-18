@@ -8,6 +8,7 @@ import { CamposProveedorPrincipal } from "@/components/campos-proveedor-principa
 import { ESTADOS_CONTENEDOR, type Contenedor } from "@/lib/tipos";
 import { actualizarContenedor, eliminarContenedor } from "./actions";
 
+import { BotonGuardar } from "@/components/boton-guardar";
 const claseCampo =
   "mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500";
 
@@ -103,6 +104,13 @@ export function FormularioContenedor({
               Capacidad (m³)
             </label>
             <CampoNumero id="capacidad_cbm" name="capacidad_cbm" defaultValue={Number(contenedor.capacidad_cbm) || 68} className={claseCampo} />
+          </div>
+          <div className="col-span-2">
+            <label htmlFor="tipo_cambio_estimado" className="block text-xs font-medium text-zinc-500">
+              Tipo de cambio estimado (para el costo por pieza mientras no hay abonos de mercancía)
+            </label>
+            <CampoNumero id="tipo_cambio_estimado" name="tipo_cambio_estimado" defaultValue={Number(contenedor.tipo_cambio_estimado) || undefined} className={`${claseCampo} w-40`} />
+            <p className="mt-1 text-[11px] text-zinc-400">Solo es una estimación: en cuanto registres abonos, el costo usa el tipo de cambio real promedio.</p>
           </div>
         </div>
       </div>
@@ -230,12 +238,9 @@ export function FormularioContenedor({
         >
           Borrar contenedor
         </button>
-        <button
-          type="submit"
-          className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700"
-        >
+        <BotonGuardar className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700">
           Guardar cambios
-        </button>
+        </BotonGuardar>
       </div>
     </form>
   );

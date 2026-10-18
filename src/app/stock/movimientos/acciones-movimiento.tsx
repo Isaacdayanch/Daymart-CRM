@@ -6,6 +6,7 @@ import { CampoFecha } from "@/components/campo-fecha";
 import type { MovimientoStock } from "@/lib/tipos";
 import { actualizarMovimientoStock, eliminarMovimientoStock } from "../actions";
 
+import { BotonGuardar } from "@/components/boton-guardar";
 /** "editar" / "quitar" para un movimiento suelto del libro de Stock. */
 export function AccionesMovimiento({ movimiento }: { movimiento: MovimientoStock }) {
   const router = useRouter();
@@ -56,13 +57,9 @@ export function AccionesMovimiento({ movimiento }: { movimiento: MovimientoStock
             className="mt-0.5 block w-40 rounded-lg border border-zinc-300 px-2 py-1 text-xs focus:border-zinc-500 focus:ring-zinc-500"
           />
         </div>
-        <button
-          type="submit"
-          disabled={guardando}
-          className="rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
-        >
-          {guardando ? "..." : "Guardar"}
-        </button>
+        <BotonGuardar cargando={guardando} textoCargando="…" className="rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-700">
+          Guardar
+        </BotonGuardar>
         <button type="button" onClick={() => setEditando(false)} className="text-xs text-zinc-500 hover:text-zinc-900">
           Cancelar
         </button>

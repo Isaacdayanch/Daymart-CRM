@@ -8,6 +8,7 @@ import { formatoDolares, formatoPesos } from "@/lib/formato";
 import type { Moneda } from "@/lib/tipos";
 import { ajustarSaldoCuenta } from "../../actions";
 
+import { BotonGuardar } from "@/components/boton-guardar";
 /** "Ajustar saldo": Isaac pone el saldo real del banco/caja y el sistema
  * registra la diferencia como "Ajuste de saldo". Escondido en un
  * desplegable para no estorbar. */
@@ -72,9 +73,9 @@ export function AjustarSaldo({ cuentaId, moneda, saldoSistema, hoyTexto }: { cue
       )}
       {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
       <div className="mt-3 flex gap-2">
-        <button type="submit" disabled={enviando || !saldoReal} className="rounded-lg bg-amber-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-amber-700 disabled:opacity-50">
-          {enviando ? "Guardando…" : "Registrar ajuste"}
-        </button>
+        <BotonGuardar cargando={enviando} disabled={!saldoReal} className="rounded-lg bg-amber-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-amber-700">
+          Registrar ajuste
+        </BotonGuardar>
         <button type="button" onClick={() => setAbierto(false)} className="text-xs text-amber-800 hover:text-amber-900">
           Cancelar
         </button>

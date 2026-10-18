@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Selector } from "@/components/selector";
 import { corregirCantidadStock } from "../../actions";
 
+import { BotonGuardar } from "@/components/boton-guardar";
 interface BodegaConStock {
   id: string;
   nombre: string;
@@ -137,13 +138,9 @@ export function AjustarCantidad({
             >
               Cancelar
             </button>
-            <button
-              type="submit"
-              disabled={enviando}
-              className="rounded-lg bg-zinc-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
-            >
-              {enviando ? "Guardando..." : "Continuar"}
-            </button>
+            <BotonGuardar cargando={enviando} className="rounded-lg bg-zinc-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-700">
+              Continuar
+            </BotonGuardar>
           </div>
         </form>
       ) : (

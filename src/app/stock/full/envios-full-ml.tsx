@@ -11,6 +11,7 @@ import { Selector } from "@/components/selector";
 import { CampoFecha } from "@/components/campo-fecha";
 import { capturarEnvioMl, cerrarEnvioMl, deshacerEnvioMl, ignorarEnvioMl, ignorarRecepcionMl, llegadaCompletaMl, llegadaDesdePanelMl, previsualizarEnvioMl, registrarSalidaEnvioMl } from "./actions";
 
+import { BotonGuardar } from "@/components/boton-guardar";
 export interface LineaParaPantalla extends LineaAgrupada {
   /** Producto del CRM resuelto por la liga (null = sin ligar). */
   sku: string | null;
@@ -136,9 +137,9 @@ export function CapturarEnvioMl({ bodegas }: { bodegas: BodegaOpcion[] }) {
           </div>
           <TextareaPanel value={textoPanel} onChange={setTextoPanel} />
           <div className="mt-2 flex flex-wrap items-center gap-3">
-            <button type="submit" disabled={cargando || !numero.trim() || !textoPanel.trim()} className={btnPri}>
-              {cargando ? "Leyendo…" : "Revisar envío"}
-            </button>
+            <BotonGuardar cargando={cargando} disabled={!numero.trim() || !textoPanel.trim()} textoCargando="Leyendo…" className={btnPri}>
+              Revisar envío
+            </BotonGuardar>
             <span className="text-[11px] text-zinc-500">Todavía no se registra nada: primero ves lo que leí.</span>
           </div>
         </>
@@ -273,9 +274,9 @@ export function CapturarEnvioMl({ bodegas }: { bodegas: BodegaOpcion[] }) {
             {previa.sinLigar > 0 && <span className="text-amber-700"> · {previa.sinLigar} sin ligar (no se descuentan hasta ligarlos)</span>}.
           </p>
           <div className="flex flex-wrap items-center gap-3">
-            <button type="submit" disabled={cargando || bloqueado} className={btnPri}>
-              {cargando ? "Registrando…" : esLlegadaDeExistente ? "Sí, registrar la llegada" : momento === "EN_CAMINO" ? "Sí, registrar envío (sale de bodega)" : "Sí, registrar envío (ya llegó)"}
-            </button>
+            <BotonGuardar cargando={cargando} disabled={bloqueado} textoCargando="Registrando…" className={btnPri}>
+              {esLlegadaDeExistente ? "Sí, registrar la llegada" : momento === "EN_CAMINO" ? "Sí, registrar envío (sale de bodega)" : "Sí, registrar envío (ya llegó)"}
+            </BotonGuardar>
             <button type="button" onClick={() => setPrevia(null)} className="text-xs text-zinc-500 hover:text-zinc-900">
               Corregir (volver a pegar)
             </button>

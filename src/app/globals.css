@@ -35,3 +35,19 @@ body {
     page-break-inside: avoid;
   }
 }
+
+/* Palomita del botón de guardar (src/components/boton-guardar.tsx): el trazo
+   se dibuja de izquierda a derecha al terminar de guardar. */
+@keyframes trazo-palomita {
+  from {
+    stroke-dashoffset: 20;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+.palomita-trazo {
+  stroke-dasharray: 20;
+  stroke-dashoffset: 20;
+  animation: trazo-palomita 0.35s ease-out 0.05s forwards;
+}

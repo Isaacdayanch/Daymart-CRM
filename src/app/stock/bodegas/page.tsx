@@ -3,6 +3,7 @@ import { formatoFecha } from "@/lib/formato";
 import type { Bodega } from "@/lib/tipos";
 import { agregarBodega, eliminarBodega } from "../actions";
 
+import { BotonGuardar } from "@/components/boton-guardar";
 export default async function BodegasStock() {
   const supabase = await createClient();
   const { data: bodegas } = await supabase
@@ -29,12 +30,9 @@ export default async function BodegasStock() {
             placeholder="Ej. Bodega CDMX"
             className="block w-full max-w-xs rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500"
           />
-          <button
-            type="submit"
-            className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-700"
-          >
+          <BotonGuardar className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-700">
             Agregar
-          </button>
+          </BotonGuardar>
         </form>
       </div>
 

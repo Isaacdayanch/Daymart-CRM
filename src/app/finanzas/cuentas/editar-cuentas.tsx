@@ -6,6 +6,7 @@ import type { CuentaFinanciera } from "@/lib/tipos";
 import { eliminarCuenta } from "../actions";
 import { FormularioCuenta } from "./formulario-cuenta";
 
+import { BotonGuardar } from "@/components/boton-guardar";
 /** Modo "Editar cuentas": escondido detrás de un botón chiquito, porque a
  * Isaac lo que le interesa en Cuentas es VER sus cuentas. Quitar una pide
  * escribir su nombre exacto — tienen historial importante. */
@@ -72,13 +73,9 @@ export function EditarCuentas({ cuentas }: { cuentas: CuentaFinanciera[] }) {
                     className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm"
                     autoFocus
                   />
-                  <button
-                    type="submit"
-                    disabled={confirmacion.trim().toLowerCase() !== c.nombre.trim().toLowerCase()}
-                    className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-40"
-                  >
+                  <BotonGuardar disabled={confirmacion.trim().toLowerCase() !== c.nombre.trim().toLowerCase()} className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700">
                     Quitar definitivamente
-                  </button>
+                  </BotonGuardar>
                   <button
                     type="button"
                     onClick={() => {

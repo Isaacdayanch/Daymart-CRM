@@ -11,6 +11,7 @@ import { obtenerSugerenciasCatalogo } from "@/lib/catalogo-proveedores";
 import { ESTADOS_CONTENEDOR } from "@/lib/tipos";
 import { Logo } from "@/components/logo";
 
+import { BotonGuardar } from "@/components/boton-guardar";
 const claseCampo =
   "mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500";
 
@@ -127,6 +128,15 @@ export default async function NuevoContenedor({
                 </label>
                 <CampoNumero id="capacidad_cbm" name="capacidad_cbm" defaultValue={68} className={claseCampo} />
               </div>
+              <div className="col-span-2">
+                <label htmlFor="tipo_cambio_estimado" className="block text-xs font-medium text-zinc-500">
+                  Tipo de cambio estimado (para el costo por pieza mientras no hay abonos de mercancía)
+                </label>
+                <CampoNumero id="tipo_cambio_estimado" name="tipo_cambio_estimado" className={`${claseCampo} w-40`} />
+                <p className="mt-1 text-[11px] text-zinc-400">
+                  Mientras configuras, el flete y la aduana se reparten como si el contenedor fuera lleno y el precio en dólares se convierte con este tipo de cambio: así cada producto te da una idea real de su costo desde el primero.
+                </p>
+              </div>
             </div>
           </div>
 
@@ -206,12 +216,9 @@ export default async function NuevoContenedor({
             >
               Cancelar
             </Link>
-            <button
-              type="submit"
-              className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700"
-            >
+            <BotonGuardar className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700">
               Guardar contenedor
-            </button>
+            </BotonGuardar>
           </div>
         </form>
       </main>

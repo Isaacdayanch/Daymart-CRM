@@ -12,6 +12,8 @@ interface Grupo {
   productos: Producto[];
   costoPorCbm: number;
   tipoCambioMercancia: number;
+  /** true mientras el costo sea aproximado (contenedor configurándose / sin abonos). */
+  costoEstimado?: boolean;
 }
 
 function etiquetaEstado(estado: Contenedor["estado"]) {
@@ -65,7 +67,7 @@ export function VistaProductos({ grupos, verDinero }: { grupos: Grupo[]; verDine
 
       {grupos
         .filter((g) => g.productos.length > 0)
-        .map(({ contenedor, productos, costoPorCbm, tipoCambioMercancia }) => {
+        .map(({ contenedor, productos, costoPorCbm, tipoCambioMercancia, costoEstimado }) => {
           const piezas = productos.reduce((s, p) => s + p.cantidad, 0);
           const cbm = productos.reduce((s, p) => s + cbmProducto(p), 0);
           const peso = productos.reduce((s, p) => s + pesoProducto(p), 0);
@@ -106,7 +108,7 @@ export function VistaProductos({ grupos, verDinero }: { grupos: Grupo[]; verDine
                         <th className="px-3 py-2 text-right font-medium">Cajas</th>
                         <th className="px-3 py-2 text-right font-medium">CBM</th>
                         <th className="px-3 py-2 text-right font-medium">Peso</th>
-                        {verDinero && <th className="px-3 py-2 text-right font-medium">Costo/pza</th>}
+                        {verDinero && <th className={`px-3 py-2 text-right font-medium ${costoEstimado ? "text-amber-700" : ""}`}>{costoEstimado ? "Costo/pza (est.)" : "Costo/pza"}</th>}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-50">
@@ -134,7 +136,7 @@ export function VistaProductos({ grupos, verDinero }: { grupos: Grupo[]; verDine
                             {p.peso_kg ? `${Math.round(pesoProducto(p)).toLocaleString("es-MX")} kg` : <span className="text-amber-600">sin peso</span>}
                           </td>
                           {verDinero && (
-                            <td className="px-3 py-2 text-right text-zinc-700">
+                            <td className={`px-3 py-2 text-right ${costoEstimado ? "text-amber-800" : "text-zinc-700"}`}>
                               {formatoPesos(costoFinalPorPieza(p, costoPorCbm, tipoCambioMercancia))}
                             </td>
                           )}
@@ -161,8 +163,8 @@ export function VistaProductos({ grupos, verDinero }: { grupos: Grupo[]; verDine
                         <p className="truncate text-sm font-medium text-zinc-900">{p.nombre}</p>
                         <p className="truncate font-mono text-[11px] text-zinc-400">{p.sku}</p>
                         {verDinero && (
-                          <p className="mt-0.5 text-xs text-zinc-600">
-                            {formatoPesos(costoFinalPorPieza(p, costoPorCbm, tipoCambioMercancia))}/pza
+                          <p className={`mt-0.5 text-xs ${costoEstimado ? "text-amber-800" : "text-zinc-600"}`}>
+                            {formatoPesos(costoFinalPorPieza(p, costoPorCbm, tipoCambioMercancia))}/pza{costoEstimado ? " (est.)" : ""}
                           </p>
                         )}
                       </div>

@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import type { ConfiguracionStock } from "@/lib/tipos";
 import { actualizarDiasEspera } from "../actions";
 
+import { BotonGuardar } from "@/components/boton-guardar";
 export default async function ConfiguracionStockPage() {
   const supabase = await createClient();
   const { data: configuracion } = await supabase
@@ -27,12 +28,9 @@ export default async function ConfiguracionStockPage() {
             className="mt-1 block w-28 rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500"
           />
         </div>
-        <button
-          type="submit"
-          className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-700"
-        >
+        <BotonGuardar className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-700">
           Guardar
-        </button>
+        </BotonGuardar>
       </form>
     </div>
   );

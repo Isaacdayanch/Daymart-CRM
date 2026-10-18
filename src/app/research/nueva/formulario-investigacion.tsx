@@ -9,6 +9,7 @@ import { formatoPesos } from "@/lib/formato";
 import { guardarBorrador, traerDatosMercadoLibre } from "../actions";
 import { categoriaPorNombreMl, porcentajeComisionMl } from "@/app/mercadolibre/actions";
 
+import { BotonGuardar } from "@/components/boton-guardar";
 const claseCampo =
   "mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500";
 
@@ -499,13 +500,9 @@ export function FormularioInvestigacion() {
       {error && <p className="text-sm text-red-600">{error}</p>}
 
       <div className="flex justify-end">
-        <button
-          type="submit"
-          disabled={guardando}
-          className="rounded-xl bg-zinc-900 px-6 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-zinc-700 disabled:opacity-50"
-        >
-          {guardando ? "Guardando..." : "Guardar como borrador"}
-        </button>
+        <BotonGuardar cargando={guardando} className="rounded-xl bg-zinc-900 px-6 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-zinc-700">
+          Guardar como borrador
+        </BotonGuardar>
       </div>
     </form>
   );

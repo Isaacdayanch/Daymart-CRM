@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { guardarMargenMinimoMl } from "../actions";
 
+import { BotonGuardar } from "@/components/boton-guardar";
 /** Margen mínimo (%) que Isaac no quiere perforar: los precios que quedan
  * abajo se marcan en rojo y no se aplican sin confirmarlo aparte. */
 export function MargenMinimo({ valor }: { valor: number }) {
@@ -42,9 +43,9 @@ export function MargenMinimo({ valor }: { valor: number }) {
       <label className="block text-[11px] text-zinc-400">Margen mínimo (%)</label>
       <div className="mt-1 flex items-center gap-2">
         <input type="number" min={0} max={89} step={0.5} value={texto} onChange={(e) => setTexto(e.target.value)} className="w-20 rounded-lg border border-zinc-300 px-2 py-1.5 text-sm" autoFocus />
-        <button type="submit" disabled={guardando} className="rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50">
-          {guardando ? "…" : "Guardar"}
-        </button>
+        <BotonGuardar cargando={guardando} textoCargando="…" className="rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white">
+          Guardar
+        </BotonGuardar>
         <button type="button" onClick={() => setEditando(false)} className="text-xs text-zinc-500">
           Cancelar
         </button>

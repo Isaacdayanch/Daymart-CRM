@@ -51,6 +51,9 @@ export async function crearContenedor(formData: FormData) {
   // Fecha estimada de llegada (migración 0051), aparte para que sin el SQL se cree igual.
   const eta = texto(formData, "fecha_estimada_llegada");
   if (eta) await supabase.from("contenedores").update({ fecha_estimada_llegada: eta }).eq("id", contenedor.id);
+  // Tipo de cambio estimado (migración 0052), aparte por la misma razón.
+  const tcEstimado = numero(formData, "tipo_cambio_estimado");
+  if (tcEstimado > 0) await supabase.from("contenedores").update({ tipo_cambio_estimado: tcEstimado }).eq("id", contenedor.id);
 
   const montos = formData.getAll("abono_monto").map(Number);
   const tiposCambio = formData.getAll("abono_tipo_cambio").map(Number);

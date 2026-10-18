@@ -5,6 +5,7 @@ import type { CuentaFinanciera, MovimientoPrestamista, Prestamista } from "@/lib
 import { agregarPrestamista } from "../actions";
 import { FormularioPrestamista } from "./formulario-prestamista";
 
+import { BotonGuardar } from "@/components/boton-guardar";
 const claseCampo =
   "mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500";
 
@@ -56,12 +57,9 @@ export default async function PrestamistasFinanzas() {
         <form action={agregarPrestamista} className="mt-3 grid gap-2 sm:grid-cols-[1fr_2fr_auto] sm:items-end">
           <input type="text" name="nombre" required placeholder="Nombre" className={claseCampo} />
           <input type="text" name="notas" placeholder="Notas (opcional)" className={claseCampo} />
-          <button
-            type="submit"
-            className="h-fit rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700"
-          >
+          <BotonGuardar className="h-fit rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700">
             Agregar
-          </button>
+          </BotonGuardar>
         </form>
       </div>
 

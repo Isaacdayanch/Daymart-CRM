@@ -461,6 +461,10 @@ export async function actualizarContenedor(contenedorId: string, formData: FormD
     .eq("id", contenedorId);
   // Fecha estimada de llegada (migración 0051), igual aparte.
   await supabase.from("contenedores").update({ fecha_estimada_llegada: texto(formData, "fecha_estimada_llegada") || null }).eq("id", contenedorId);
+  // Tipo de cambio estimado para el costo mientras no hay abonos (migración 0052), aparte.
+  if (formData.has("tipo_cambio_estimado")) {
+    await supabase.from("contenedores").update({ tipo_cambio_estimado: numero(formData, "tipo_cambio_estimado") || null }).eq("id", contenedorId);
+  }
 
   await aplicarCreditoProveedor(supabase, contenedorId);
   await recalcularCostoEntradasContenedor(contenedorId);
@@ -500,6 +504,27 @@ export async function cambiarEstado(contenedorId: string, estado: EstadoContened
   revalidatePath("/contenedores");
   revalidatePath("/");
   return { error: avisos.length ? `El estado sí cambió, pero ${avisos.join("; ")}.` : null };
+}
+
+/** "Terminar de configurar" (migración 0052): a partir de aquí el flete y la
+ * aduana se reparten entre los m³ reales del contenedor, no entre la
+ * capacidad. Se puede reabrir mientras siga en Configurándose. */
+export async function terminarConfiguracion(contenedorId: string): Promise<{ error: string | null }> {
+  const supabase = await createClient();
+  const { error } = await supabase.from("contenedores").update({ configuracion_terminada_en: new Date().toISOString() }).eq("id", contenedorId);
+  if (error) return { error: /configuracion_terminada_en/.test(error.message) ? "Falta correr el SQL 0052 en Supabase para poder marcar el contenedor como terminado." : error.message };
+  revalidatePath(`/contenedores/${contenedorId}`);
+  revalidatePath("/contenedores/productos");
+  return { error: null };
+}
+
+export async function reabrirConfiguracion(contenedorId: string): Promise<{ error: string | null }> {
+  const supabase = await createClient();
+  const { error } = await supabase.from("contenedores").update({ configuracion_terminada_en: null }).eq("id", contenedorId);
+  if (error) return { error: /configuracion_terminada_en/.test(error.message) ? "Falta correr el SQL 0052 en Supabase." : error.message };
+  revalidatePath(`/contenedores/${contenedorId}`);
+  revalidatePath("/contenedores/productos");
+  return { error: null };
 }
 
 /** Fecha estimada de llegada (YYYY-MM-DD o vacío para quitarla). */

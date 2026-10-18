@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Selector } from "@/components/selector";
 import { convertirEnProducto } from "./actions";
 
+import { BotonGuardar } from "@/components/boton-guardar";
 interface ContenedorOpcion {
   id: string;
   numero: number;
@@ -153,13 +154,9 @@ export function ConvertirProducto({
         >
           Cancelar
         </button>
-        <button
-          type="submit"
-          disabled={enviando}
-          className="rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
-        >
-          {enviando ? "Guardando..." : "Confirmar"}
-        </button>
+        <BotonGuardar cargando={enviando} className="rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-700">
+          Confirmar
+        </BotonGuardar>
       </div>
     </form>
   );

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { PublicacionEncontradaMl } from "@/lib/mercadolibre-stock";
 import { buscarPublicacionMl, compararPublicacionesMl, traerPublicacionesMl } from "../actions";
 
+import { BotonGuardar } from "@/components/boton-guardar";
 const btnSec = "rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50";
 const btnPri = "rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-700 disabled:opacity-50";
 
@@ -108,9 +109,9 @@ export function RevisarFaltantes({ conectado }: { conectado: boolean }) {
         }}
       >
         <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Nombre, SKU o número de publicación (ej. 2230571531)" className="w-full rounded-lg border border-zinc-300 px-3 py-1.5 text-sm sm:w-96" />
-        <button type="submit" disabled={!conectado || buscando || !q.trim()} className={btnSec}>
-          {buscando ? "Buscando…" : "Buscar en ML"}
-        </button>
+        <BotonGuardar cargando={buscando} disabled={!conectado || !q.trim()} textoCargando="Buscando…" className={btnSec}>
+          Buscar en ML
+        </BotonGuardar>
       </form>
       {resultados && (
         <ul className="mt-2 divide-y divide-zinc-100 text-xs">

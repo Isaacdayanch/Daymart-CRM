@@ -5,6 +5,7 @@ import type { CuentaFinanciera, MovimientoSocio, Socio } from "@/lib/tipos";
 import { agregarSocio } from "../actions";
 import { FormularioSocio } from "./formulario-socio";
 
+import { BotonGuardar } from "@/components/boton-guardar";
 const claseCampo =
   "mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500";
 
@@ -56,12 +57,9 @@ export default async function SociosFinanzas() {
         <h2 className="text-sm font-semibold text-zinc-900">Nuevo socio</h2>
         <form action={agregarSocio} className="mt-3 flex gap-2">
           <input type="text" name="nombre" required placeholder="Nombre del socio" className={claseCampo} />
-          <button
-            type="submit"
-            className="mt-1 shrink-0 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700"
-          >
+          <BotonGuardar className="mt-1 shrink-0 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700">
             Agregar
-          </button>
+          </BotonGuardar>
         </form>
       </div>
 

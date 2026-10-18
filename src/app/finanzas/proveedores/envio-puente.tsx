@@ -10,6 +10,7 @@ import { formatoFecha } from "@/lib/formato";
 import type { CuentaFinanciera, Moneda } from "@/lib/tipos";
 import { registrarEnvioCuentaPuente } from "../actions";
 
+import { BotonGuardar } from "@/components/boton-guardar";
 const claseCampo =
   "mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500";
 
@@ -197,13 +198,9 @@ export function EnvioPuente({
         </div>
         {error && <p className="text-sm text-red-600 sm:col-span-2">{error}</p>}
         <div className="flex justify-end sm:col-span-2">
-          <button
-            type="submit"
-            disabled={enviando}
-            className="rounded-xl bg-zinc-900 px-5 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-zinc-700 disabled:opacity-50"
-          >
-            {enviando ? "Guardando..." : "Registrar envío"}
-          </button>
+          <BotonGuardar cargando={enviando} className="rounded-xl bg-zinc-900 px-5 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-zinc-700">
+            Registrar envío
+          </BotonGuardar>
         </div>
       </form>
     </div>

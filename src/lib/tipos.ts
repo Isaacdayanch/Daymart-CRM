@@ -50,6 +50,10 @@ export interface Contenedor {
   capacidad_cbm?: number | null;
   /** Fecha estimada de llegada (YYYY-MM-DD, migración 0051): aviso cuando faltan ≤ 7 días. */
   fecha_estimada_llegada?: string | null;
+  /** Tipo de cambio para el costo por pieza mientras no hay abonos (migración 0052, solo estimación). */
+  tipo_cambio_estimado?: number | null;
+  /** Isaac marcó "Terminar de configurar": el flete/aduana se reparte entre los m³ reales (migración 0052). */
+  configuracion_terminada_en?: string | null;
   eliminado_en: string | null;
   stock_generado_en: string | null;
   creado_en: string;

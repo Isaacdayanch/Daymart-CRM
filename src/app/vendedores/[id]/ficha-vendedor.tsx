@@ -7,6 +7,7 @@ import { formatoFecha } from "@/lib/formato";
 import type { Vendedor } from "@/lib/tipos";
 import { actualizarVendedor, cortarAccesoVendedor, eliminarVendedor, reactivarVendedor, regenerarLinksVendedor } from "../actions";
 
+import { BotonGuardar } from "@/components/boton-guardar";
 const claseCampo = "mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500";
 
 function BotonCopiar({ texto, etiqueta = "Copiar" }: { texto: string; etiqueta?: string }) {
@@ -134,9 +135,9 @@ export function FichaVendedor({ vendedor: v, baseUrl, categorias }: { vendedor: 
               Sus clientes SÍ ven precios en el link para clientes (el precio del vendedor, nunca menor a tu mínimo)
             </label>
             <div className="flex items-center gap-3 sm:col-span-2 lg:col-span-4">
-              <button type="submit" className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700">
+              <BotonGuardar className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700">
                 Guardar
-              </button>
+              </BotonGuardar>
               <button type="button" onClick={() => setEditando(false)} className="text-xs text-zinc-500 hover:text-zinc-900">
                 Cancelar
               </button>

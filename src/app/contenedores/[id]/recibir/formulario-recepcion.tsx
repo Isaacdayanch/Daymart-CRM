@@ -6,6 +6,7 @@ import { CampoFecha } from "@/components/campo-fecha";
 import type { Bodega, Producto } from "@/lib/tipos";
 import { confirmarRecepcion, editarRecepcion } from "./actions";
 
+import { BotonGuardar } from "@/components/boton-guardar";
 export function FormularioRecepcion({
   contenedorId,
   productos,
@@ -153,13 +154,9 @@ export function FormularioRecepcion({
       </div>
 
       <div className="flex justify-end pt-2">
-        <button
-          type="submit"
-          disabled={enviando}
-          className="rounded-xl bg-zinc-900 px-6 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-zinc-700 disabled:opacity-50"
-        >
-          {enviando ? "Guardando..." : modoEdicion ? "Guardar corrección" : "Confirmar recepción"}
-        </button>
+        <BotonGuardar cargando={enviando} className="rounded-xl bg-zinc-900 px-6 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-zinc-700">
+          {modoEdicion ? "Guardar corrección" : "Confirmar recepción"}
+        </BotonGuardar>
       </div>
     </form>
   );

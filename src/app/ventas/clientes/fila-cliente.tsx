@@ -6,6 +6,7 @@ import { formatoPesos } from "@/lib/formato";
 import type { Cliente } from "@/lib/tipos";
 import { actualizarCliente, eliminarCliente } from "../actions";
 
+import { BotonGuardar } from "@/components/boton-guardar";
 export function FilaCliente({
   cliente,
   ventas,
@@ -48,13 +49,9 @@ export function FilaCliente({
             <input type="number" name="dias_credito" defaultValue={cliente.dias_credito ?? ""} min={1} placeholder="Días crédito" className={claseInput} />
             <input type="text" name="notas" defaultValue={cliente.notas ?? ""} placeholder="Notas" className={claseInput} />
             <div className="flex items-center gap-2">
-              <button
-                type="submit"
-                disabled={guardando}
-                className="rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
-              >
-                {guardando ? "..." : "Guardar"}
-              </button>
+              <BotonGuardar cargando={guardando} textoCargando="…" className="rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-700">
+                Guardar
+              </BotonGuardar>
               <button type="button" onClick={() => setEditando(false)} className="text-xs text-zinc-500 hover:text-zinc-900">
                 Cancelar
               </button>

@@ -9,6 +9,7 @@ import { formatoFecha, formatoPesos } from "@/lib/formato";
 import type { CobroVenta, CuentaFinanciera, FormaPagoVenta } from "@/lib/tipos";
 import { actualizarCobro, eliminarCobro, registrarCobro } from "../actions";
 
+import { BotonGuardar } from "@/components/boton-guardar";
 function aTextoFecha(iso: string) {
   return iso.slice(0, 10);
 }
@@ -101,13 +102,9 @@ export function Cobros({
           </div>
           {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
           <div className="mt-3 flex justify-end">
-            <button
-              type="submit"
-              disabled={guardando}
-              className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
-            >
-              {guardando ? "Guardando..." : "Registrar cobro"}
-            </button>
+            <BotonGuardar cargando={guardando} className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700">
+              Registrar cobro
+            </BotonGuardar>
           </div>
         </form>
       )}
@@ -179,13 +176,9 @@ function FilaCobro({
           </div>
           {error && <p className="text-sm text-red-600 sm:col-span-4">{error}</p>}
           <div className="flex items-center gap-3 sm:col-span-4">
-            <button
-              type="submit"
-              disabled={guardando}
-              className="rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
-            >
-              {guardando ? "Guardando..." : "Guardar"}
-            </button>
+            <BotonGuardar cargando={guardando} className="rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-700">
+              Guardar
+            </BotonGuardar>
             <button type="button" onClick={() => setEditando(false)} className="text-xs text-zinc-500 hover:text-zinc-900">
               Cancelar
             </button>

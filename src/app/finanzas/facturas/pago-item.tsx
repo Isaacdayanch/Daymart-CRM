@@ -9,6 +9,7 @@ import { formatoDolares, formatoFecha, formatoPesos } from "@/lib/formato";
 import type { CuentaFinanciera, Moneda, PagoFactura } from "@/lib/tipos";
 import { actualizarPagoFactura, eliminarPagoFactura } from "../actions";
 
+import { BotonGuardar } from "@/components/boton-guardar";
 const claseCampo =
   "mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500";
 
@@ -77,9 +78,9 @@ export function PagoItem({ pago, moneda, cuentas }: { pago: PagoFactura; moneda:
           />
         </div>
       </div>
-      <button type="submit" disabled={enviando} className="h-fit rounded-lg bg-zinc-900 px-3 py-2 text-xs font-medium text-white hover:bg-zinc-700 disabled:opacity-50">
-        {enviando ? "Guardando..." : "Guardar"}
-      </button>
+      <BotonGuardar cargando={enviando} className="h-fit rounded-lg bg-zinc-900 px-3 py-2 text-xs font-medium text-white hover:bg-zinc-700">
+        Guardar
+      </BotonGuardar>
       <button type="button" onClick={() => setEditando(false)} className="h-fit text-xs font-medium text-zinc-400 hover:text-zinc-700">
         Cancelar
       </button>

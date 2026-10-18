@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Selector } from "@/components/selector";
 import { agregarCuenta } from "../actions";
 
+import { BotonGuardar } from "@/components/boton-guardar";
 const TIPOS = [
   { value: "EFECTIVO", label: "Efectivo" },
   { value: "BANCO", label: "Banco" },
@@ -54,13 +55,9 @@ export function FormularioCuenta() {
         <input type="checkbox" name="cuenta_transito" value="true" className="h-4 w-4 rounded border-zinc-300" />
         De tránsito (ej. Mercado Pago — no cuenta como saldo real)
       </label>
-      <button
-        type="submit"
-        disabled={enviando}
-        className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-700 disabled:opacity-50"
-      >
-        {enviando ? "Guardando..." : "Agregar"}
-      </button>
+      <BotonGuardar cargando={enviando} className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-700">
+        Agregar
+      </BotonGuardar>
       {error && <p className="w-full text-sm text-red-600">{error}</p>}
     </form>
   );

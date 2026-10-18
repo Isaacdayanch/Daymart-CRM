@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { costoPorCbmContenedor, tipoCambioPromedioMercancia } from "@/lib/calculos";
+import { baseCostoContenedor } from "@/lib/calculos";
 import { obtenerPerfilActual } from "@/lib/perfil";
 import { Logo } from "@/components/logo";
 import { MenuMas } from "../../menu-mas";
@@ -39,11 +39,13 @@ export default async function ProductosEnCamino({
   const grupos = visibles.map((contenedor) => {
     const suyos = (productos ?? []).filter((p) => p.contenedor_id === contenedor.id);
     const abonos = (pagos ?? []).filter((p) => p.contenedor_id === contenedor.id);
+    const base = baseCostoContenedor(contenedor, suyos, abonos);
     return {
       contenedor,
       productos: suyos,
-      costoPorCbm: costoPorCbmContenedor(contenedor, suyos),
-      tipoCambioMercancia: tipoCambioPromedioMercancia(abonos),
+      costoPorCbm: base.costoPorCbm,
+      tipoCambioMercancia: base.tipoCambio,
+      costoEstimado: base.estimado,
     };
   });
 

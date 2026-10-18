@@ -9,6 +9,7 @@ import type { PagoMercancia } from "@/lib/tipos";
 import { agregarAbono } from "./actions";
 import { FilaAbono } from "./fila-abono";
 
+import { BotonGuardar } from "@/components/boton-guardar";
 const claseCampo =
   "mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500";
 
@@ -65,12 +66,9 @@ export function Abonos({ contenedorId, abonos }: { contenedorId: string; abonos:
             />
           </div>
         </div>
-        <button
-          type="submit"
-          className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700"
-        >
+        <BotonGuardar className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700">
           + Agregar
-        </button>
+        </BotonGuardar>
       </form>
     </div>
   );

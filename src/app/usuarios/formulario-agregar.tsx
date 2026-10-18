@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Selector } from "@/components/selector";
 import { agregarPerfil } from "./actions";
 
+import { BotonGuardar } from "@/components/boton-guardar";
 export function FormularioAgregarPerfil() {
   const [error, setError] = useState<string | null>(null);
   const [exito, setExito] = useState(false);
@@ -54,12 +55,9 @@ export function FormularioAgregarPerfil() {
           ]}
         />
       </div>
-      <button
-        type="submit"
-        className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-700"
-      >
+      <BotonGuardar className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-700">
         + Dar acceso
-      </button>
+      </BotonGuardar>
       {error && <p className="text-sm text-red-600 sm:col-span-4">{error}</p>}
       {exito && <p className="text-sm text-emerald-600 sm:col-span-4">Acceso creado.</p>}
     </form>

@@ -12,6 +12,7 @@ import { actualizarProductoCatalogo } from "./actions";
 import { EliminarProducto } from "./eliminar-producto";
 import { FusionarProducto, type OpcionFusion } from "./fusionar-producto";
 
+import { BotonGuardar } from "@/components/boton-guardar";
 const claseCampo = "mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500";
 
 export function FilaCatalogo({
@@ -113,9 +114,9 @@ export function FilaCatalogo({
             Piezas por caja, medidas y peso también se actualizan en los contenedores que todavía no se reciben (los ya recibidos no se tocan, para no mover su costo).
           </p>
           <div className="flex items-end gap-2">
-            <button type="submit" className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700">
+            <BotonGuardar className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700">
               Guardar
-            </button>
+            </BotonGuardar>
             <button type="button" onClick={() => setEditando(false)} className="text-xs text-zinc-500 hover:text-zinc-900">
               Cancelar
             </button>

@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { crearCliente } from "../actions";
 
+import { BotonGuardar } from "@/components/boton-guardar";
 export function FormularioCliente() {
   const router = useRouter();
   const ref = useRef<HTMLFormElement>(null);
@@ -51,13 +52,9 @@ export function FormularioCliente() {
       </div>
       {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
       <div className="mt-3 flex justify-end">
-        <button
-          type="submit"
-          disabled={guardando}
-          className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
-        >
-          {guardando ? "Guardando..." : "Guardar cliente"}
-        </button>
+        <BotonGuardar cargando={guardando} className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700">
+          Guardar cliente
+        </BotonGuardar>
       </div>
     </form>
   );

@@ -9,11 +9,13 @@ import type { Marca, PendienteChina, Producto } from "@/lib/tipos";
 import { agregarProducto, actualizarProducto, eliminarProducto, moverProducto } from "./actions";
 import { CamposProducto, type OcupacionActual } from "./campos-producto";
 
+import { BotonGuardar } from "@/components/boton-guardar";
 export function Productos({
   contenedorId,
   productos,
   costoPorCbm,
   tipoCambioMercancia,
+  costoEstimado = false,
   fabricaPrincipal,
   proveedorPrincipal,
   catalogo,
@@ -30,6 +32,8 @@ export function Productos({
   productos: Producto[];
   costoPorCbm: number;
   tipoCambioMercancia: number;
+  /** true mientras el costo sea aproximado (contenedor configurándose / sin abonos). */
+  costoEstimado?: boolean;
   fabricaPrincipal: string | null;
   proveedorPrincipal: string | null;
   catalogo: Producto[];
@@ -115,7 +119,7 @@ export function Productos({
                 <th className="py-2 pr-3 font-medium">Cant.</th>
                 <th className="py-2 pr-3 font-medium">CBM</th>
                 <th className="py-2 pr-3 font-medium">Peso</th>
-                {!soloLectura && <th className="py-2 pr-3 font-medium">Costo final/pieza</th>}
+                {!soloLectura && <th className={`py-2 pr-3 font-medium ${costoEstimado ? "text-amber-700" : ""}`}>{costoEstimado ? "Costo/pieza (estimado)" : "Costo final/pieza"}</th>}
                 {!soloLectura && <th className="py-2 pr-3 font-medium"></th>}
               </tr>
             </thead>
@@ -148,12 +152,9 @@ export function Productos({
                           >
                             Cancelar
                           </button>
-                          <button
-                            type="submit"
-                            className="rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700"
-                          >
+                          <BotonGuardar className="rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700">
                             Guardar
-                          </button>
+                          </BotonGuardar>
                         </div>
                       </form>
                     </td>
@@ -217,8 +218,9 @@ export function Productos({
                       )}
                     </td>
                     {!soloLectura && (
-                      <td className="py-2 pr-3 font-medium text-zinc-900">
+                      <td className={`py-2 pr-3 font-medium ${costoEstimado ? "text-amber-800" : "text-zinc-900"}`}>
                         {formatoPesos(costoFinalPorPieza(producto, costoPorCbm, tipoCambioMercancia))}
+                        {costoEstimado && <span className="ml-1 text-[10px] font-normal text-amber-600">est.</span>}
                       </td>
                     )}
                     {!soloLectura && (
@@ -275,12 +277,9 @@ export function Productos({
                     >
                       Cancelar
                     </button>
-                    <button
-                      type="submit"
-                      className="rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700"
-                    >
+                    <BotonGuardar className="rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700">
                       Guardar
-                    </button>
+                    </BotonGuardar>
                   </div>
                 </form>
               </div>
@@ -323,8 +322,9 @@ export function Productos({
                   <p className="truncate text-xs font-medium text-zinc-900">{producto.nombre}</p>
                   <p className="truncate font-mono text-[11px] text-zinc-400">{producto.sku}</p>
                   {!soloLectura && (
-                    <p className="mt-1 text-xs font-semibold text-zinc-900">
+                    <p className={`mt-1 text-xs font-semibold ${costoEstimado ? "text-amber-800" : "text-zinc-900"}`}>
                       {formatoPesos(costoFinalPorPieza(producto, costoPorCbm, tipoCambioMercancia))}
+                      {costoEstimado && <span className="ml-1 text-[10px] font-normal text-amber-600">est.</span>}
                     </p>
                   )}
                 </div>
@@ -442,12 +442,9 @@ export function Productos({
         )}
 
         <div className="flex justify-end">
-          <button
-            type="submit"
-            className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700"
-          >
+          <BotonGuardar className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700">
             + Agregar producto
-          </button>
+          </BotonGuardar>
         </div>
       </form>
       )}

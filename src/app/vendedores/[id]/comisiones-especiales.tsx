@@ -9,6 +9,7 @@ import { formatoPesos } from "@/lib/formato";
 import type { ComisionVendedorProducto, Vendedor } from "@/lib/tipos";
 import { guardarComisionEspecial, quitarComisionEspecial } from "../actions";
 
+import { BotonGuardar } from "@/components/boton-guardar";
 const claseCampo = "mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500";
 
 interface ProductoOpcion {
@@ -94,9 +95,9 @@ export function ComisionesEspeciales({ vendedor, especiales, productos }: { vend
               <CampoNumero name="comision_fija" defaultValue={Number(vendedor.comision_fija) || undefined} className={claseCampo} />
             </div>
             <div className="flex items-center gap-3 sm:col-span-2 lg:col-span-4">
-              <button type="submit" disabled={!sku} className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50">
+              <BotonGuardar disabled={!sku} className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700">
                 Guardar
-              </button>
+              </BotonGuardar>
               <button type="button" onClick={() => setAgregando(false)} className="text-xs text-zinc-500 hover:text-zinc-900">
                 Cancelar
               </button>

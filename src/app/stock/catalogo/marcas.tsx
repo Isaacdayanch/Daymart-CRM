@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { Marca } from "@/lib/tipos";
 import { actualizarMarca, crearMarca, eliminarMarca } from "./actions";
 
+import { BotonGuardar } from "@/components/boton-guardar";
 const claseCampo = "mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500";
 
 /** Marcas: nombre + código de 3 letras que encabeza el SKU. */
@@ -53,9 +54,9 @@ export function Marcas({ marcas, productosPorMarca }: { marcas: Marca[]; product
             <input name="notas" placeholder="Ej. línea de gym" className={claseCampo} />
           </div>
           <div className="flex items-center gap-2">
-            <button type="submit" className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700">
+            <BotonGuardar className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700">
               Guardar
-            </button>
+            </BotonGuardar>
             <button type="button" onClick={() => setAbierto(false)} className="text-xs text-zinc-500 hover:text-zinc-900">
               Cancelar
             </button>
@@ -83,9 +84,9 @@ export function Marcas({ marcas, productosPorMarca }: { marcas: Marca[]; product
                 <input name="codigo" defaultValue={m.codigo} required maxLength={4} className={`${claseCampo} font-mono uppercase`} />
                 <input name="notas" defaultValue={m.notas ?? ""} className={claseCampo} />
                 <div className="flex items-center gap-2">
-                  <button type="submit" className="rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-700">
+                  <BotonGuardar className="rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-700">
                     Guardar
-                  </button>
+                  </BotonGuardar>
                   <button type="button" onClick={() => setEditando(null)} className="text-xs text-zinc-500">
                     Cancelar
                   </button>

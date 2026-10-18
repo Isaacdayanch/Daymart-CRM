@@ -13,6 +13,7 @@ import { claveProveedor, textoUltimoPago, type UltimosPagos } from "@/lib/ultimo
 import { mandarDineroChina } from "./actions";
 import type { FacturaAbierta } from "./formulario-movimiento";
 
+import { BotonGuardar } from "@/components/boton-guardar";
 const claseCampo = "mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500";
 
 export interface DatosChina {
@@ -259,9 +260,9 @@ export function FormularioEnvioChina({ cuentas, datos, facturas, cuentaInicial }
       {error && <p className="text-sm text-red-600">{error}</p>}
       {exito && <p className="text-sm text-emerald-700">{exito}</p>}
       <div className="flex justify-end pt-1">
-        <button type="submit" disabled={enviando} className="rounded-xl bg-zinc-900 px-5 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-zinc-700 disabled:opacity-50">
-          {enviando ? "Guardando..." : modo === "DESPUES" ? "Registrar pago (comisión después)" : "Registrar pago completo"}
-        </button>
+        <BotonGuardar cargando={enviando} className="rounded-xl bg-zinc-900 px-5 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-zinc-700">
+          {modo === "DESPUES" ? "Registrar pago (comisión después)" : "Registrar pago completo"}
+        </BotonGuardar>
       </div>
     </form>
   );

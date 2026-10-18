@@ -11,6 +11,7 @@ import { formatoFecha } from "@/lib/formato";
 import { claveProveedor, textoUltimoPago, type UltimosPagos } from "@/lib/ultimos-pagos";
 import { agregarCargoProveedor, registrarAbonoProveedor } from "../actions";
 
+import { BotonGuardar } from "@/components/boton-guardar";
 const claseCampo =
   "mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500";
 
@@ -138,13 +139,9 @@ export function FormularioProveedor({ proveedores, cuentas, ultimos = {} }: { pr
         </div>
         {error && <p className="text-sm text-red-600 sm:col-span-2">{error}</p>}
         <div className="flex justify-end sm:col-span-2">
-          <button
-            type="submit"
-            disabled={enviando}
-            className="rounded-xl bg-zinc-900 px-5 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-zinc-700 disabled:opacity-50"
-          >
-            {enviando ? "Guardando..." : modo === "ABONO" ? "Registrar pago" : "Agregar cargo"}
-          </button>
+          <BotonGuardar cargando={enviando} className="rounded-xl bg-zinc-900 px-5 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-zinc-700">
+            {modo === "ABONO" ? "Registrar pago" : "Agregar cargo"}
+          </BotonGuardar>
         </div>
       </form>
     </div>

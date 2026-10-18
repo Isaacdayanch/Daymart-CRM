@@ -2,12 +2,12 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import {
+  baseCostoContenedor,
   cbmTotalContenedor,
-  costoPorCbmContenedor,
   costoTotalContenedor,
   ocupacionContenedor,
-  tipoCambioPromedioMercancia,
 } from "@/lib/calculos";
+import { ConfiguracionCosto } from "./configuracion-costo";
 import { reconciliacionContenedor } from "@/lib/calculos-stock";
 import { obtenerSugerenciasCatalogo } from "@/lib/catalogo-proveedores";
 import { obtenerMarcas } from "@/lib/catalogo";
@@ -128,8 +128,12 @@ export default async function DetalleContenedor({
 
   const cbmTotal = cbmTotalContenedor(listaProductos);
   const ocupacion = ocupacionContenedor(contenedor, listaProductos);
-  const costoPorCbm = costoPorCbmContenedor(contenedor, listaProductos);
-  const tipoCambioMercancia = tipoCambioPromedioMercancia(listaAbonos);
+  // Costo por CBM y tipo de cambio: exactos si el contenedor ya se terminó de
+  // configurar; estimados (capacidad llena / tipo de cambio estimado) mientras
+  // se arma (migración 0052).
+  const base = baseCostoContenedor(contenedor, listaProductos, listaAbonos);
+  const costoPorCbm = base.costoPorCbm;
+  const tipoCambioMercancia = base.tipoCambio;
   const costoTotal = costoTotalContenedor(contenedor, listaAbonos);
   const valorEntradoStock = reconciliacionContenedor(id, movimientosEntrada ?? []);
   const diferenciaBruta = costoTotal - valorEntradoStock;
@@ -141,6 +145,7 @@ export default async function DetalleContenedor({
     contenedor.otros_gastos_estimado ? "otros gastos" : null,
   ].filter((e): e is string => Boolean(e));
   const hayEstimados = etiquetasEstimados.length > 0;
+  const costoAproximado = hayEstimados || base.estimado;
 
   return (
     <div className="min-h-screen bg-zinc-50">
@@ -169,11 +174,12 @@ export default async function DetalleContenedor({
             <p className="mt-1 text-sm font-semibold text-zinc-900">{cbmTotal.toFixed(2)} m³</p>
           </div>
           {verDinero && (
-            <div className={`rounded-xl border p-4 ${hayEstimados ? "border-amber-200 bg-amber-50" : "border-zinc-200 bg-white"}`}>
-              <p className={`text-xs ${hayEstimados ? "text-amber-800" : "text-zinc-500"}`}>Costo por CBM</p>
-              <p className={`mt-1 text-sm font-semibold ${hayEstimados ? "text-amber-900" : "text-zinc-900"}`}>
+            <div className={`rounded-xl border p-4 ${costoAproximado ? "border-amber-200 bg-amber-50" : "border-zinc-200 bg-white"}`}>
+              <p className={`text-xs ${costoAproximado ? "text-amber-800" : "text-zinc-500"}`}>Costo por CBM{base.enConfiguracion ? " (estimado)" : ""}</p>
+              <p className={`mt-1 text-sm font-semibold ${costoAproximado ? "text-amber-900" : "text-zinc-900"}`}>
                 {formatoPesos(costoPorCbm)}
               </p>
+              {base.enConfiguracion && <p className="text-[11px] text-amber-700">sobre {base.cbmBase} m³ (contenedor lleno)</p>}
             </div>
           )}
           {verDinero && (
@@ -187,6 +193,8 @@ export default async function DetalleContenedor({
         </div>
 
         <TarjetaOcupacion ocupacion={ocupacion} />
+
+        {verDinero && <ConfiguracionCosto contenedorId={contenedor.id} base={base} estadoConfigurandose={contenedor.estado === "CONFIGURANDOSE"} terminadaEn={contenedor.configuracion_terminada_en ?? null} />}
 
         {verDinero && hayEstimados && (
           <p className="-mt-3 text-xs text-amber-800">
@@ -310,6 +318,7 @@ export default async function DetalleContenedor({
           productos={listaProductos}
           costoPorCbm={costoPorCbm}
           tipoCambioMercancia={tipoCambioMercancia}
+          costoEstimado={base.estimado}
           fabricaPrincipal={contenedor.fabrica_principal}
           proveedorPrincipal={contenedor.proveedor_principal}
           catalogo={catalogo}

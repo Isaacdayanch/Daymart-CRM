@@ -7,6 +7,7 @@ import { formatoPesos } from "@/lib/formato";
 import { comisionSospechosa, mensajeComisionSospechosa } from "@/lib/comisiones";
 import { completarComisionMovimiento } from "./actions";
 
+import { BotonGuardar } from "@/components/boton-guardar";
 /** Mini formulario para ponerle la comisión a un movimiento marcado "la sé
  * después" — se usa en el aviso ámbar de Resumen y en la misma fila del
  * libro de Movimientos, para que Isaac la capture desde donde la vea. La
@@ -72,9 +73,9 @@ export function FormularioComision({ movimientoId, monto, alTerminar }: { movimi
         </div>
       </div>
       <div className="flex items-center gap-3">
-        <button type="submit" disabled={enviando} className="rounded-lg bg-zinc-900 px-4 py-2 text-xs font-medium text-white hover:bg-zinc-700 disabled:opacity-50">
-          {enviando ? "Guardando…" : "Guardar comisión"}
-        </button>
+        <BotonGuardar cargando={enviando} className="rounded-lg bg-zinc-900 px-4 py-2 text-xs font-medium text-white hover:bg-zinc-700">
+          Guardar comisión
+        </BotonGuardar>
         {alTerminar && (
           <button type="button" onClick={alTerminar} className="text-xs text-zinc-400 hover:text-zinc-700">
             Cancelar
