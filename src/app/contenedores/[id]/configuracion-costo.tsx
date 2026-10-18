@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { BaseCostoContenedor } from "@/lib/calculos";
+import { formatoPesos as pesos } from "@/lib/formato";
 import { reabrirConfiguracion, terminarConfiguracion } from "./actions";
 
 /** Aviso del costo estimado mientras el contenedor se configura, con el botón
@@ -38,6 +39,9 @@ export function ConfiguracionCosto({ contenedorId, base, estadoConfigurandose, t
               ))}
               {base.motivos.length === 0 && <li>ya llevas el contenedor lleno: el reparto es sobre los m³ reales.</li>}
             </ul>
+            <p className="mt-2 rounded-lg bg-white/70 px-3 py-2 text-xs text-amber-900">
+              Números que se están usando: gastos capturados <strong>{pesos(base.costoPorCbm * base.cbmBase)}</strong> (flete + aduana + otros) entre <strong>{base.cbmBase.toFixed(2)} m³</strong> = <strong>{pesos(base.costoPorCbm)} por m³</strong> · tipo de cambio <strong>{base.tipoCambio > 0 ? base.tipoCambio.toFixed(2) : "0 (falta)"}</strong>. El costo de cada producto = su parte de esos gastos + su precio en dólares × ese tipo de cambio (ver el desglose debajo de cada costo).
+            </p>
             <p className="mt-2 text-xs text-amber-800">
               Así cada producto que agregues te da una idea real de lo que te va a costar. Cuando termines de cargar productos, dale a <strong>Terminar de configurar</strong>: el flete y la aduana se reparten exacto entre lo que de verdad va en el contenedor.
             </p>
