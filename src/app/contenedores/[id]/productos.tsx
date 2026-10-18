@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Image from "next/image";
 import { formatoPesos } from "@/lib/formato";
-import { cartones, cbmProducto, costoFinalPorPieza, pesoProducto } from "@/lib/calculos";
+import { cartones, cbmProducto, costoFinalPorPieza, gastoRepartidoPorPieza, pesoProducto } from "@/lib/calculos";
 import { Selector } from "@/components/selector";
 import type { Marca, PendienteChina, Producto } from "@/lib/tipos";
 import { agregarProducto, actualizarProducto, eliminarProducto, moverProducto } from "./actions";
@@ -221,6 +221,11 @@ export function Productos({
                       <td className={`py-2 pr-3 font-medium ${costoEstimado ? "text-amber-800" : "text-zinc-900"}`}>
                         {formatoPesos(costoFinalPorPieza(producto, costoPorCbm, tipoCambioMercancia))}
                         {costoEstimado && <span className="ml-1 text-[10px] font-normal text-amber-600">est.</span>}
+                        {/* De dónde sale (Isaac, 18 oct: "estaba en 59 y me botó 81"): gastos repartidos + mercancía al tipo de cambio. */}
+                        <span className="block whitespace-nowrap text-[10px] font-normal text-zinc-400">
+                          {formatoPesos(gastoRepartidoPorPieza(producto, costoPorCbm))} gastos + {formatoPesos(producto.precio_dolares * tipoCambioMercancia)} mercancía
+                          {tipoCambioMercancia > 0 ? ` (TC ${tipoCambioMercancia.toFixed(2)})` : " (sin tipo de cambio)"}
+                        </span>
                       </td>
                     )}
                     {!soloLectura && (
