@@ -30,6 +30,8 @@ export interface CamposFicha {
   precioVenta?: number | null;
   /** Bloque "Es mancuerna" (0053); undefined = el formulario no lo traía. */
   mancuerna?: LecturaMancuerna;
+  /** Código ML de Full para la etiqueta (0054); undefined = el formulario no traía el campo; null = vacío. */
+  codigoMl?: string | null;
 }
 
 function numeroOpcional(formData: FormData, campo: string): number | undefined {
@@ -53,6 +55,7 @@ export function camposFichaDeFormulario(formData: FormData): CamposFicha {
     // El bloque de mancuerna manda `mancuerna_formulario=1` siempre que está
     // en pantalla (marcado o no), para distinguir "desmarcada" de "no venía".
     mancuerna: formData.get("mancuerna_formulario") === "1" ? leerMancuernaDeFormulario(formData) : undefined,
+    codigoMl: typeof formData.get("codigo_ml") === "string" ? String(formData.get("codigo_ml")).trim().toUpperCase() || null : undefined,
   };
 }
 
@@ -80,6 +83,15 @@ export async function guardarCamposFicha(supabase: SupabaseClient, sku: string, 
     const { error } = await supabase.from("productos_catalogo").update({ precio_venta: campos.precioVenta, actualizado_en: new Date().toISOString() }).eq("sku", sku);
     if (error && /precio_venta/.test(error.message)) avisos.push("El precio no se guardó: falta correr el SQL 0044 en Supabase.");
     else if (error && !/does not exist|schema cache/i.test(error.message)) avisos.push(`El precio no se guardó: ${error.message}`);
+  }
+
+  // Código ML de Full (0054): en la ficha y en TODOS los productos de
+  // contenedor con ese SKU (no afecta costos). Vacío = se quita.
+  if (campos.codigoMl !== undefined) {
+    const r1 = await sinColumnasFaltantes({ codigo_ml: campos.codigoMl, actualizado_en: new Date().toISOString() }, (f) => supabase.from("productos_catalogo").update(f).eq("sku", sku));
+    if (r1.omitidas.includes("codigo_ml")) avisos.push("El código ML no se guardó: falta correr el SQL 0054 en Supabase.");
+    else if (r1.error) avisos.push(`El código ML no se guardó: ${r1.error}`);
+    await sinColumnasFaltantes({ codigo_ml: campos.codigoMl }, (f) => supabase.from("productos").update(f).eq("sku", sku));
   }
 
   // Contenedores que todavía no se reciben: ahí sí importa la caja real.

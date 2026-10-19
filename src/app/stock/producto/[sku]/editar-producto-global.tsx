@@ -33,6 +33,8 @@ interface DatosProducto {
   precio_venta?: number | null;
   /** Mancuerna (0053): cómo se capturó (peso lb/kg, por par, precio del proveedor). */
   mancuerna?: CamposMancuerna | null;
+  /** Código ML de Full capturado a mano para la etiqueta (0054). */
+  codigo_ml?: string | null;
 }
 
 export function EditarProductoGlobal({ sku, producto }: { sku: string; producto: DatosProducto }) {
@@ -136,10 +138,15 @@ export function EditarProductoGlobal({ sku, producto }: { sku: string; producto:
             <BloqueMancuerna estado={mancuerna} onChange={setMancuerna} claseCampo={claseCampo} />
             {mancuerna.activo && <p className="mt-1 text-[11px] text-zinc-400">Aquí &ldquo;Piezas por caja&rdquo; va en piezas sueltas. El precio por pieza se recalcula en los contenedores que todavía no se reciben.</p>}
           </div>
-          <div className="sm:col-span-2">
+          <div>
             <label className="block text-xs font-medium text-zinc-500">Precio mínimo de venta (sin IVA, para vendedores)</label>
             <CampoMonto name="precio_venta" defaultValue={producto.precio_venta || undefined} className={claseCampo} />
             <p className="mt-1 text-[11px] text-zinc-400">Vacío = sin precio. Las medidas y el peso también se actualizan en los contenedores que todavía no se reciben.</p>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-zinc-500">Código ML de Full (para la etiqueta)</label>
+            <input type="text" name="codigo_ml" defaultValue={producto.codigo_ml ?? ""} placeholder="Ej. IBHA96856" className={`${claseCampo} font-mono uppercase`} />
+            <p className="mt-1 text-[11px] text-zinc-400">Vacío = se toma de la liga con Mercado Libre; sin liga, la etiqueta sale sin código de barras.</p>
           </div>
         </div>
       </div>

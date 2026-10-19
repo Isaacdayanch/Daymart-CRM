@@ -36,6 +36,8 @@ export interface DatosCatalogo {
   vendida_en_par?: boolean | null;
   precio_modo?: string | null;
   precio_capturado?: number | null;
+  /** Código ML de Full para la etiqueta (0054). */
+  codigo_ml?: string | null;
 }
 
 /** Crea o actualiza la ficha del producto. Solo pisa los campos que vienen
@@ -46,7 +48,7 @@ export async function guardarEnCatalogo(supabase: SupabaseClient, datos: DatosCa
   // `eliminado_en: null` revive la ficha si el SKU se había quitado de Stock
   // y se vuelve a dar de alta.
   const fila: Record<string, unknown> = { sku: datos.sku, nombre: datos.nombre, actualizado_en: new Date().toISOString(), eliminado_en: null };
-  const opcionales: (keyof DatosCatalogo)[] = ["marca_id", "linea", "categoria", "imagen_url", "piezas_por_caja", "largo_cm", "ancho_cm", "alto_cm", "memo", "peso_kg", "peso_unidad", "unidad_peso", "precio_modo", "precio_capturado"];
+  const opcionales: (keyof DatosCatalogo)[] = ["marca_id", "linea", "categoria", "imagen_url", "piezas_por_caja", "largo_cm", "ancho_cm", "alto_cm", "memo", "peso_kg", "peso_unidad", "unidad_peso", "precio_modo", "precio_capturado", "codigo_ml"];
   for (const campo of opcionales) {
     const v = datos[campo];
     if (v === undefined || v === null || v === "") continue;

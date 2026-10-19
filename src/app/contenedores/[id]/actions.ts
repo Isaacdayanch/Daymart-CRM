@@ -723,6 +723,12 @@ async function resolverPendienteChinaSiAplica(
   revalidatePath("/stock/pendientes");
 }
 
+/** Código ML de Full para la etiqueta (0054): mayúsculas, sin espacios; vacío = null. */
+function codigoMlDeFormulario(formData: FormData): string | null {
+  const v = texto(formData, "codigo_ml");
+  return v ? v.trim().toUpperCase() : null;
+}
+
 export async function agregarProducto(contenedorId: string, formData: FormData) {
   const supabase = await createClient();
 
@@ -774,16 +780,17 @@ export async function agregarProducto(contenedorId: string, formData: FormData) 
     alto_cm: numero(formData, "alto_cm"),
   };
   const pesoKg = mancuerna.derivados ? mancuerna.derivados.pesoKg : numero(formData, "peso_kg") || null;
-  // Si todavía no se corrió el SQL 0038 (marca_id), 0047 (peso_kg) o 0053
-  // (mancuernas), se guarda sin esas columnas.
+  const codigoMl = codigoMlDeFormulario(formData);
+  // Si todavía no se corrió el SQL 0038 (marca_id), 0047 (peso_kg), 0053
+  // (mancuernas) o 0054 (código ML), se guarda sin esas columnas.
   const { error: errorProducto } = await sinColumnasFaltantes(
-    { contenedor_id: contenedorId, ...datosProducto, marca_id: marcaId, peso_kg: pesoKg, ...mancuerna.campos, orden: (ultimo?.orden ?? 0) + 1 },
+    { contenedor_id: contenedorId, ...datosProducto, marca_id: marcaId, peso_kg: pesoKg, ...mancuerna.campos, codigo_ml: codigoMl, orden: (ultimo?.orden ?? 0) + 1 },
     (fila) => supabase.from("productos").insert(fila),
   );
   if (errorProducto) return { error: `No se pudo guardar el producto: ${errorProducto}` };
 
   // La ficha del producto vive en el catálogo (un registro por SKU).
-  await guardarEnCatalogo(supabase, { ...datosProducto, marca_id: marcaId, peso_kg: pesoKg, ...mancuerna.campos });
+  await guardarEnCatalogo(supabase, { ...datosProducto, marca_id: marcaId, peso_kg: pesoKg, ...mancuerna.campos, codigo_ml: codigoMl });
 
   await resolverPendienteChinaSiAplica(supabase, contenedorId, formData, cantidad);
 
@@ -832,9 +839,12 @@ export async function actualizarProducto(contenedorId: string, productoId: strin
     alto_cm: numero(formData, "alto_cm"),
   };
   const pesoKg = mancuerna.derivados ? mancuerna.derivados.pesoKg : numero(formData, "peso_kg") || null;
-  const { error: errorProducto } = await sinColumnasFaltantes({ ...cambios, marca_id: marcaId, peso_kg: pesoKg, ...mancuerna.campos }, (fila) => supabase.from("productos").update(fila).eq("id", productoId));
+  const codigoMl = codigoMlDeFormulario(formData);
+  const { error: errorProducto } = await sinColumnasFaltantes({ ...cambios, marca_id: marcaId, peso_kg: pesoKg, ...mancuerna.campos, codigo_ml: codigoMl }, (fila) => supabase.from("productos").update(fila).eq("id", productoId));
   if (errorProducto) return { error: `No se pudo guardar el producto: ${errorProducto}` };
-  await guardarEnCatalogo(supabase, { ...cambios, imagen_url: imagenUrl ?? undefined, marca_id: marcaId, peso_kg: pesoKg, ...mancuerna.campos });
+  await guardarEnCatalogo(supabase, { ...cambios, imagen_url: imagenUrl ?? undefined, marca_id: marcaId, peso_kg: pesoKg, ...mancuerna.campos, codigo_ml: codigoMl });
+  // Si Isaac lo borró, también se quita de la ficha (guardarEnCatalogo no pisa con vacío).
+  if (!codigoMl) await sinColumnasFaltantes({ codigo_ml: null }, (f) => supabase.from("productos_catalogo").update(f).eq("sku", sku));
 
   // El SKU/nombre también viven copiados en cada movimiento de stock (para
   // no depender de un join). Si se corrige el SKU aquí (ej. dos variantes

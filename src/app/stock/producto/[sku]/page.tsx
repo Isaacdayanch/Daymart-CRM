@@ -16,6 +16,7 @@ import { FusionarProducto } from "@/app/stock/catalogo/fusionar-producto";
 import { DesgloseStock } from "./desglose-stock";
 import { PastillaMancuerna } from "@/components/pastilla-mancuerna";
 import { esMancuerna } from "@/lib/mancuernas";
+import { codigosMlPorSku, resolverCodigoMl, textoOrigenCodigo } from "@/lib/etiquetas";
 
 export default async function DetalleProducto({ params }: { params: Promise<{ sku: string }> }) {
   const { sku: skuCrudo } = await params;
@@ -84,8 +85,11 @@ export default async function DetalleProducto({ params }: { params: Promise<{ sk
     peso_kg: ficha?.peso_kg ?? productoReferencia?.peso_kg ?? null,
     precio_venta: ficha?.precio_venta ?? null,
     mancuerna: esMancuerna(ficha) ? ficha : esMancuerna(productoReferencia) ? productoReferencia : null,
+    codigo_ml: productoReferencia?.codigo_ml ?? ficha?.codigo_ml ?? null,
   };
   const datosMancuerna = productoParaEditar.mancuerna;
+  // Código ML de Full para la etiqueta (0054): capturado o tomado de la liga con ML.
+  const codigoEtiqueta = resolverCodigoMl(productoReferencia?.codigo_ml, ficha?.codigo_ml, (await codigosMlPorSku(new Set([sku]))).get(sku));
 
   // Opciones para "fusionar con otro producto": todo el catálogo + SKUs que
   // solo viven en movimientos, con su stock de hoy.
@@ -177,6 +181,19 @@ export default async function DetalleProducto({ params }: { params: Promise<{ sk
           <div className="min-w-40 flex-1 self-center">
             <h1 className="text-lg font-semibold text-zinc-900">{masReciente.nombre}</h1>
             <p className="font-mono text-sm text-zinc-400">{sku}</p>
+            <p className="mt-0.5 text-[11px] text-zinc-500">
+              {codigoEtiqueta.codigoMl ? (
+                <>
+                  Código ML de Full: <span className="font-mono text-zinc-700">{codigoEtiqueta.codigoMl}</span> ({textoOrigenCodigo(codigoEtiqueta.origenCodigo)})
+                </>
+              ) : (
+                <span className="text-amber-700">Sin código ML: la etiqueta sale sin código de barras (ponlo en &ldquo;Editar producto&rdquo; o liga el producto a Mercado Libre).</span>
+              )}
+              {" · "}
+              <Link href={`/stock/etiquetas?sku=${encodeURIComponent(sku)}`} className="text-zinc-600 underline-offset-2 hover:underline">
+                Imprimir etiquetas →
+              </Link>
+            </p>
             {datosMancuerna && (
               <div className="mt-1">
                 <PastillaMancuerna producto={datosMancuerna} />

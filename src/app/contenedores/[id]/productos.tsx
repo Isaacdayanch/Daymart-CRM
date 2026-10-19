@@ -29,6 +29,7 @@ export function Productos({
   soloLectura = false,
   contenedorRecibido = false,
   ocupacion,
+  codigosMl,
 }: {
   contenedorId: string;
   productos: Producto[];
@@ -51,9 +52,12 @@ export function Productos({
   contenedorRecibido?: boolean;
   /** Peso/espacio ya ocupados y sus límites, para la proyección en vivo al agregar. */
   ocupacion?: OcupacionActual;
+  /** Código ML de Full por SKU según las ligas con Mercado Libre (para etiquetas). */
+  codigosMl?: Record<string, string>;
 }) {
   const [vista, setVista] = useState<"tabla" | "galeria">("tabla");
   const [editandoId, setEditandoId] = useState<string | null>(null);
+  const codigoMlDe = (sku: string) => codigosMl?.[sku] ?? null;
   const [restockId, setRestockId] = useState("");
   const [pendienteId, setPendienteId] = useState("");
   const productoRestock = catalogo.find((p) => p.id === restockId);
@@ -145,6 +149,7 @@ export function Productos({
                           proveedores={proveedoresSugeridos}
                           marcas={marcas}
                           contenedorRecibido={contenedorRecibido}
+                          codigoMlAuto={codigoMlDe(producto.sku)}
                         />
                         <div className="mt-3 flex justify-end gap-2">
                           <button
@@ -196,7 +201,14 @@ export function Productos({
                         </div>
                       )}
                     </td>
-                    <td className="py-2 pr-3 font-mono text-xs text-zinc-500">{producto.sku}</td>
+                    <td className="py-2 pr-3 font-mono text-xs text-zinc-500">
+                      {producto.sku}
+                      {(producto.codigo_ml || codigoMlDe(producto.sku)) && (
+                        <span className="block text-[10px] text-zinc-400" title="Código ML de Full (para la etiqueta)">
+                          ML {producto.codigo_ml || codigoMlDe(producto.sku)}
+                        </span>
+                      )}
+                    </td>
                     <td className="py-2 pr-3">
                       <div className="font-medium text-zinc-900">{producto.nombre}</div>
                       <div className="text-xs text-zinc-500">
@@ -277,6 +289,7 @@ export function Productos({
                     fabricas={fabricasSugeridas}
                     proveedores={proveedoresSugeridos}
                     contenedorRecibido={contenedorRecibido}
+                    codigoMlAuto={codigoMlDe(producto.sku)}
                   />
                   <div className="mt-3 flex justify-end gap-2">
                     <button
@@ -426,6 +439,7 @@ export function Productos({
           proveedores={proveedoresSugeridos}
           marcas={marcas}
           ocupacion={ocupacion}
+          codigoMlAuto={productoRestock ? codigoMlDe(productoRestock.sku) : null}
         />
 
         {pendientesChina.length > 0 && (

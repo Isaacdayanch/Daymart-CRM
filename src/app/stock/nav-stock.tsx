@@ -12,6 +12,7 @@ const PESTANAS = [
   { href: "/stock/agregar", etiqueta: "+ Agregar producto" },
   { href: "/stock/carga-masiva", etiqueta: "Carga masiva" },
   { href: "/stock/catalogo", etiqueta: "Catálogo" },
+  { href: "/stock/etiquetas", etiqueta: "Etiquetas" },
   { href: "/stock/bodegas", etiqueta: "Bodegas" },
   { href: "/stock/configuracion", etiqueta: "Configuración" },
 ];

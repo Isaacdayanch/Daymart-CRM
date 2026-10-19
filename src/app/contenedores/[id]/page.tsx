@@ -31,6 +31,7 @@ import { Productos } from "./productos";
 import { TarjetaOcupacion } from "./ocupacion-contenedor";
 import { Documentos } from "./documentos";
 import { TarjetaEstado } from "./tarjeta-estado";
+import { codigosMlPorSku } from "@/lib/etiquetas";
 import { BotonRecalcularCosto } from "./boton-recalcular-costo";
 import { AjusteDiferencia } from "./ajuste-diferencia";
 import { Historial } from "./historial";
@@ -114,6 +115,11 @@ export default async function DetalleContenedor({
     if (!catalogoPorSku.has(p.sku)) catalogoPorSku.set(p.sku, p);
   }
   const catalogo = Array.from(catalogoPorSku.values()).sort((a, b) => a.nombre.localeCompare(b.nombre));
+  // Código ML de Full por SKU (etiquetas, 0054): el de la liga con Mercado
+  // Libre, para mostrarlo junto al campo y en la tabla cuando no se capturó.
+  const codigosMlLista = await codigosMlPorSku(new Set([...listaProductos.map((p) => p.sku), ...catalogo.map((p) => p.sku)]));
+  const codigosMl: Record<string, string> = {};
+  for (const [sku, lista] of codigosMlLista) if (lista[0]) codigosMl[sku] = lista[0];
 
   const documentosPorTipo: Partial<Record<TipoDocumento, DocumentoContenedor & { url: string | null }>> = {};
   for (const doc of listaDocumentos) {
@@ -330,9 +336,13 @@ export default async function DetalleContenedor({
           soloLectura={!verDinero}
           contenedorRecibido={Boolean(contenedor.stock_generado_en)}
           ocupacion={{ pesoKg: ocupacion.pesoKg, limitePesoKg: ocupacion.limitePesoKg, cbm: ocupacion.cbm, capacidadCbm: ocupacion.capacidadCbm }}
+          codigosMl={codigosMl}
         />
 
-        <div className="flex justify-end">
+        <div className="flex flex-wrap justify-end gap-5">
+          <Link href={`/stock/etiquetas?contenedor=${contenedor.id}`} className="text-sm font-medium text-zinc-600 hover:text-zinc-900">
+            Imprimir etiquetas de los productos →
+          </Link>
           <Link
             href={`/contenedores/${contenedor.id}/imprimir`}
             className="text-sm font-medium text-zinc-600 hover:text-zinc-900"

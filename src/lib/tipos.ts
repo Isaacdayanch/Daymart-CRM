@@ -150,6 +150,8 @@ export interface ProductoCatalogo {
   vendida_en_par?: boolean | null;
   precio_modo?: string | null;
   precio_capturado?: number | null;
+  /** Código ML de Full capturado a mano para la etiqueta (migración 0054). */
+  codigo_ml?: string | null;
   creado_en: string;
   actualizado_en: string;
   eliminado_en: string | null;
@@ -221,6 +223,8 @@ export interface Producto {
   vendida_en_par?: boolean | null;
   precio_modo?: string | null;
   precio_capturado?: number | null;
+  /** Código ML de Full (inventory_id) capturado a mano para la etiqueta (migración 0054). */
+  codigo_ml?: string | null;
   orden: number;
   creado_en: string;
   actualizado_en: string;

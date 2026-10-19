@@ -42,6 +42,7 @@ export function CamposProducto({
   esRestock = false,
   contenedorRecibido = false,
   ocupacion,
+  codigoMlAuto = null,
 }: {
   inicial?: Partial<Producto>;
   fabricaPorDefecto?: string | null;
@@ -65,6 +66,8 @@ export function CamposProducto({
   contenedorRecibido?: boolean;
   /** Solo al AGREGAR: peso/espacio ya ocupados, para la proyección en vivo. */
   ocupacion?: OcupacionActual;
+  /** Código ML de Full que Mercado Libre ya tiene para este SKU (si está ligado), para mostrarlo junto al campo. */
+  codigoMlAuto?: string | null;
 }) {
   // Cantidad, peso y medidas en vivo, para decir cuánto pesa y ocupa esta
   // línea antes de guardar (Isaac, 6 oct: las mancuernas llenan el peso
@@ -243,15 +246,34 @@ export function CamposProducto({
         </div>
       </div>
 
-      <div>
-        <label className="block text-xs font-medium text-zinc-500">Memo / detalles para el proveedor</label>
-        <input
-          type="text"
-          name="memo"
-          defaultValue={inicial?.memo ?? ""}
-          placeholder="Color, código, comentario..."
-          className={claseCampo}
-        />
+      <div className="grid grid-cols-3 gap-3">
+        <div className="col-span-2">
+          <label className="block text-xs font-medium text-zinc-500">Memo / detalles para el proveedor</label>
+          <input
+            type="text"
+            name="memo"
+            defaultValue={inicial?.memo ?? ""}
+            placeholder="Color, código, comentario..."
+            className={claseCampo}
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-zinc-500">Código ML de Full (para la etiqueta, opcional)</label>
+          <input
+            type="text"
+            name="codigo_ml"
+            defaultValue={inicial?.codigo_ml ?? ""}
+            placeholder={codigoMlAuto ?? "Ej. IBHA96856"}
+            className={`${claseCampo} font-mono uppercase`}
+          />
+          <p className="mt-1 text-[11px] text-zinc-400">
+            {codigoMlAuto ? (
+              <>Ligado a ML: se toma <span className="font-mono">{codigoMlAuto}</span> si lo dejas vacío.</>
+            ) : (
+              <>Si está ligado a Mercado Libre se toma solo; sin código, la etiqueta sale sin código de barras.</>
+            )}
+          </p>
+        </div>
       </div>
 
       <BloqueMancuerna estado={mancuerna} onChange={alCambiarMancuerna} claseCampo={claseCampo} />
