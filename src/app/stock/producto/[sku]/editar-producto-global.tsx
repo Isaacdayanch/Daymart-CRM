@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { CampoImagen } from "@/components/campo-imagen";
 import { CampoMonto } from "@/components/campo-monto";
 import { CampoNumero } from "@/components/campo-numero";
+import { BloqueMancuerna, derivadosDe, estadoMancuernaInicial, type EstadoMancuerna } from "@/components/bloque-mancuerna";
+import { numeroCorto, type CamposMancuerna } from "@/lib/mancuernas";
 import { actualizarProductoGlobal } from "../../actions";
 
 import { BotonGuardar } from "@/components/boton-guardar";
@@ -29,6 +31,8 @@ interface DatosProducto {
   alto_cm?: number | null;
   peso_kg?: number | null;
   precio_venta?: number | null;
+  /** Mancuerna (0053): cómo se capturó (peso lb/kg, por par, precio del proveedor). */
+  mancuerna?: CamposMancuerna | null;
 }
 
 export function EditarProductoGlobal({ sku, producto }: { sku: string; producto: DatosProducto }) {
@@ -36,6 +40,8 @@ export function EditarProductoGlobal({ sku, producto }: { sku: string; producto:
   const [editando, setEditando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
+  const [mancuerna, setMancuerna] = useState<EstadoMancuerna>(() => estadoMancuernaInicial(producto.mancuerna));
+  const pesoMancuerna = derivadosDe(mancuerna).pesoKg;
 
   if (!editando) {
     return (
@@ -119,7 +125,16 @@ export function EditarProductoGlobal({ sku, producto }: { sku: string; producto:
           </div>
           <div>
             <label className="block text-xs font-medium text-zinc-500">Peso por pieza (kg)</label>
-            <CampoNumero name="peso_kg" defaultValue={producto.peso_kg || undefined} className={claseCampo} />
+            {mancuerna.activo ? (
+              <p className={`${claseCampo} bg-zinc-100 text-zinc-700`}>{pesoMancuerna > 0 ? numeroCorto(pesoMancuerna, 2) : "—"} <span className="text-[11px] text-zinc-400">(del peso de la mancuerna)</span></p>
+            ) : (
+              <CampoNumero name="peso_kg" defaultValue={producto.peso_kg || undefined} className={claseCampo} />
+            )}
+          </div>
+          <div className="sm:col-span-2">
+            <input type="hidden" name="mancuerna_formulario" value="1" />
+            <BloqueMancuerna estado={mancuerna} onChange={setMancuerna} claseCampo={claseCampo} />
+            {mancuerna.activo && <p className="mt-1 text-[11px] text-zinc-400">Aquí &ldquo;Piezas por caja&rdquo; va en piezas sueltas. El precio por pieza se recalcula en los contenedores que todavía no se reciben.</p>}
           </div>
           <div className="sm:col-span-2">
             <label className="block text-xs font-medium text-zinc-500">Precio mínimo de venta (sin IVA, para vendedores)</label>

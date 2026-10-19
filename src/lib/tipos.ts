@@ -143,6 +143,13 @@ export interface ProductoCatalogo {
   /** Precio de venta al público para vendedores (sin IVA). Null = sin
    * precio todavía. Migración 0044. */
   precio_venta?: number | null;
+  /** Mancuernas / productos por peso (migración 0053). */
+  es_mancuerna?: boolean | null;
+  peso_unidad?: number | null;
+  unidad_peso?: string | null;
+  vendida_en_par?: boolean | null;
+  precio_modo?: string | null;
+  precio_capturado?: number | null;
   creado_en: string;
   actualizado_en: string;
   eliminado_en: string | null;
@@ -205,6 +212,15 @@ export interface Producto {
   alto_cm: number;
   /** Peso por pieza en kg (migración 0047); null = no capturado. */
   peso_kg?: number | null;
+  /** Mancuernas / productos por peso (migración 0053, ver src/lib/mancuernas.ts).
+   * cantidad, piezas_por_caja, precio_dolares y peso_kg SIEMPRE quedan en
+   * piezas sueltas; esto guarda cómo lo capturó Isaac. */
+  es_mancuerna?: boolean | null;
+  peso_unidad?: number | null;
+  unidad_peso?: string | null;
+  vendida_en_par?: boolean | null;
+  precio_modo?: string | null;
+  precio_capturado?: number | null;
   orden: number;
   creado_en: string;
   actualizado_en: string;

@@ -14,6 +14,8 @@ import {
   tipoCambioPromedioMercancia,
 } from "@/lib/calculos";
 import { guardarEnCatalogo, skusExistentes } from "@/lib/catalogo";
+import { sinColumnasFaltantes } from "@/lib/columnas-faltantes";
+import { leerMancuernaDeFormulario } from "@/lib/mancuernas";
 import { nombreArchivoSeguro, numero, texto } from "@/lib/form-helpers";
 import { completarColumnasOmitidas, insertarMovimientosStock } from "@/lib/movimientos-stock";
 import { valorPendienteChinaPagado } from "@/lib/calculos-pendientes";
@@ -743,7 +745,10 @@ export async function agregarProducto(contenedorId: string, formData: FormData) 
     formData,
   );
   const imagenUrl = imagenSubida ?? texto(formData, "imagen_url_previa");
-  const cantidad = numero(formData, "cantidad");
+  // Mancuernas (0053): lo capturado en pares / por kilo se convierte a
+  // piezas sueltas aquí (el servidor manda, no la pantalla).
+  const mancuerna = leerMancuernaDeFormulario(formData);
+  const cantidad = mancuerna.derivados?.cantidad ?? numero(formData, "cantidad");
 
   const { data: ultimo } = await supabase
     .from("productos")
@@ -762,28 +767,23 @@ export async function agregarProducto(contenedorId: string, formData: FormData) 
     nombre,
     memo: texto(formData, "memo"),
     cantidad,
-    precio_dolares: numero(formData, "precio_dolares"),
-    piezas_por_caja: numero(formData, "piezas_por_caja") || 1,
+    precio_dolares: mancuerna.derivados ? mancuerna.derivados.precioDolares : numero(formData, "precio_dolares"),
+    piezas_por_caja: (mancuerna.derivados?.piezasPorCaja ?? numero(formData, "piezas_por_caja")) || 1,
     largo_cm: numero(formData, "largo_cm"),
     ancho_cm: numero(formData, "ancho_cm"),
     alto_cm: numero(formData, "alto_cm"),
   };
-  const pesoKg = numero(formData, "peso_kg") || null;
-  let { error: errorProducto } = await supabase.from("productos").insert({
-    contenedor_id: contenedorId,
-    ...datosProducto,
-    marca_id: marcaId,
-    peso_kg: pesoKg,
-    orden: (ultimo?.orden ?? 0) + 1,
-  });
-  // Si todavía no se corrió el SQL 0038 (marca_id) o 0047 (peso_kg), se guarda sin esas columnas.
-  if (errorProducto && /marca_id|peso_kg/.test(errorProducto.message)) {
-    ({ error: errorProducto } = await supabase.from("productos").insert({ contenedor_id: contenedorId, ...datosProducto, orden: (ultimo?.orden ?? 0) + 1 }));
-  }
-  if (errorProducto) return { error: `No se pudo guardar el producto: ${errorProducto.message}` };
+  const pesoKg = mancuerna.derivados ? mancuerna.derivados.pesoKg : numero(formData, "peso_kg") || null;
+  // Si todavía no se corrió el SQL 0038 (marca_id), 0047 (peso_kg) o 0053
+  // (mancuernas), se guarda sin esas columnas.
+  const { error: errorProducto } = await sinColumnasFaltantes(
+    { contenedor_id: contenedorId, ...datosProducto, marca_id: marcaId, peso_kg: pesoKg, ...mancuerna.campos, orden: (ultimo?.orden ?? 0) + 1 },
+    (fila) => supabase.from("productos").insert(fila),
+  );
+  if (errorProducto) return { error: `No se pudo guardar el producto: ${errorProducto}` };
 
   // La ficha del producto vive en el catálogo (un registro por SKU).
-  await guardarEnCatalogo(supabase, { ...datosProducto, marca_id: marcaId, peso_kg: pesoKg });
+  await guardarEnCatalogo(supabase, { ...datosProducto, marca_id: marcaId, peso_kg: pesoKg, ...mancuerna.campos });
 
   await resolverPendienteChinaSiAplica(supabase, contenedorId, formData, cantidad);
 
@@ -815,6 +815,7 @@ export async function actualizarProducto(contenedorId: string, productoId: strin
     formData,
   );
 
+  const mancuerna = leerMancuernaDeFormulario(formData);
   const cambios = {
     categoria,
     fabrica: texto(formData, "fabrica"),
@@ -823,20 +824,17 @@ export async function actualizarProducto(contenedorId: string, productoId: strin
     sku,
     nombre,
     memo: texto(formData, "memo"),
-    cantidad: yaRecibido ? (productoActual?.cantidad ?? 0) : numero(formData, "cantidad"),
-    precio_dolares: numero(formData, "precio_dolares"),
-    piezas_por_caja: numero(formData, "piezas_por_caja") || 1,
+    cantidad: yaRecibido ? (productoActual?.cantidad ?? 0) : (mancuerna.derivados?.cantidad ?? numero(formData, "cantidad")),
+    precio_dolares: mancuerna.derivados ? mancuerna.derivados.precioDolares : numero(formData, "precio_dolares"),
+    piezas_por_caja: (mancuerna.derivados?.piezasPorCaja ?? numero(formData, "piezas_por_caja")) || 1,
     largo_cm: numero(formData, "largo_cm"),
     ancho_cm: numero(formData, "ancho_cm"),
     alto_cm: numero(formData, "alto_cm"),
   };
-  const pesoKg = numero(formData, "peso_kg") || null;
-  let { error: errorProducto } = await supabase.from("productos").update({ ...cambios, marca_id: marcaId, peso_kg: pesoKg }).eq("id", productoId);
-  if (errorProducto && /marca_id|peso_kg/.test(errorProducto.message)) {
-    ({ error: errorProducto } = await supabase.from("productos").update(cambios).eq("id", productoId));
-  }
-  if (errorProducto) return { error: `No se pudo guardar el producto: ${errorProducto.message}` };
-  await guardarEnCatalogo(supabase, { ...cambios, imagen_url: imagenUrl ?? undefined, marca_id: marcaId, peso_kg: pesoKg });
+  const pesoKg = mancuerna.derivados ? mancuerna.derivados.pesoKg : numero(formData, "peso_kg") || null;
+  const { error: errorProducto } = await sinColumnasFaltantes({ ...cambios, marca_id: marcaId, peso_kg: pesoKg, ...mancuerna.campos }, (fila) => supabase.from("productos").update(fila).eq("id", productoId));
+  if (errorProducto) return { error: `No se pudo guardar el producto: ${errorProducto}` };
+  await guardarEnCatalogo(supabase, { ...cambios, imagen_url: imagenUrl ?? undefined, marca_id: marcaId, peso_kg: pesoKg, ...mancuerna.campos });
 
   // El SKU/nombre también viven copiados en cada movimiento de stock (para
   // no depender de un join). Si se corrige el SKU aquí (ej. dos variantes

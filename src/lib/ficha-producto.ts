@@ -17,6 +17,8 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { guardarEnCatalogo } from "./catalogo";
+import { sinColumnasFaltantes } from "./columnas-faltantes";
+import { leerMancuernaDeFormulario, type LecturaMancuerna } from "./mancuernas";
 
 export interface CamposFicha {
   piezasPorCaja?: number;
@@ -26,6 +28,8 @@ export interface CamposFicha {
   peso?: number;
   /** undefined = el formulario no traía el campo; null = sin precio. */
   precioVenta?: number | null;
+  /** Bloque "Es mancuerna" (0053); undefined = el formulario no lo traía. */
+  mancuerna?: LecturaMancuerna;
 }
 
 function numeroOpcional(formData: FormData, campo: string): number | undefined {
@@ -46,6 +50,9 @@ export function camposFichaDeFormulario(formData: FormData): CamposFicha {
     alto: numeroOpcional(formData, "alto_cm"),
     peso: numeroOpcional(formData, "peso_kg"),
     precioVenta: !traePrecio ? undefined : Number.isFinite(precio) && precio > 0 ? precio : null,
+    // El bloque de mancuerna manda `mancuerna_formulario=1` siempre que está
+    // en pantalla (marcado o no), para distinguir "desmarcada" de "no venía".
+    mancuerna: formData.get("mancuerna_formulario") === "1" ? leerMancuernaDeFormulario(formData) : undefined,
   };
 }
 
@@ -53,6 +60,9 @@ export function camposFichaDeFormulario(formData: FormData): CamposFicha {
  * aplica. Nunca truena: devuelve avisos en lenguaje de Isaac. */
 export async function guardarCamposFicha(supabase: SupabaseClient, sku: string, nombre: string, campos: CamposFicha): Promise<{ avisos: string[] }> {
   const avisos: string[] = [];
+
+  // Si es mancuerna, el peso por pieza sale del peso capturado (lb/kg).
+  if (campos.mancuerna?.derivados?.pesoKg) campos = { ...campos, peso: campos.mancuerna.derivados.pesoKg };
 
   const r = await guardarEnCatalogo(supabase, {
     sku,
@@ -62,6 +72,7 @@ export async function guardarCamposFicha(supabase: SupabaseClient, sku: string, 
     ancho_cm: campos.ancho,
     alto_cm: campos.alto,
     peso_kg: campos.peso,
+    ...(campos.mancuerna ? campos.mancuerna.campos : {}),
   });
   if (r.error && !/does not exist|schema cache/i.test(r.error)) avisos.push(`La ficha del catálogo no se pudo actualizar: ${r.error}`);
 
@@ -78,16 +89,18 @@ export async function guardarCamposFicha(supabase: SupabaseClient, sku: string, 
   if (campos.ancho) cambiosProducto.ancho_cm = campos.ancho;
   if (campos.alto) cambiosProducto.alto_cm = campos.alto;
   if (campos.peso !== undefined) cambiosProducto.peso_kg = campos.peso > 0 ? campos.peso : null;
+  if (campos.mancuerna) {
+    Object.assign(cambiosProducto, campos.mancuerna.campos);
+    // El precio por pieza suelta también se recalcula si cambió el modo/precio del proveedor.
+    if (campos.mancuerna.derivados && campos.mancuerna.derivados.precioDolares > 0) cambiosProducto.precio_dolares = campos.mancuerna.derivados.precioDolares;
+  }
   if (Object.keys(cambiosProducto).length > 0) {
     const { data: vivos } = await supabase.from("contenedores").select("id").neq("estado", "RECIBIDO_BODEGA").is("eliminado_en", null);
     const ids = (vivos ?? []).map((c: { id: string }) => c.id);
     if (ids.length > 0) {
-      let { error } = await supabase.from("productos").update(cambiosProducto).eq("sku", sku).in("contenedor_id", ids);
-      if (error && /peso_kg/.test(error.message)) {
-        delete cambiosProducto.peso_kg;
-        ({ error } = await supabase.from("productos").update(cambiosProducto).eq("sku", sku).in("contenedor_id", ids));
-      }
-      if (error) avisos.push(`No se pudieron actualizar los contenedores en camino: ${error.message}`);
+      // Sin el SQL 0047 (peso_kg) o 0053 (mancuernas) se actualiza lo que sí exista.
+      const { error } = await sinColumnasFaltantes(cambiosProducto, (f) => supabase.from("productos").update(f).eq("sku", sku).in("contenedor_id", ids));
+      if (error) avisos.push(`No se pudieron actualizar los contenedores en camino: ${error}`);
     }
   }
 

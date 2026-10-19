@@ -6,7 +6,9 @@ import { CampoMonto } from "@/components/campo-monto";
 import { CampoImagen } from "@/components/campo-imagen";
 import { CampoSugerencias } from "@/components/campo-sugerencias";
 import { Selector } from "@/components/selector";
+import { BloqueMancuerna, derivadosDe, estadoMancuernaInicial, type EstadoMancuerna } from "@/components/bloque-mancuerna";
 import { skuNuevo, skuSugerido } from "@/lib/calculos";
+import { numeroCorto, varianteMancuerna } from "@/lib/mancuernas";
 import type { Marca, Producto } from "@/lib/tipos";
 
 /** Cómo va el contenedor HOY (sin esta línea), para decir en vivo cuánto
@@ -73,8 +75,17 @@ export function CamposProducto({
   const [largoTxt, setLargoTxt] = useState(inicial?.largo_cm ? String(inicial.largo_cm) : "");
   const [anchoTxt, setAnchoTxt] = useState(inicial?.ancho_cm ? String(inicial.ancho_cm) : "");
   const [altoTxt, setAltoTxt] = useState(inicial?.alto_cm ? String(inicial.alto_cm) : "");
+  // Mancuernas (migración 0053): lo que Isaac captura (15 lb, por par, $ por
+  // kilo) se convierte a piezas sueltas aquí para la vista en vivo y en el
+  // servidor para guardar. Mientras la casilla esté apagada, el formulario
+  // es exactamente el de siempre.
+  const [mancuerna, setMancuerna] = useState<EstadoMancuerna>(() => estadoMancuernaInicial(inicial));
+  const mancuernaDerivados = derivadosDe(mancuerna);
+  const esMancuerna = mancuerna.activo;
+  const porPar = esMancuerna && mancuerna.par;
   const cantidadNum = Number(cantidadTxt) || 0;
-  const pesoLinea = (Number(pesoTxt) || 0) * cantidadNum;
+  const pesoPieza = esMancuerna ? mancuernaDerivados.pesoKg : Number(pesoTxt) || 0;
+  const pesoLinea = pesoPieza * cantidadNum;
   const piezasCaja = Number(piezasCajaTxt) || 0;
   const cbmLinea = piezasCaja > 0 ? ((Number(largoTxt) || 0) * (Number(anchoTxt) || 0) * (Number(altoTxt) || 0) / 1_000_000) * (cantidadNum / piezasCaja) : 0;
   const pesoDespues = ocupacion ? ocupacion.pesoKg + pesoLinea : 0;
@@ -88,6 +99,7 @@ export function CamposProducto({
   const marcaPorDefecto = marcas.find((m) => m.id === inicial?.marca_id) ?? marcas.find((m) => m.codigo === "DAY") ?? marcas[0];
   const [marcaId, setMarcaId] = useState(marcaPorDefecto?.id ?? "");
   const [variante, setVariante] = useState("");
+  const [varianteEditada, setVarianteEditada] = useState(false);
   const [sku, setSku] = useState(inicial?.sku ?? "");
   // Un producto que ya tiene SKU (editar, restock, pendiente de China) lo
   // conserva: el SKU nunca se cambia solo.
@@ -116,8 +128,19 @@ export function CamposProducto({
   }
 
   function alCambiarVariante(valor: string) {
+    setVarianteEditada(true);
     setVariante(valor);
     if (!skuEditadoManualmente) setSku(armarSku({ variante: valor }));
+  }
+
+  /** Al capturar el peso de la mancuerna, la variante (y con ella el SKU)
+   * se arma sola: "15LB", "7.5KG" — cada peso es su propio SKU. */
+  function alCambiarMancuerna(nuevo: EstadoMancuerna) {
+    setMancuerna(nuevo);
+    if (marcas.length === 0 || varianteEditada) return;
+    const v = nuevo.activo ? varianteMancuerna(Number(nuevo.peso) || 0, nuevo.unidad) : "";
+    setVariante(v);
+    if (!skuEditadoManualmente) setSku(armarSku({ variante: v }));
   }
 
   return (
@@ -231,14 +254,16 @@ export function CamposProducto({
         />
       </div>
 
+      <BloqueMancuerna estado={mancuerna} onChange={alCambiarMancuerna} claseCampo={claseCampo} />
+
       <div className="grid grid-cols-3 gap-3">
         <div>
-          <label className="block text-xs font-medium text-zinc-500">Cantidad</label>
+          <label className="block text-xs font-medium text-zinc-500">{porPar ? "Cantidad (pares)" : "Cantidad"}</label>
           {contenedorRecibido ? (
             <>
               <input
                 type="text"
-                value={inicial?.cantidad ?? 0}
+                value={porPar ? `${inicial?.cantidad ?? 0} pzas (${numeroCorto((inicial?.cantidad ?? 0) / 2)} pares)` : (inicial?.cantidad ?? 0)}
                 disabled
                 className={`${claseCampo} cursor-not-allowed bg-zinc-100 text-zinc-400`}
               />
@@ -247,8 +272,20 @@ export function CamposProducto({
                 Ya se recibió — usa &ldquo;Editar recepción&rdquo; para corregirla (esa sí ajusta el stock).
               </p>
             </>
+          ) : porPar ? (
+            <>
+              <CampoNumero
+                key="cantidad-pares"
+                name="cantidad_pares"
+                defaultValue={esRestock || !inicial?.cantidad ? undefined : inicial.cantidad / 2}
+                onChange={(v) => setCantidadTxt(String((Number(v) || 0) * 2))}
+                className={claseCampo}
+              />
+              {cantidadNum > 0 && <p className="mt-1 text-[11px] text-sky-700">= {cantidadNum.toLocaleString("es-MX")} piezas sueltas</p>}
+            </>
           ) : (
             <CampoNumero
+              key="cantidad-piezas"
               name="cantidad"
               defaultValue={esRestock ? undefined : inicial?.cantidad}
               onChange={setCantidadTxt}
@@ -257,12 +294,29 @@ export function CamposProducto({
           )}
         </div>
         <div>
-          <label className="block text-xs font-medium text-zinc-500">Precio USD</label>
-          <CampoMonto name="precio_dolares" defaultValue={inicial?.precio_dolares} className={claseCampo} />
+          <label className="block text-xs font-medium text-zinc-500">{esMancuerna ? "Precio USD por pieza suelta (calculado)" : "Precio USD"}</label>
+          {esMancuerna ? (
+            <p className={`${claseCampo} bg-zinc-100 text-zinc-700`}>${numeroCorto(mancuernaDerivados.precioPieza, 2)}</p>
+          ) : (
+            <CampoMonto name="precio_dolares" defaultValue={inicial?.precio_dolares} className={claseCampo} />
+          )}
         </div>
         <div>
-          <label className="block text-xs font-medium text-zinc-500">Piezas por caja</label>
-          <CampoNumero name="piezas_por_caja" defaultValue={inicial?.piezas_por_caja} onChange={setPiezasCajaTxt} className={claseCampo} />
+          <label className="block text-xs font-medium text-zinc-500">{porPar ? "Pares por caja" : "Piezas por caja"}</label>
+          {porPar ? (
+            <>
+              <CampoNumero
+                key="pares-caja"
+                name="pares_por_caja"
+                defaultValue={inicial?.piezas_por_caja ? inicial.piezas_por_caja / 2 : undefined}
+                onChange={(v) => setPiezasCajaTxt(String((Number(v) || 0) * 2))}
+                className={claseCampo}
+              />
+              {piezasCaja > 0 && <p className="mt-1 text-[11px] text-sky-700">= {piezasCaja} piezas por caja</p>}
+            </>
+          ) : (
+            <CampoNumero key="piezas-caja" name="piezas_por_caja" defaultValue={inicial?.piezas_por_caja} onChange={setPiezasCajaTxt} className={claseCampo} />
+          )}
         </div>
       </div>
 
@@ -281,7 +335,11 @@ export function CamposProducto({
         </div>
         <div>
           <label className="block text-xs font-medium text-zinc-500">Peso por pieza (kg)</label>
-          <CampoNumero name="peso_kg" defaultValue={inicial?.peso_kg ?? undefined} onChange={setPesoTxt} className={claseCampo} />
+          {esMancuerna ? (
+            <p className={`${claseCampo} bg-zinc-100 text-zinc-700`}>{mancuernaDerivados.pesoKg > 0 ? numeroCorto(mancuernaDerivados.pesoKg, 2) : "—"}</p>
+          ) : (
+            <CampoNumero name="peso_kg" defaultValue={inicial?.peso_kg ?? undefined} onChange={setPesoTxt} className={claseCampo} />
+          )}
         </div>
       </div>
 
@@ -289,7 +347,7 @@ export function CamposProducto({
         <div className="rounded-lg bg-zinc-50 px-3 py-2 text-xs text-zinc-600">
           <p>
             Esta línea: <strong className="text-zinc-900">{Math.round(pesoLinea).toLocaleString("es-MX")} kg</strong> · {cbmLinea.toFixed(2)} m³
-            {!pesoTxt && cantidadNum > 0 && <span className="text-amber-700"> · sin peso capturado</span>}
+            {!(pesoPieza > 0) && cantidadNum > 0 && <span className="text-amber-700"> · sin peso capturado</span>}
           </p>
           {ocupacion && (
             <p className="mt-0.5">

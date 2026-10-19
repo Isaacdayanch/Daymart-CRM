@@ -8,6 +8,7 @@ import { CampoNumero } from "@/components/campo-numero";
 import { CampoSugerencias } from "@/components/campo-sugerencias";
 import { Selector } from "@/components/selector";
 import type { Marca, ProductoCatalogo } from "@/lib/tipos";
+import { PastillaMancuerna } from "@/components/pastilla-mancuerna";
 import { actualizarProductoCatalogo } from "./actions";
 import { EliminarProducto } from "./eliminar-producto";
 import { FusionarProducto, type OpcionFusion } from "./fusionar-producto";
@@ -154,6 +155,7 @@ export function FilaCatalogo({
           )}
           {p.linea && <span>· {p.linea}</span>}
           {p.categoria && <span>· {p.categoria}</span>}
+          <PastillaMancuerna producto={p} />
         </p>
         {p.descripcion && <p className="mt-0.5 truncate text-xs text-zinc-400">{p.descripcion}</p>}
         <p className="mt-0.5 text-[11px] text-zinc-400">

@@ -5,6 +5,8 @@ import Image from "next/image";
 import Link from "next/link";
 import { cartones, cbmProducto, costoFinalPorPieza, pesoProducto } from "@/lib/calculos";
 import { ESTILO_ESTADO, formatoCajas, formatoPesos } from "@/lib/formato";
+import { PastillaMancuerna } from "@/components/pastilla-mancuerna";
+import { textoPares } from "@/lib/mancuernas";
 import { ESTADOS_CONTENEDOR, type Contenedor, type Producto } from "@/lib/tipos";
 
 interface Grupo {
@@ -126,10 +128,14 @@ export function VistaProductos({ grupos, verDinero }: { grupos: Grupo[]; verDine
                           <td className="px-3 py-2">
                             <p className="font-medium text-zinc-900">{p.nombre}</p>
                             {p.memo && <p className="text-xs text-zinc-400">{p.memo}</p>}
+                            <PastillaMancuerna producto={p} className="mt-0.5" />
                           </td>
                           <td className="px-3 py-2 font-mono text-xs text-zinc-500">{p.sku}</td>
                           <td className="px-3 py-2 text-xs text-zinc-500">{p.categoria}</td>
-                          <td className="px-3 py-2 text-right font-semibold text-zinc-900">{p.cantidad.toLocaleString("es-MX")}</td>
+                          <td className="px-3 py-2 text-right font-semibold text-zinc-900">
+                            {p.cantidad.toLocaleString("es-MX")}
+                            {textoPares(p.cantidad, p) && <span className="block text-[11px] font-normal text-sky-700">{textoPares(p.cantidad, p)}</span>}
+                          </td>
                           <td className="px-3 py-2 text-right text-xs text-zinc-500">{formatoCajas(cartones(p))}</td>
                           <td className="px-3 py-2 text-right text-xs text-zinc-500">{cbmProducto(p).toFixed(3)}</td>
                           <td className="px-3 py-2 text-right text-xs text-zinc-500 whitespace-nowrap">
@@ -162,6 +168,7 @@ export function VistaProductos({ grupos, verDinero }: { grupos: Grupo[]; verDine
                       <div className="p-2">
                         <p className="truncate text-sm font-medium text-zinc-900">{p.nombre}</p>
                         <p className="truncate font-mono text-[11px] text-zinc-400">{p.sku}</p>
+                        <PastillaMancuerna producto={p} className="mt-0.5" />
                         {verDinero && (
                           <p className={`mt-0.5 text-xs ${costoEstimado ? "text-amber-800" : "text-zinc-600"}`}>
                             {formatoPesos(costoFinalPorPieza(p, costoPorCbm, tipoCambioMercancia))}/pza{costoEstimado ? " (est.)" : ""}

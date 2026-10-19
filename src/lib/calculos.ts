@@ -167,6 +167,12 @@ export interface BaseCostoContenedor {
   motivos: string[];
   /** m³ entre los que se repartió flete + aduana + otros gastos. */
   cbmBase: number;
+  /** m³ que de verdad llevan los productos capturados. */
+  cbmReal: number;
+  /** Capacidad del contenedor (68 m³ por defecto). */
+  capacidadCbm: number;
+  /** Flete + aduana + otros gastos, en pesos. */
+  gastos: number;
   /** El contenedor sigue en configuración (estimación por capacidad activa). */
   enConfiguracion: boolean;
 }
@@ -188,8 +194,8 @@ export function baseCostoContenedor(
   const configurando = enConfiguracion(contenedor);
   const motivos: string[] = [];
   let cbmBase = cbmReal;
+  const capacidad = Number(contenedor.capacidad_cbm) || CAPACIDAD_CBM_DEFAULT;
   if (configurando) {
-    const capacidad = Number(contenedor.capacidad_cbm) || CAPACIDAD_CBM_DEFAULT;
     if (cbmReal < capacidad) {
       cbmBase = capacidad;
       motivos.push(`el flete y la aduana se reparten como si el contenedor fuera lleno (${capacidad} m³; llevas ${cbmReal.toFixed(2)} m³)`);
@@ -207,7 +213,7 @@ export function baseCostoContenedor(
         : "no hay abonos ni tipo de cambio estimado: el precio en dólares se está contando en $0 — pon un tipo de cambio estimado en Editar",
     );
   }
-  return { costoPorCbm, tipoCambio, estimado: motivos.length > 0, motivos, cbmBase, enConfiguracion: configurando };
+  return { costoPorCbm, tipoCambio, estimado: motivos.length > 0, motivos, cbmBase, cbmReal, capacidadCbm: capacidad, gastos, enConfiguracion: configurando };
 }
 
 /** Gasto de flete+aduana repartido a este producto, por pieza. */

@@ -1,6 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { sinColumnasFaltantes } from "@/lib/columnas-faltantes";
+import { COLUMNAS_MANCUERNA } from "@/lib/mancuernas";
 import { obtenerPerfilActual } from "@/lib/perfil";
 import { desconectarMercadoLibre, mercadolibreGet } from "@/lib/mercadolibre-auth";
 
@@ -527,14 +529,15 @@ export async function agregarRestockDesdeAnalisis(sku: string, cantidad: number)
     peso_kg: Number(previo?.peso_kg ?? ficha?.peso_kg) || null,
     orden: (ultimo?.orden ?? 0) + 1,
   };
-  let { error } = await supabase.from("productos").insert(fila);
-  if (error && /marca_id|peso_kg/.test(error.message)) {
-    const { marca_id: _m, peso_kg: _p, ...sinExtras } = fila;
-    void _m;
-    void _p;
-    ({ error } = await supabase.from("productos").insert(sinExtras));
+  // Mancuernas (0053): se copia cómo se capturó la última vez (peso en lb/kg,
+  // por par, cómo venía el precio) para que la pastilla y la edición salgan igual.
+  for (const col of COLUMNAS_MANCUERNA) {
+    const v = previo?.[col] ?? ficha?.[col];
+    if (v !== undefined && v !== null) fila[col] = v;
   }
-  if (error) return { error: error.message, numero: null };
+  // Sin el SQL 0038 (marca_id), 0047 (peso_kg) o 0053 (mancuernas), se guarda sin esas columnas.
+  const { error } = await sinColumnasFaltantes(fila, (f) => supabase.from("productos").insert(f));
+  if (error) return { error, numero: null };
   revalidatePath(`/contenedores/${contenedor.id}`);
   revalidatePath("/contenedores");
   revalidatePath("/mercadolibre/analisis");

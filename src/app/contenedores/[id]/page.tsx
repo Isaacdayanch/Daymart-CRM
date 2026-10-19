@@ -194,7 +194,7 @@ export default async function DetalleContenedor({
 
         <TarjetaOcupacion ocupacion={ocupacion} />
 
-        {verDinero && <ConfiguracionCosto contenedorId={contenedor.id} base={base} estadoConfigurandose={contenedor.estado === "CONFIGURANDOSE"} terminadaEn={contenedor.configuracion_terminada_en ?? null} />}
+        {verDinero && <ConfiguracionCosto contenedorId={contenedor.id} base={base} estado={contenedor.estado} terminadaEn={contenedor.configuracion_terminada_en ?? null} />}
 
         {verDinero && hayEstimados && (
           <p className="-mt-3 text-xs text-amber-800">

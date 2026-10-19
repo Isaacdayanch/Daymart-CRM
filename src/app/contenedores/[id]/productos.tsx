@@ -5,6 +5,8 @@ import Image from "next/image";
 import { formatoPesos } from "@/lib/formato";
 import { cartones, cbmProducto, costoFinalPorPieza, gastoRepartidoPorPieza, pesoProducto } from "@/lib/calculos";
 import { Selector } from "@/components/selector";
+import { PastillaMancuerna } from "@/components/pastilla-mancuerna";
+import { textoPares } from "@/lib/mancuernas";
 import type { Marca, PendienteChina, Producto } from "@/lib/tipos";
 import { agregarProducto, actualizarProducto, eliminarProducto, moverProducto } from "./actions";
 import { CamposProducto, type OcupacionActual } from "./campos-producto";
@@ -201,10 +203,12 @@ export function Productos({
                         {producto.categoria}
                         {producto.fabrica ? ` · ${producto.fabrica}` : ""}
                       </div>
+                      <PastillaMancuerna producto={producto} className="mt-0.5" />
                     </td>
                     <td className="py-2 pr-3">
                       {producto.cantidad}{" "}
                       <span className="text-xs text-zinc-400">({cartones(producto).toFixed(1)} ctn)</span>
+                      {textoPares(producto.cantidad, producto) && <span className="block text-xs text-sky-700">{textoPares(producto.cantidad, producto)}</span>}
                     </td>
                     <td className="py-2 pr-3">{cbmProducto(producto).toFixed(3)}</td>
                     <td className="py-2 pr-3 whitespace-nowrap">
@@ -326,6 +330,10 @@ export function Productos({
                 <div className="p-2">
                   <p className="truncate text-xs font-medium text-zinc-900">{producto.nombre}</p>
                   <p className="truncate font-mono text-[11px] text-zinc-400">{producto.sku}</p>
+                  <PastillaMancuerna producto={producto} className="mt-0.5" />
+                  <p className="mt-0.5 text-[11px] text-zinc-500">
+                    {producto.cantidad.toLocaleString("es-MX")} pzas{textoPares(producto.cantidad, producto) ? ` (${textoPares(producto.cantidad, producto)})` : ""}
+                  </p>
                   {!soloLectura && (
                     <p className={`mt-1 text-xs font-semibold ${costoEstimado ? "text-amber-800" : "text-zinc-900"}`}>
                       {formatoPesos(costoFinalPorPieza(producto, costoPorCbm, tipoCambioMercancia))}

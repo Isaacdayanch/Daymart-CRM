@@ -14,6 +14,8 @@ import { EditarCostoManual } from "./editar-costo-manual";
 import { EliminarProducto } from "@/app/stock/catalogo/eliminar-producto";
 import { FusionarProducto } from "@/app/stock/catalogo/fusionar-producto";
 import { DesgloseStock } from "./desglose-stock";
+import { PastillaMancuerna } from "@/components/pastilla-mancuerna";
+import { esMancuerna } from "@/lib/mancuernas";
 
 export default async function DetalleProducto({ params }: { params: Promise<{ sku: string }> }) {
   const { sku: skuCrudo } = await params;
@@ -81,7 +83,9 @@ export default async function DetalleProducto({ params }: { params: Promise<{ sk
     alto_cm: ficha?.alto_cm || productoReferencia?.alto_cm || null,
     peso_kg: ficha?.peso_kg ?? productoReferencia?.peso_kg ?? null,
     precio_venta: ficha?.precio_venta ?? null,
+    mancuerna: esMancuerna(ficha) ? ficha : esMancuerna(productoReferencia) ? productoReferencia : null,
   };
+  const datosMancuerna = productoParaEditar.mancuerna;
 
   // Opciones para "fusionar con otro producto": todo el catálogo + SKUs que
   // solo viven en movimientos, con su stock de hoy.
@@ -173,6 +177,15 @@ export default async function DetalleProducto({ params }: { params: Promise<{ sk
           <div className="min-w-40 flex-1 self-center">
             <h1 className="text-lg font-semibold text-zinc-900">{masReciente.nombre}</h1>
             <p className="font-mono text-sm text-zinc-400">{sku}</p>
+            {datosMancuerna && (
+              <div className="mt-1">
+                <PastillaMancuerna producto={datosMancuerna} />
+                <p className="mt-0.5 text-[11px] text-zinc-500">
+                  El stock cuenta mancuernas sueltas (una = una pieza).
+                  {datosMancuerna.vendida_en_par ? " Si en Mercado Libre vendes el par, al ligar la publicación pon “2 piezas por unidad”." : ""}
+                </p>
+              </div>
+            )}
           </div>
           <div className="flex w-full flex-col items-end gap-2 sm:w-auto">
             {verDinero && <EditarProductoGlobal sku={sku} producto={productoParaEditar} />}

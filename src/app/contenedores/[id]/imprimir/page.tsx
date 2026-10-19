@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { baseCostoContenedor, cartones, cbmProducto, cbmTotalContenedor, costoFinalPorPieza, pesoProducto, pesoTotalContenedor } from "@/lib/calculos";
 import { formatoFecha, formatoPesos } from "@/lib/formato";
+import { etiquetaMancuerna, textoPares } from "@/lib/mancuernas";
 import type { Contenedor, PagoMercancia, Producto } from "@/lib/tipos";
 import { BotonImprimir } from "./boton-imprimir";
 import { Logo } from "@/components/logo";
@@ -115,9 +116,15 @@ export default async function ImprimirContenedor({
                   )}
                 </td>
                 <td className="py-2 pr-2 font-mono">{producto.sku}</td>
-                <td className="py-2 pr-2">{producto.nombre}</td>
+                <td className="py-2 pr-2">
+                  {producto.nombre}
+                  {etiquetaMancuerna(producto) && <span className="block text-[10px] text-zinc-500">Mancuerna · {etiquetaMancuerna(producto)}</span>}
+                </td>
                 <td className="py-2 pr-2 text-zinc-500">{producto.memo}</td>
-                <td className="py-2 pr-2 text-right">{producto.cantidad}</td>
+                <td className="py-2 pr-2 text-right">
+                  {producto.cantidad}
+                  {textoPares(producto.cantidad, producto) && <span className="block text-[10px] text-zinc-500">{textoPares(producto.cantidad, producto)}</span>}
+                </td>
                 <td className="py-2 pr-2 text-right">{cartones(producto).toFixed(1)}</td>
                 <td className="py-2 pr-2 text-right">
                   {producto.largo_cm}×{producto.ancho_cm}×{producto.alto_cm}
