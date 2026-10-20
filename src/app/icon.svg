@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- Favicon de Daymart CRM: la "D" de Daymart, redondeada como la tipografía
+       Baloo 2 del logo, en el azul de la marca (#1467d6, el mismo de logo.tsx). -->
+  <rect x="0" y="0" width="64" height="64" rx="15" fill="#1467d6"/>
+  <path d="M21 17 V47 M21 17 H29 a15 15 0 0 1 0 30 H21" fill="none" stroke="#ffffff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
