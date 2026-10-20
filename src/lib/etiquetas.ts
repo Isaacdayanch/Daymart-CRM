@@ -7,6 +7,7 @@
 
 import { claveVinculo, obtenerVinculos, skuCrmDe, type PublicacionMl } from "./mercadolibre-stock";
 import { createServiceClient } from "./supabase/servicio";
+import { todasLasFilas } from "./cargar-todo";
 import type { CamposMancuerna } from "./mancuernas";
 
 /** Formatos de impresión. Medidas en mm. `hoja` = null es rollo (cada
@@ -84,7 +85,9 @@ export async function cargarCodigosMl(): Promise<DatosCodigosMl> {
   try {
     const supabase = createServiceClient();
     const [{ data }, vinculos] = await Promise.all([
-      supabase.from("mercadolibre_publicaciones").select("item_id, variation_id, seller_sku, inventory_id, estado").not("inventory_id", "is", null).returns<PublicacionConInventario[]>(),
+      todasLasFilas<PublicacionConInventario>((desde, hasta) =>
+        supabase.from("mercadolibre_publicaciones").select("item_id, variation_id, seller_sku, inventory_id, estado", { count: "exact" }).not("inventory_id", "is", null).order("id").range(desde, hasta),
+      ),
       obtenerVinculos(),
     ]);
     return { publicaciones: data ?? [], ligas: new Map(vinculos.map((v) => [claveVinculo(v.item_id, v.variation_id), v.sku_crm])) };

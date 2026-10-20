@@ -5,6 +5,7 @@
 
 import { createServiceClient } from "@/lib/supabase/servicio";
 import { mercadolibreGet, obtenerConexion } from "@/lib/mercadolibre-auth";
+import { todasLasFilas } from "@/lib/cargar-todo";
 
 export interface PublicacionMl {
   id: string;
@@ -70,7 +71,9 @@ export function claveLigaSku(sellerSku: string) {
 
 export async function obtenerLigasSku(): Promise<LigaSkuMl[]> {
   const supabase = createServiceClient();
-  const { data, error } = await supabase.from("mercadolibre_sku_vinculos").select("seller_sku, sku_crm, piezas_por_unidad").returns<LigaSkuMl[]>();
+  const { data, error } = await todasLasFilas<LigaSkuMl>((desde, hasta) =>
+    supabase.from("mercadolibre_sku_vinculos").select("seller_sku, sku_crm, piezas_por_unidad", { count: "exact" }).order("seller_sku").range(desde, hasta),
+  );
   if (error) return []; // sin el SQL 0048 simplemente no hay ligas por SKU
   return data ?? [];
 }
@@ -88,7 +91,7 @@ export interface LigaIgnorada {
 
 export async function obtenerIgnorados(): Promise<LigaIgnorada[]> {
   const supabase = createServiceClient();
-  const { data, error } = await supabase.from("mercadolibre_ligas_ignoradas").select("*").returns<LigaIgnorada[]>();
+  const { data, error } = await todasLasFilas<LigaIgnorada>((desde, hasta) => supabase.from("mercadolibre_ligas_ignoradas").select("*", { count: "exact" }).order("clave").range(desde, hasta));
   if (error) return []; // sin el SQL 0050 simplemente no hay olvidados
   return data ?? [];
 }
@@ -429,7 +432,10 @@ export async function sincronizarLotePublicaciones(ids: string[]): Promise<{ ren
     }
     return { renglones: filas.length, fallidos };
   } catch (e) {
-    const mensaje = e instanceof Error ? e.message : "Error desconocido";
+    const crudo = e instanceof Error ? e.message : "Error desconocido";
+    // "TypeError: fetch failed" = Mercado Libre no contestó (falla de red
+    // pasajera entre Vercel y ML); se reintenta sola en la siguiente pasada.
+    const mensaje = /fetch failed/i.test(crudo) ? "Mercado Libre no contestó en la última pasada (falla de red pasajera); se conservó la copia anterior y se reintenta en la siguiente actualización." : crudo;
     await supabase.from("mercadolibre_sync").upsert({ id: 1, ultimo_error_stock: mensaje });
     throw e;
   }
@@ -586,7 +592,7 @@ export async function avanzarSyncPublicaciones(opciones: { presupuestoMs?: numbe
 export async function compararConMl(): Promise<{ enMl: number; enCrm: number; faltantes: string[]; sobrantes: string[] }> {
   const supabase = createServiceClient();
   const ids = await listarIdsPublicaciones();
-  const { data } = await supabase.from("mercadolibre_publicaciones").select("item_id").returns<{ item_id: string }[]>();
+  const { data } = await todasLasFilas<{ item_id: string }>((desde, hasta) => supabase.from("mercadolibre_publicaciones").select("item_id", { count: "exact" }).order("id").range(desde, hasta));
   const locales = new Set((data ?? []).map((d) => d.item_id));
   const enMl = new Set(ids);
   return {
@@ -610,6 +616,22 @@ export interface PublicacionEncontradaMl {
   nota?: string | null;
   /** Se puede traer al CRM (Mercado Libre sí la devolvió). */
   traible?: boolean;
+  /** Si ya está en la copia del CRM: cada variante con su liga actual, para
+   * poder ligarla ahí mismo desde el resultado de la búsqueda (20 oct;
+   * Isaac: "que me deje ahí mismo, en el mismo botón, ligar este producto a
+   * lo que ya está cargado en el CRM"). */
+  variantes?: VarianteEncontradaMl[];
+}
+
+export interface VarianteEncontradaMl {
+  variation_id: number | null;
+  variacion: string | null;
+  seller_sku: string | null;
+  /** Producto del CRM al que resuelve hoy (null = sin ligar). */
+  skuCrm: string | null;
+  origen: OrigenLiga;
+  /** Piezas del CRM por unidad de ML de esa liga (1 si no hay). */
+  factor: number;
 }
 
 /** Números de publicación escritos en un texto: "MLM2230571531",
@@ -625,7 +647,7 @@ export function idsPublicacionEnTexto(texto: string): string[] {
  * (búsqueda pública del sitio filtrada por vendedor, que solo lista las
  * activas, + búsqueda del vendedor por SKU). Dice cuáles ya están en la
  * copia local, para traer las que falten. */
-export async function buscarPublicacionesEnMl(texto: string): Promise<PublicacionEncontradaMl[]> {
+export async function buscarPublicacionesEnMl(texto: string, skusCrm: Set<string> = new Set()): Promise<PublicacionEncontradaMl[]> {
   const conexion = await obtenerConexion();
   if (!conexion) throw new Error("Mercado Libre no está conectado.");
   const q = texto.trim();
@@ -715,21 +737,50 @@ export async function buscarPublicacionesEnMl(texto: string): Promise<Publicacio
   //    con otro nombre, aquí se ve bajo qué título.
   const normalizar = (t: string | null | undefined) => (t ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
   const q2 = normalizar(q);
-  const { data: locales } = await supabase.from("mercadolibre_publicaciones").select("item_id, titulo, variacion, estado, precio, imagen_url, seller_sku").returns<Pick<PublicacionMl, "item_id" | "titulo" | "variacion" | "estado" | "precio" | "imagen_url" | "seller_sku">[]>();
-  const enCopia = new Set((locales ?? []).map((l) => l.item_id));
+  type Local = Pick<PublicacionMl, "item_id" | "variation_id" | "titulo" | "variacion" | "estado" | "precio" | "imagen_url" | "seller_sku">;
+  const [{ data: locales }, vinculosLista] = await Promise.all([
+    todasLasFilas<Local>((desde, hasta) =>
+      supabase.from("mercadolibre_publicaciones").select("item_id, variation_id, titulo, variacion, estado, precio, imagen_url, seller_sku", { count: "exact" }).order("id").range(desde, hasta),
+    ),
+    obtenerVinculos().catch(() => [] as VinculoMl[]),
+  ]);
+  const vinculos = new Map(vinculosLista.map((v) => [claveVinculo(v.item_id, v.variation_id), v.sku_crm]));
+  const factores = factoresVinculos(vinculosLista);
+  const porItem = new Map<string, Local[]>();
+  for (const l of locales ?? []) porItem.set(l.item_id, [...(porItem.get(l.item_id) ?? []), l]);
   for (const l of locales ?? []) {
     if (encontrados.has(l.item_id)) continue;
     const coincideId = idsTexto.includes(l.item_id);
     if (coincideId || normalizar(`${l.titulo ?? ""} ${l.variacion ?? ""} ${l.seller_sku ?? ""} ${l.item_id}`).includes(q2)) {
-      encontrados.set(l.item_id, { item_id: l.item_id, titulo: [l.titulo, l.variacion].filter(Boolean).join(" · ") || null, estado: l.estado, precio: l.precio ?? null, imagen_url: l.imagen_url, seller_sku: l.seller_sku, enCopia: true, traible: true });
+      const variantes = porItem.get(l.item_id) ?? [l];
+      const titulo = variantes.length > 1 ? l.titulo : [l.titulo, l.variacion].filter(Boolean).join(" · ") || null;
+      encontrados.set(l.item_id, { item_id: l.item_id, titulo, estado: l.estado, precio: l.precio ?? null, imagen_url: l.imagen_url, seller_sku: l.seller_sku, enCopia: true, traible: true });
     }
   }
-  return Array.from(encontrados.values()).map((e) => ({ ...e, enCopia: enCopia.has(e.item_id), traible: e.traible ?? true }));
+  // A todo lo que ya está en el CRM se le anota su liga actual, variante por
+  // variante, para ligarla desde el mismo resultado.
+  return Array.from(encontrados.values()).map((e) => {
+    const variantes = porItem.get(e.item_id);
+    return {
+      ...e,
+      enCopia: Boolean(variantes),
+      traible: e.traible ?? true,
+      variantes: variantes?.map((v) => {
+        const liga = skuCrmDe(v, vinculos, skusCrm);
+        return { variation_id: v.variation_id, variacion: v.variacion, seller_sku: v.seller_sku, skuCrm: liga.sku, origen: liga.origen, factor: factorDePublicacion(v.item_id, v.variation_id, factores, v.seller_sku) };
+      }),
+    };
+  });
 }
 
 export async function obtenerPublicaciones(): Promise<PublicacionMl[]> {
   const supabase = createServiceClient();
-  const { data, error } = await supabase.from("mercadolibre_publicaciones").select("*").order("titulo").returns<PublicacionMl[]>();
+  // Tope de 1,000 filas de Supabase (20 oct): Isaac tiene más de 1,000
+  // publicaciones/variantes y la lista de Ligar SKUs decía "1000" exactas —
+  // las demás no existían para el sistema. Se pagina siempre.
+  const { data, error } = await todasLasFilas<PublicacionMl>((desde, hasta) =>
+    supabase.from("mercadolibre_publicaciones").select("*", { count: "exact" }).order("titulo").order("id").range(desde, hasta),
+  );
   if (error) throw new Error(error.message);
   return data ?? [];
 }
@@ -738,7 +789,10 @@ export async function obtenerPublicaciones(): Promise<PublicacionMl[]> {
  * para que todas las pantallas resuelvan igual con `skuCrmDe`. */
 export async function obtenerVinculos(): Promise<VinculoMl[]> {
   const supabase = createServiceClient();
-  const [{ data }, ligas] = await Promise.all([supabase.from("mercadolibre_vinculos").select("*").returns<VinculoMl[]>(), obtenerLigasSku()]);
+  const [{ data }, ligas] = await Promise.all([
+    todasLasFilas<VinculoMl>((desde, hasta) => supabase.from("mercadolibre_vinculos").select("*", { count: "exact" }).order("id").range(desde, hasta)),
+    obtenerLigasSku(),
+  ]);
   return [...(data ?? []), ...vinculosDesdeLigasSku(ligas)];
 }
 

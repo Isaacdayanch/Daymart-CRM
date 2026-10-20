@@ -81,7 +81,7 @@ export default async function LigarSkus({ searchParams }: { searchParams: Promis
         </p>
         <BotonSincronizarStock conectado={Boolean(conexion)} />
       </div>
-      <RevisarFaltantes conectado={Boolean(conexion)} />
+      <RevisarFaltantes conectado={Boolean(conexion)} opciones={productos} />
       {error && <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
       <TablaSkus grupos={grupos} sinSku={sinSku} productos={productos} pendientes={pendientes} ignorados={ignorados} qInicial={q ?? ""} catalogo={catalogoParaNuevo} />
     </div>

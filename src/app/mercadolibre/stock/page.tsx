@@ -300,7 +300,7 @@ export default async function StockMercadoLibre({
           {sync?.ultima_sync_stock && <p className="text-[11px] text-zinc-400">actualizado {formatoFechaHoraMx(sync.ultima_sync_stock)} · se actualiza solo cada hora</p>}
         </div>
       </div>
-      <RevisarFaltantes conectado={Boolean(conexion)} />
+      <RevisarFaltantes conectado={Boolean(conexion)} opciones={opcionesProducto} />
 
       {!conexion && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">

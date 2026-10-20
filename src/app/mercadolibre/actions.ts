@@ -146,7 +146,12 @@ export async function buscarPublicacionMl(texto: string) {
   if (!(await soloDueno())) return { error: "Solo el dueño puede hacer esto.", resultados: [] as import("@/lib/mercadolibre-stock").PublicacionEncontradaMl[] };
   try {
     const { buscarPublicacionesEnMl } = await import("@/lib/mercadolibre-stock");
-    return { error: null, resultados: await buscarPublicacionesEnMl(texto) };
+    const { skusExistentes } = await import("@/lib/catalogo");
+    const { createClient } = await import("@/lib/supabase/server");
+    // SKUs del CRM, para marcar como ligadas las publicaciones cuyo SKU de
+    // ML es igual a uno del CRM (origen "auto").
+    const skusCrm = await skusExistentes(await createClient()).catch(() => new Set<string>());
+    return { error: null, resultados: await buscarPublicacionesEnMl(texto, skusCrm) };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "No se pudo buscar.", resultados: [] as import("@/lib/mercadolibre-stock").PublicacionEncontradaMl[] };
   }
