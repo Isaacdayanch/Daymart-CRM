@@ -3,7 +3,7 @@ import Link from "next/link";
 import { todosLosMovimientosFinancieros, todosLosMovimientosStock } from "@/lib/cargar-todo";
 import { createClient } from "@/lib/supabase/server";
 import { obtenerPerfilActual } from "@/lib/perfil";
-import { resumenPorSku } from "@/lib/calculos-stock";
+import { resumenPorSku, sugeridosReorden } from "@/lib/calculos-stock";
 import { obtenerPiezasPorCajaPorSku } from "@/lib/productos-stock";
 import { saldosPorCuenta } from "@/lib/calculos-financieras";
 import { formatoPesos, formatoDolares } from "@/lib/formato";
@@ -87,7 +87,7 @@ export default async function Dashboard() {
   const verDinero = perfil?.rol !== "operadora";
 
   const resumenes = resumenPorSku(movimientosStock ?? [], configuracion?.dias_espera ?? 60, piezasPorCajaPorSku);
-  const productosPorReordenar = resumenes.filter((r) => r.necesitaReorden).length;
+  const productosPorReordenar = sugeridosReorden(resumenes).length;
   const valorInventario = resumenes.reduce((s, r) => s + r.valorInventario, 0);
   const piezasBodega = resumenes.reduce((s, r) => s + r.stockActual, 0);
   const full = verDinero ? resumenFullDesde(datosFull, resumenes) : null;
@@ -135,14 +135,19 @@ export default async function Dashboard() {
                   </p>
                 )}
                 <p className="mt-1 text-xs text-zinc-400">
-                  {productosPorReordenar} {productosPorReordenar === 1 ? "producto sugerido" : "productos sugeridos"}{" "}
-                  para reordenar
+                  <Link href="/stock/restock" className="hover:underline">
+                    {productosPorReordenar} {productosPorReordenar === 1 ? "producto sugerido" : "productos sugeridos"} para reordenar →
+                  </Link>
                 </p>
               </>
             ) : (
               <>
                 <p className="mt-2 text-3xl font-semibold text-zinc-900">{productosPorReordenar}</p>
-                <p className="mt-1 text-xs text-zinc-400">Revisa Stock para ver el detalle.</p>
+                <p className="mt-1 text-xs text-zinc-400">
+                  <Link href="/stock/restock" className="hover:underline">
+                    Ver el detalle en Stock → Restock →
+                  </Link>
+                </p>
               </>
             )}
           </div>

@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import type { ResumenSku } from "@/lib/calculos-stock";
+import { esSugeridoReorden, type ResumenSku } from "@/lib/calculos-stock";
 import { formatoCajas, formatoPesos } from "@/lib/formato";
 import { Selector } from "@/components/selector";
 
@@ -114,7 +114,7 @@ export function TablaStock({
             </thead>
             <tbody className="divide-y divide-zinc-50">
               {filtrados.map((r) => (
-                <tr key={r.sku} className={r.necesitaReorden && r.stockActual > 0 ? "bg-amber-50/40" : ""}>
+                <tr key={r.sku} className={esSugeridoReorden(r) ? "bg-amber-50/40" : ""}>
                   <td className="px-6 py-3">
                     <Link
                       href={`/stock/producto/${encodeURIComponent(r.sku)}`}

@@ -123,6 +123,36 @@ export function resumenPorSku(
   return resumenes.sort((a, b) => a.nombre.localeCompare(b.nombre));
 }
 
+/** ¿Hay que sugerir reordenar este producto? Está en (o abajo de) su
+ * punto de reorden Y sí se mueve (rotación > 0): un producto que no ha
+ * salido en 90 días nunca se sugiere aunque esté en cero (sería un SKU
+ * muerto, no un faltante). Los agotados que sí rotan SÍ entran — son los
+ * más urgentes. Lo usan la pestaña Restock, el resaltado de la tabla de
+ * Stock y el contador del inicio, para que los tres digan lo mismo. */
+export function esSugeridoReorden(r: Pick<ResumenSku, "necesitaReorden" | "rotacionDiaria">) {
+  return r.necesitaReorden && r.rotacionDiaria > 0;
+}
+
+/** Días que alcanza el stock de bodega al ritmo actual (null si no rota). */
+export function diasQueAlcanza(r: Pick<ResumenSku, "stockActual" | "rotacionDiaria">) {
+  if (r.rotacionDiaria <= 0) return null;
+  return Math.max(0, r.stockActual) / r.rotacionDiaria;
+}
+
+/** Piezas que faltan para cubrir el tiempo de espera con lo que hay en
+ * bodega: rotación × días de espera − stock (redondeado hacia arriba,
+ * nunca negativo). Es la misma regla que "sugerido pedir" en Análisis de
+ * venta de ML, pero con las salidas de bodega. */
+export function piezasParaCubrirEspera(r: Pick<ResumenSku, "stockActual" | "rotacionDiaria">, diasEspera: number) {
+  return Math.max(0, Math.ceil(r.rotacionDiaria * diasEspera - Math.max(0, r.stockActual)));
+}
+
+/** Los sugeridos para reordenar, del más urgente (menos días de stock) al
+ * que más aguanta. */
+export function sugeridosReorden(resumenes: ResumenSku[]) {
+  return resumenes.filter(esSugeridoReorden).sort((a, b) => (diasQueAlcanza(a) ?? Infinity) - (diasQueAlcanza(b) ?? Infinity) || a.nombre.localeCompare(b.nombre, "es"));
+}
+
 export function valorTotalInventario(resumenes: ResumenSku[]) {
   return resumenes.reduce((suma, r) => suma + r.valorInventario, 0);
 }
