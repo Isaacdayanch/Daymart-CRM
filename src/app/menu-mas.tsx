@@ -103,6 +103,21 @@ const ITEMS = [
     ),
   },
   {
+    href: "/director",
+    etiqueta: "Director Meli",
+    soloDueno: true,
+    // Estrella con palomita: el que decide y aprueba.
+    icono: (
+      <path
+        d="M9 2.5l1.9 3.9 4.3.6-3.1 3 .7 4.3L9 12.3l-3.8 2 .7-4.3-3.1-3 4.3-.6L9 2.5ZM7 9.2l1.4 1.4 2.6-2.8"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    ),
+  },
+  {
     href: "/research",
     etiqueta: "Research",
     soloDueno: true,

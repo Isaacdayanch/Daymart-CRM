@@ -13,7 +13,9 @@ import { llegadasProximas } from "@/lib/avisos-contenedores";
 import { saldoFactura } from "@/lib/calculos-facturas";
 import { cargosPorVencer } from "@/lib/calculos-socios-deuda";
 import { fechaTextoMx, inicioDelDiaMx, ZONA_MX } from "@/lib/fechas-mx";
-import { ESTADOS_CONTENEDOR, type ConfiguracionStock, type Contenedor, type FacturaPendiente, type MovimientoDeudaProveedor, type MovimientoStock, type PagoFactura } from "@/lib/tipos";
+import { ESTADOS_CONTENEDOR, type ConfiguracionStock, type Contenedor, type FacturaPendiente, type MovimientoDeudaProveedor, type MovimientoStock, type PagoFactura, type PropuestaDirector } from "@/lib/tipos";
+import { mensajeErrorDirector } from "@/lib/director";
+import { autorizadoDirector, noAutorizado } from "./_comun";
 
 /** Puerta de SOLO LECTURA para el "Director" (el agente que cada mañana
  * revisa la cuenta de Mercado Libre y le propone a Isaac qué hacer).
@@ -34,14 +36,6 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 const DIA_MS = 86400000;
-
-function autorizado(request: NextRequest) {
-  const secreto = process.env.DIRECTOR_SECRET;
-  if (!secreto) return false;
-  const clave = request.nextUrl.searchParams.get("clave");
-  const bearer = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
-  return clave === secreto || bearer === secreto;
-}
 
 function redondear(n: number) {
   return Math.round(n * 100) / 100;
@@ -67,7 +61,7 @@ function totalesOrdenes(ordenes: OrdenMl[], items: OrdenItemMl[]) {
 }
 
 export async function GET(request: NextRequest) {
-  if (!autorizado(request)) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  if (!autorizadoDirector(request)) return noAutorizado();
 
   const ahora = new Date();
   const hoyTexto = fechaTextoMx(ahora);
@@ -357,6 +351,48 @@ export async function GET(request: NextRequest) {
     salida.finanzas = { facturas_por_vencer: facturasPorVencer, cargos_proveedor_por_vencer: cargos };
   } catch (e) {
     errores.finanzas = e instanceof Error ? e.message : "No se pudieron leer los vencimientos.";
+  }
+
+  // ---- Propuestas del Director (migración 0055) --------------------------
+  // Lo que Isaac ya decidió y el Director todavía no le ha reportado, lo que
+  // sigue esperando decisión, y lo decidido en los últimos 7 días (para no
+  // volver a proponer lo que ya rechazó).
+  try {
+    const hace7Iso = hace7.toISOString();
+    const [{ data: pendientes, error: e1 }, { data: decididas, error: e2 }] = await Promise.all([
+      supabase.from("director_propuestas").select("*").eq("estado", "PROPUESTA").order("fecha", { ascending: false }).order("orden").returns<PropuestaDirector[]>(),
+      supabase.from("director_propuestas").select("*").neq("estado", "PROPUESTA").gte("creado_en", hace7Iso).order("decidido_en", { ascending: false }).returns<PropuestaDirector[]>(),
+    ]);
+    if (e1) throw new Error(mensajeErrorDirector(e1));
+    if (e2) throw new Error(mensajeErrorDirector(e2));
+    const compacta = (p: PropuestaDirector) => ({
+      id: p.id,
+      fecha: p.fecha,
+      orden: p.orden,
+      area: p.area,
+      titulo: p.titulo,
+      accion_tipo: p.accion_tipo,
+      item_id: p.item_id,
+      sku_crm: p.sku_crm,
+      precio_propuesto: p.precio_propuesto,
+      estado: p.estado,
+      precio_aprobado: p.precio_aprobado,
+      nota_isaac: p.nota_isaac,
+      decidido_en: p.decidido_en,
+      decidido_desde: p.decidido_desde,
+      ejecutado_en: p.ejecutado_en,
+      resultado: p.resultado,
+      error: p.error,
+      datos: p.datos,
+    });
+    salida.propuestas = {
+      pantalla: "https://daymart-crm.vercel.app/director",
+      pendientes: (pendientes ?? []).map(compacta),
+      decididas_sin_reportar: (decididas ?? []).filter((p) => !p.reportada_en).map(compacta),
+      decididas_7_dias: (decididas ?? []).map(compacta),
+    };
+  } catch (e) {
+    errores.propuestas = e instanceof Error ? e.message : "No se pudieron leer las propuestas.";
   }
 
   salida.errores = errores;
