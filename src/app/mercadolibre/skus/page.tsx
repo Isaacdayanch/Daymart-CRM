@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { todosLosMovimientosStock } from "@/lib/cargar-todo";
 import { resumenPorSku } from "@/lib/calculos-stock";
 import { obtenerCatalogo, obtenerMarcas, skusExistentes } from "@/lib/catalogo";
 import { obtenerSugerenciasCatalogo } from "@/lib/catalogo-proveedores";
@@ -6,7 +7,7 @@ import type { Bodega } from "@/lib/tipos";
 import { obtenerPiezasPorCajaPorSku } from "@/lib/productos-stock";
 import { agruparPorSkuMl, esPendienteReal, esPublicacionPendienteReal, type ProductoCrmResumen } from "@/lib/mercadolibre-skus";
 import { obtenerIgnorados, obtenerPublicaciones, obtenerVinculos, type LigaIgnorada } from "@/lib/mercadolibre-stock";
-import type { ConfiguracionStock, MovimientoStock } from "@/lib/tipos";
+import type { ConfiguracionStock } from "@/lib/tipos";
 import { TablaSkus } from "./tabla-skus";
 import { BotonSincronizarStock } from "../stock/boton-sincronizar-stock";
 import { RevisarFaltantes } from "../stock/revisar-faltantes";
@@ -23,7 +24,7 @@ export default async function LigarSkus({ searchParams }: { searchParams: Promis
   const { q } = await searchParams;
   const supabase = await createClient();
   const [{ data: movimientos }, { data: configuracion }, piezasPorCajaPorSku, catalogo, marcas, sugerencias, { data: bodegas }, skusTodos] = await Promise.all([
-    supabase.from("movimientos_stock").select("*").returns<MovimientoStock[]>(),
+    todosLosMovimientosStock(supabase),
     supabase.from("configuracion_stock").select("*").maybeSingle<ConfiguracionStock>(),
     obtenerPiezasPorCajaPorSku(supabase),
     obtenerCatalogo(supabase).catch(() => []),

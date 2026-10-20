@@ -1,9 +1,10 @@
 import Link from "next/link";
+import { todosLosMovimientosStock } from "@/lib/cargar-todo";
 import { createClient } from "@/lib/supabase/server";
 import { resumenPorSku } from "@/lib/calculos-stock";
 import { obtenerPiezasPorCajaPorSku } from "@/lib/productos-stock";
 import { fechaTextoMx, formatoFechaMx } from "@/lib/fechas-mx";
-import type { Bodega, ConfiguracionStock, MovimientoStock, RecepcionFull } from "@/lib/tipos";
+import type { Bodega, ConfiguracionStock, RecepcionFull } from "@/lib/tipos";
 import { devolucionesPorConfirmar, obtenerRecepcionesPendientes, resolvedorSku, ventasPendientesPorLigar } from "@/lib/salidas-ml";
 import { BotonesDevolucion, BotonProcesarAhora, InterruptorVentasMl } from "./acciones-full";
 import { agruparLineas, faseDe, generarSalidasPendientesEnvios, obtenerEnviosFullMl, recepcionesSinExplicar, subidasDetectadas } from "@/lib/mercadolibre-envios-full";
@@ -19,7 +20,7 @@ export const maxDuration = 60;
 export default async function FullYMercadoLibre() {
   const supabase = await createClient();
   const [{ data: movimientos }, { data: bodegas }, { data: configuracion }, piezasPorCajaPorSku] = await Promise.all([
-    supabase.from("movimientos_stock").select("*").returns<MovimientoStock[]>(),
+    todosLosMovimientosStock(supabase),
     supabase.from("bodegas").select("*").is("eliminado_en", null).order("nombre").returns<Bodega[]>(),
     supabase.from("configuracion_stock").select("*").single<ConfiguracionStock>(),
     obtenerPiezasPorCajaPorSku(supabase),

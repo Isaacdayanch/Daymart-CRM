@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { ultimosPagosPorProveedor } from "@/lib/ultimos-pagos";
 import { createClient } from "@/lib/supabase/server";
+import { todosLosMovimientosFinancieros } from "@/lib/cargar-todo";
 import { saldosPorCuenta } from "@/lib/calculos-financieras";
 import { formatoPesos, formatoDolares, formatoFecha } from "@/lib/formato";
-import type { CategoriaFinanciera, Contenedor, CuentaFinanciera, EnvioChina, FacturaPendiente, MovimientoDeudaProveedor, MovimientoFinanciero, PagoFactura } from "@/lib/tipos";
+import type { CategoriaFinanciera, Contenedor, CuentaFinanciera, EnvioChina, FacturaPendiente, MovimientoDeudaProveedor, PagoFactura } from "@/lib/tipos";
 import { saldoFactura } from "@/lib/calculos-facturas";
 import { proveedoresConDeuda } from "@/lib/calculos-socios-deuda";
 import { FormularioMovimiento } from "./formulario-movimiento";
@@ -25,11 +26,7 @@ export default async function ResumenFinanzas({ searchParams }: { searchParams: 
       .is("eliminado_en", null)
       .order("creado_en", { ascending: true })
       .returns<CuentaFinanciera[]>(),
-    supabase
-      .from("movimientos_financieros")
-      .select("*")
-      .order("fecha", { ascending: false })
-      .returns<MovimientoFinanciero[]>(),
+    todosLosMovimientosFinancieros(supabase),
     supabase
       .from("categorias_financieras")
       .select("*")

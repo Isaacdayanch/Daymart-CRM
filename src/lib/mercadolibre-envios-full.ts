@@ -828,36 +828,55 @@ export async function obtenerEnviosFullMl(): Promise<{ envio: EnvioFullMl; linea
   return envios.map((envio) => ({ envio, lineas: (lineas ?? []).filter((l) => l.inbound_id === envio.inbound_id) }));
 }
 
-/** Piezas (del CRM) que ya salieron de bodega y todavía van en camino a
- * Full, por SKU, con su valor a costo promedio. Para la tarjeta de Stock. */
-export async function enCaminoAFull(costoPorSku: Map<string, number>): Promise<{ porSku: Map<string, number>; piezas: number; valor: number; envios: number }> {
-  const vacio = { porSku: new Map<string, number>(), piezas: 0, valor: 0, envios: 0 };
-  const supabase = createServiceClient();
-  const { data: envios } = await supabase
-    .from("mercadolibre_envios_full")
-    .select("inbound_id, estado, confirmado_en, cerrado_en, ignorado_en")
-    .not("confirmado_en", "is", null)
-    .is("cerrado_en", null)
-    .is("ignorado_en", null)
-    .returns<Pick<EnvioFullMl, "inbound_id" | "estado" | "confirmado_en" | "cerrado_en" | "ignorado_en">[]>();
-  const enCamino = (envios ?? []).filter((e) => e.estado !== "RECIBIDO" && e.estado !== "CONTADO" && e.estado !== "CANCELADO");
-  if (!enCamino.length) return vacio;
-  const { data: movs } = await supabase
-    .from("movimientos_stock")
-    .select("sku, cantidad")
-    .in("inbound_ml_id", enCamino.map((e) => e.inbound_id))
-    .eq("tipo", "SALIDA")
-    .eq("destino", "Full")
-    .returns<{ sku: string; cantidad: number }[]>();
-  const porSku = new Map<string, number>();
-  for (const m of movs ?? []) porSku.set(m.sku, (porSku.get(m.sku) ?? 0) + m.cantidad);
-  let piezas = 0;
-  let valor = 0;
-  for (const [sku, n] of porSku) {
-    piezas += n;
-    valor += n * (costoPorSku.get(sku) ?? 0);
+export interface EnCaminoAFull {
+  /** Piezas por SKU que salieron de bodega hacia Full y todavía no llegan. */
+  porSku: Map<string, number>;
+  piezas: number;
+  envios: number;
+}
+
+/** Piezas en camino a Full (envíos ya descontados de bodega y sin cerrar).
+ * No necesita los costos: se puede pedir en paralelo con el resto de la
+ * pantalla y valuar después con `enCaminoAFullDesde`. */
+export async function cargarEnCaminoAFull(): Promise<EnCaminoAFull> {
+  const vacio: EnCaminoAFull = { porSku: new Map(), piezas: 0, envios: 0 };
+  try {
+    const supabase = createServiceClient();
+    const { data: envios } = await supabase
+      .from("mercadolibre_envios_full")
+      .select("inbound_id, estado, confirmado_en, cerrado_en, ignorado_en")
+      .not("confirmado_en", "is", null)
+      .is("cerrado_en", null)
+      .is("ignorado_en", null)
+      .returns<Pick<EnvioFullMl, "inbound_id" | "estado" | "confirmado_en" | "cerrado_en" | "ignorado_en">[]>();
+    const enCamino = (envios ?? []).filter((e) => e.estado !== "RECIBIDO" && e.estado !== "CONTADO" && e.estado !== "CANCELADO");
+    if (!enCamino.length) return vacio;
+    const { data: movs } = await supabase
+      .from("movimientos_stock")
+      .select("sku, cantidad")
+      .in("inbound_ml_id", enCamino.map((e) => e.inbound_id))
+      .eq("tipo", "SALIDA")
+      .eq("destino", "Full")
+      .returns<{ sku: string; cantidad: number }[]>();
+    const porSku = new Map<string, number>();
+    for (const m of movs ?? []) porSku.set(m.sku, (porSku.get(m.sku) ?? 0) + m.cantidad);
+    let piezas = 0;
+    for (const n of porSku.values()) piezas += n;
+    return { porSku, piezas, envios: enCamino.length };
+  } catch {
+    return vacio;
   }
-  return { porSku, piezas, valor, envios: enCamino.length };
+}
+
+/** Le pone valor (× costo promedio del SKU) a lo que viene en camino. */
+export function enCaminoAFullDesde(datos: EnCaminoAFull, costoPorSku: Map<string, number>): { porSku: Map<string, number>; piezas: number; valor: number; envios: number } {
+  let valor = 0;
+  for (const [sku, n] of datos.porSku) valor += n * (costoPorSku.get(sku) ?? 0);
+  return { porSku: datos.porSku, piezas: datos.piezas, valor, envios: datos.envios };
+}
+
+export async function enCaminoAFull(costoPorSku: Map<string, number>): Promise<{ porSku: Map<string, number>; piezas: number; valor: number; envios: number }> {
+  return enCaminoAFullDesde(await cargarEnCaminoAFull(), costoPorSku);
 }
 
 /** Subidas de stock en Full detectadas (por diferencia de totales) en los

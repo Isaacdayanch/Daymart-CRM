@@ -1,34 +1,30 @@
 import Link from "next/link";
+import { todosLosMovimientosStock } from "@/lib/cargar-todo";
 import { createClient } from "@/lib/supabase/server";
 import { resumenPorSku, valorTotalInventario } from "@/lib/calculos-stock";
 import { formatoPesos } from "@/lib/formato";
 import { obtenerPerfilActual } from "@/lib/perfil";
 import { obtenerCategoriaPorSku, obtenerPiezasPorCajaPorSku } from "@/lib/productos-stock";
-import type { Bodega, ConfiguracionStock, MovimientoStock } from "@/lib/tipos";
+import type { Bodega, ConfiguracionStock } from "@/lib/tipos";
 import { TablaStock } from "./tabla-stock";
-import { obtenerResumenFull } from "@/lib/mercadolibre-stock";
-import { enCaminoAFull } from "@/lib/mercadolibre-envios-full";
+import { cargarDatosFull, resumenFullDesde } from "@/lib/mercadolibre-stock";
+import { cargarEnCaminoAFull, enCaminoAFullDesde } from "@/lib/mercadolibre-envios-full";
 
 export default async function ResumenStock() {
   const supabase = await createClient();
-  const perfil = await obtenerPerfilActual();
-  const verDinero = perfil?.rol !== "operadora";
-
-  const [
-    { data: movimientos },
-    { data: bodegas },
-    { data: configuracion },
-    { count: pendientesCount },
-    piezasPorCajaPorSku,
-    categoriaPorSku,
-  ] = await Promise.all([
-    supabase.from("movimientos_stock").select("*").returns<MovimientoStock[]>(),
+  // Velocidad: perfil, stock, copia de ML y envíos en camino, todo de una vez.
+  const [perfil, { data: movimientos }, { data: bodegas }, { data: configuracion }, { count: pendientesCount }, piezasPorCajaPorSku, categoriaPorSku, datosFull, enCaminoDatos] = await Promise.all([
+    obtenerPerfilActual(),
+    todosLosMovimientosStock(supabase),
     supabase.from("bodegas").select("*").is("eliminado_en", null).returns<Bodega[]>(),
     supabase.from("configuracion_stock").select("*").single<ConfiguracionStock>(),
     supabase.from("pendientes_china").select("*", { count: "exact", head: true }).eq("estado", "PENDIENTE"),
     obtenerPiezasPorCajaPorSku(supabase),
     obtenerCategoriaPorSku(supabase),
+    cargarDatosFull(),
+    cargarEnCaminoAFull(),
   ]);
+  const verDinero = perfil?.rol !== "operadora";
 
   const listaMovimientos = movimientos ?? [];
   const diasEspera = configuracion?.dias_espera ?? 60;
@@ -38,10 +34,10 @@ export default async function ResumenStock() {
   const paraReordenar = resumenes.filter((r) => r.necesitaReorden && r.stockActual > 0);
   const bodegasPorId = Object.fromEntries((bodegas ?? []).map((b) => [b.id, b.nombre]));
   // Stock en Full de Mercado Libre (solo dueño; null si no está conectado).
-  const full = verDinero ? await obtenerResumenFull(resumenes) : null;
+  const full = verDinero ? resumenFullDesde(datosFull, resumenes) : null;
   const fullPorSku = full ? Object.fromEntries(full.porSku) : undefined;
   // Piezas que ya salieron de bodega y van en camino a Full (envíos sin cerrar).
-  const enCamino = verDinero ? await enCaminoAFull(new Map(resumenes.map((r) => [r.sku, r.costoPromedio]))).catch(() => null) : null;
+  const enCamino = verDinero ? enCaminoAFullDesde(enCaminoDatos, new Map(resumenes.map((r) => [r.sku, r.costoPromedio]))) : null;
   const enCaminoPorSku = enCamino && enCamino.piezas > 0 ? Object.fromEntries(enCamino.porSku) : undefined;
   const piezasBodega = resumenes.reduce((s, r) => s + r.stockActual, 0);
 

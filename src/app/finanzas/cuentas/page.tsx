@@ -1,8 +1,9 @@
 import Link from "next/link";
+import { todosLosMovimientosFinancieros } from "@/lib/cargar-todo";
 import { createClient } from "@/lib/supabase/server";
 import { saldosPorCuenta } from "@/lib/calculos-financieras";
 import { formatoPesos, formatoDolares } from "@/lib/formato";
-import type { CuentaFinanciera, MovimientoFinanciero } from "@/lib/tipos";
+import type { CuentaFinanciera } from "@/lib/tipos";
 import { EditarCuentas } from "./editar-cuentas";
 
 const TIPOS: Record<string, string> = { EFECTIVO: "Efectivo", BANCO: "Banco", OTRO: "Otro" };
@@ -18,7 +19,7 @@ export default async function CuentasFinanzas() {
       .is("eliminado_en", null)
       .order("creado_en", { ascending: true })
       .returns<CuentaFinanciera[]>(),
-    supabase.from("movimientos_financieros").select("*").returns<MovimientoFinanciero[]>(),
+    todosLosMovimientosFinancieros(supabase),
   ]);
 
   const listaCuentas = cuentas ?? [];

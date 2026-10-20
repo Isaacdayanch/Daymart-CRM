@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { todosLosMovimientosFinancieros, todosLosMovimientosStock } from "@/lib/cargar-todo";
 import { createClient } from "@supabase/supabase-js";
 import { resumenPorSku } from "@/lib/calculos-stock";
 import { obtenerPiezasPorCajaPorSku } from "@/lib/productos-stock";
-import type { Contenedor, CuentaFinanciera, MovimientoFinanciero, MovimientoStock, CategoriaFinanciera, ConfiguracionStock } from "@/lib/tipos";
+import type { Contenedor, CuentaFinanciera, CategoriaFinanciera, ConfiguracionStock } from "@/lib/tipos";
 
 /** Respaldo de solo lectura para Google Sheets (vía Apps Script) — pensado
  * para que Isaac tenga dónde ver sus datos si el sistema llegara a fallar.
@@ -41,14 +42,10 @@ export async function GET(request: NextRequest) {
     { data: contenedores, error: errorContenedores },
     piezasPorCajaPorSku,
   ] = await Promise.all([
-    supabase
-      .from("movimientos_financieros")
-      .select("*")
-      .order("fecha", { ascending: false })
-      .returns<MovimientoFinanciero[]>(),
+    todosLosMovimientosFinancieros(supabase),
     supabase.from("cuentas_financieras").select("*").returns<CuentaFinanciera[]>(),
     supabase.from("categorias_financieras").select("*").returns<CategoriaFinanciera[]>(),
-    supabase.from("movimientos_stock").select("*").returns<MovimientoStock[]>(),
+    todosLosMovimientosStock(supabase),
     supabase.from("configuracion_stock").select("*").single<ConfiguracionStock>(),
     supabase
       .from("contenedores")

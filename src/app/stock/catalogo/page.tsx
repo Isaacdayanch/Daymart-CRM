@@ -1,9 +1,10 @@
 import Link from "next/link";
+import { todosLosMovimientosStock } from "@/lib/cargar-todo";
 import { createClient } from "@/lib/supabase/server";
 import { obtenerCatalogo, obtenerMarcas } from "@/lib/catalogo";
 import { resumenPorSku } from "@/lib/calculos-stock";
 import { obtenerPiezasPorCajaPorSku } from "@/lib/productos-stock";
-import type { ConfiguracionStock, MovimientoStock } from "@/lib/tipos";
+import type { ConfiguracionStock } from "@/lib/tipos";
 import { obtenerPerfilActual } from "@/lib/perfil";
 import { FilaCatalogo } from "./fila-catalogo";
 import { Marcas } from "./marcas";
@@ -27,7 +28,7 @@ export default async function CatalogoProductos({ searchParams }: { searchParams
     faltaSql = true;
   }
   const [{ data: movimientos }, { data: configuracion }, piezasPorCajaPorSku] = await Promise.all([
-    supabase.from("movimientos_stock").select("*").returns<MovimientoStock[]>(),
+    todosLosMovimientosStock(supabase),
     supabase.from("configuracion_stock").select("*").single<ConfiguracionStock>(),
     obtenerPiezasPorCajaPorSku(supabase),
   ]);

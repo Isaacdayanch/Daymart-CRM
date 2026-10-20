@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { todosLosMovimientosStock } from "@/lib/cargar-todo";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { costoPromedioPonderado, stockActual } from "@/lib/calculos-stock";
@@ -16,17 +17,16 @@ import { FusionarProducto } from "@/app/stock/catalogo/fusionar-producto";
 import { DesgloseStock } from "./desglose-stock";
 import { PastillaMancuerna } from "@/components/pastilla-mancuerna";
 import { esMancuerna } from "@/lib/mancuernas";
-import { codigosMlPorSku, resolverCodigoMl, textoOrigenCodigo } from "@/lib/etiquetas";
+import { cargarCodigosMl, codigosMlDesde, resolverCodigoMl, textoOrigenCodigo } from "@/lib/etiquetas";
 
 export default async function DetalleProducto({ params }: { params: Promise<{ sku: string }> }) {
   const { sku: skuCrudo } = await params;
   const sku = decodeURIComponent(skuCrudo);
   const supabase = await createClient();
-  const perfil = await obtenerPerfilActual();
-  const verDinero = perfil?.rol !== "operadora";
-
-  const [{ data: movimientos }, { data: contenedores }, { data: productoReferencia }, { data: bodegas }, { data: ficha }, { data: catalogo }, { data: todosMovimientos }] =
+  // Velocidad: perfil, movimientos, catálogo y la copia de ML, todo de una vez.
+  const [perfil, { data: movimientos }, { data: contenedores }, { data: productoReferencia }, { data: bodegas }, { data: ficha }, { data: catalogo }, { data: todosMovimientos }, datosCodigosMl] =
     await Promise.all([
+      obtenerPerfilActual(),
       supabase
         .from("movimientos_stock")
         .select("*")
@@ -46,8 +46,10 @@ export default async function DetalleProducto({ params }: { params: Promise<{ sk
       supabase.from("productos_catalogo").select("*").eq("sku", sku).maybeSingle<ProductoCatalogo>(),
       // Para "fusionar con otro producto".
       supabase.from("productos_catalogo").select("sku, nombre, imagen_url").is("eliminado_en", null).order("nombre").returns<{ sku: string; nombre: string; imagen_url: string | null }[]>(),
-      supabase.from("movimientos_stock").select("*").returns<MovimientoStock[]>(),
+      todosLosMovimientosStock(supabase),
+      cargarCodigosMl(),
     ]);
+  const verDinero = perfil?.rol !== "operadora";
 
   const listaMovimientos = movimientos ?? [];
   if (listaMovimientos.length === 0) notFound();
@@ -89,7 +91,7 @@ export default async function DetalleProducto({ params }: { params: Promise<{ sk
   };
   const datosMancuerna = productoParaEditar.mancuerna;
   // Código ML de Full para la etiqueta (0054): capturado o tomado de la liga con ML.
-  const codigoEtiqueta = resolverCodigoMl(productoReferencia?.codigo_ml, ficha?.codigo_ml, (await codigosMlPorSku(new Set([sku]))).get(sku));
+  const codigoEtiqueta = resolverCodigoMl(productoReferencia?.codigo_ml, ficha?.codigo_ml, codigosMlDesde(datosCodigosMl, new Set([sku])).get(sku));
 
   // Opciones para "fusionar con otro producto": todo el catálogo + SKUs que
   // solo viven en movimientos, con su stock de hoy.

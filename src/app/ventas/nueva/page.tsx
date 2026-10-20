@@ -1,7 +1,8 @@
 import { createClient } from "@/lib/supabase/server";
+import { todosLosMovimientosStock } from "@/lib/cargar-todo";
 import { resumenPorSku } from "@/lib/calculos-stock";
 import { obtenerPiezasPorCajaPorSku } from "@/lib/productos-stock";
-import type { Bodega, Cliente, ConfiguracionStock, CuentaFinanciera, MovimientoStock, Venta, VentaLinea } from "@/lib/tipos";
+import type { Bodega, Cliente, ConfiguracionStock, CuentaFinanciera, Venta, VentaLinea } from "@/lib/tipos";
 import { FormularioVenta } from "./formulario-venta";
 
 export default async function NuevaVenta() {
@@ -16,7 +17,7 @@ export default async function NuevaVenta() {
     { data: ventas },
     { data: lineasPrevias },
   ] = await Promise.all([
-    supabase.from("movimientos_stock").select("*").returns<MovimientoStock[]>(),
+    todosLosMovimientosStock(supabase),
     supabase.from("bodegas").select("*").is("eliminado_en", null).order("nombre").returns<Bodega[]>(),
     supabase.from("configuracion_stock").select("*").single<ConfiguracionStock>(),
     obtenerPiezasPorCajaPorSku(supabase),

@@ -31,7 +31,7 @@ import { Productos } from "./productos";
 import { TarjetaOcupacion } from "./ocupacion-contenedor";
 import { Documentos } from "./documentos";
 import { TarjetaEstado } from "./tarjeta-estado";
-import { codigosMlPorSku } from "@/lib/etiquetas";
+import { cargarCodigosMl, codigosMlDesde } from "@/lib/etiquetas";
 import { BotonRecalcularCosto } from "./boton-recalcular-costo";
 import { AjusteDiferencia } from "./ajuste-diferencia";
 import { Historial } from "./historial";
@@ -43,18 +43,11 @@ export default async function DetalleContenedor({
 }) {
   const { id } = await params;
   const supabase = await createClient();
-  const perfil = await obtenerPerfilActual();
-  const verDinero = perfil?.rol !== "operadora";
-
-  const { data: contenedor } = await supabase
-    .from("contenedores")
-    .select("*")
-    .eq("id", id)
-    .single<Contenedor>();
-
-  if (!contenedor) notFound();
-
+  // Velocidad: perfil, contenedor, productos, catálogo, historial y la copia
+  // de Mercado Libre (códigos de Full) salen todos de una vez.
   const [
+    perfil,
+    { data: contenedor },
     { data: abonos },
     { data: productos },
     { data: documentos },
@@ -62,7 +55,10 @@ export default async function DetalleContenedor({
     { data: catalogoCrudo },
     { data: movimientosEntrada },
     { data: pendientesChina },
+    datosCodigosMl,
   ] = await Promise.all([
+    obtenerPerfilActual(),
+    supabase.from("contenedores").select("*").eq("id", id).maybeSingle<Contenedor>(),
     supabase
       .from("pagos_mercancia")
       .select("*")
@@ -100,7 +96,10 @@ export default async function DetalleContenedor({
       .eq("estado", "PENDIENTE")
       .order("creado_en", { ascending: true })
       .returns<PendienteChina[]>(),
+    cargarCodigosMl(),
   ]);
+  if (!contenedor) notFound();
+  const verDinero = perfil?.rol !== "operadora";
 
   const listaAbonos = abonos ?? [];
   const listaProductos = productos ?? [];
@@ -117,7 +116,7 @@ export default async function DetalleContenedor({
   const catalogo = Array.from(catalogoPorSku.values()).sort((a, b) => a.nombre.localeCompare(b.nombre));
   // Código ML de Full por SKU (etiquetas, 0054): el de la liga con Mercado
   // Libre, para mostrarlo junto al campo y en la tabla cuando no se capturó.
-  const codigosMlLista = await codigosMlPorSku(new Set([...listaProductos.map((p) => p.sku), ...catalogo.map((p) => p.sku)]));
+  const codigosMlLista = codigosMlDesde(datosCodigosMl, new Set([...listaProductos.map((p) => p.sku), ...catalogo.map((p) => p.sku)]));
   const codigosMl: Record<string, string> = {};
   for (const [sku, lista] of codigosMlLista) if (lista[0]) codigosMl[sku] = lista[0];
 

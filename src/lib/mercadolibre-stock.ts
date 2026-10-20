@@ -815,18 +815,36 @@ export function resumenFull(
 /** Resumen de Full listo para usar desde Stock del CRM y el dashboard.
  * Regresa null si la tabla no existe todavía o ML no está conectado —
  * las pantallas siguen funcionando sin Full. */
-export async function obtenerResumenFull(resumenes: { sku: string; costoPromedio: number }[]): Promise<ResumenFull | null> {
+/** Publicaciones + ligas, tal cual vienen de la base. Se puede pedir EN
+ * PARALELO con los movimientos de stock (no depende de ellos) y luego
+ * armar el resumen con `resumenFullDesde` — así la pantalla no espera dos
+ * vueltas seguidas al servidor. Null si ML no está conectado o falla. */
+export interface DatosFull {
+  publicaciones: PublicacionMl[];
+  vinculos: VinculoMl[];
+}
+
+export async function cargarDatosFull(): Promise<DatosFull | null> {
   try {
     const [publicaciones, vinculos] = await Promise.all([obtenerPublicaciones(), obtenerVinculos()]);
     if (!publicaciones.length) return null;
-    return resumenFull(
-      publicaciones,
-      new Map(vinculos.map((v) => [claveVinculo(v.item_id, v.variation_id), v.sku_crm])),
-      new Set(resumenes.map((r) => r.sku)),
-      new Map(resumenes.map((r) => [r.sku, r.costoPromedio])),
-      factoresVinculos(vinculos),
-    );
+    return { publicaciones, vinculos };
   } catch {
     return null;
   }
+}
+
+export function resumenFullDesde(datos: DatosFull | null, resumenes: { sku: string; costoPromedio: number }[]): ResumenFull | null {
+  if (!datos) return null;
+  return resumenFull(
+    datos.publicaciones,
+    new Map(datos.vinculos.map((v) => [claveVinculo(v.item_id, v.variation_id), v.sku_crm])),
+    new Set(resumenes.map((r) => r.sku)),
+    new Map(resumenes.map((r) => [r.sku, r.costoPromedio])),
+    factoresVinculos(datos.vinculos),
+  );
+}
+
+export async function obtenerResumenFull(resumenes: { sku: string; costoPromedio: number }[]): Promise<ResumenFull | null> {
+  return resumenFullDesde(await cargarDatosFull(), resumenes);
 }

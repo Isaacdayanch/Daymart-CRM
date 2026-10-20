@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { todosLosMovimientosStock } from "@/lib/cargar-todo";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/servicio";
 import { obtenerConexion } from "@/lib/mercadolibre-auth";
@@ -7,7 +8,7 @@ import { envioPromedioPorItem, obtenerBitacoraPromociones, obtenerMargenMinimo }
 import { itemsDeOrdenes, type OrdenItemMl, type OrdenMl } from "@/lib/mercadolibre-ordenes";
 import { resumenPorSku } from "@/lib/calculos-stock";
 import { obtenerPiezasPorCajaPorSku } from "@/lib/productos-stock";
-import type { ConfiguracionStock, MovimientoStock } from "@/lib/tipos";
+import type { ConfiguracionStock } from "@/lib/tipos";
 import { TablaPromociones, type FilaPrecio } from "./tabla-promociones";
 import { Bitacora } from "./bitacora";
 import { MargenMinimo } from "./margen-minimo";
@@ -32,7 +33,7 @@ export default async function PromocionesMercadoLibre() {
   const conexion = await obtenerConexion().catch(() => null);
 
   const [{ data: movimientos }, { data: configuracion }, piezasPorCajaPorSku] = await Promise.all([
-    supabase.from("movimientos_stock").select("*").returns<MovimientoStock[]>(),
+    todosLosMovimientosStock(supabase),
     supabase.from("configuracion_stock").select("*").single<ConfiguracionStock>(),
     obtenerPiezasPorCajaPorSku(supabase),
   ]);

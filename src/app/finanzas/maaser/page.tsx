@@ -1,9 +1,10 @@
 import { createClient } from "@/lib/supabase/server";
+import { todosLosMovimientosFinancieros } from "@/lib/cargar-todo";
 import { CampoFecha } from "@/components/campo-fecha";
 import { CampoMonto } from "@/components/campo-monto";
 import { formatoPesos, formatoFecha } from "@/lib/formato";
 import { totalGanancias, totalPagadoMaaser } from "@/lib/calculos-maaser";
-import type { CategoriaFinanciera, MovimientoFinanciero, RegistroGanancia } from "@/lib/tipos";
+import type { CategoriaFinanciera, RegistroGanancia } from "@/lib/tipos";
 import { agregarRegistroGanancia, eliminarRegistroGanancia } from "../actions";
 
 import { BotonGuardar } from "@/components/boton-guardar";
@@ -15,7 +16,7 @@ export default async function MaaserFinanzas() {
   const [{ data: registros }, { data: categorias }, { data: movimientos }] = await Promise.all([
     supabase.from("registros_ganancia").select("*").order("fecha", { ascending: false }).returns<RegistroGanancia[]>(),
     supabase.from("categorias_financieras").select("*").returns<CategoriaFinanciera[]>(),
-    supabase.from("movimientos_financieros").select("*").returns<MovimientoFinanciero[]>(),
+    todosLosMovimientosFinancieros(supabase),
   ]);
 
   const listaRegistros = registros ?? [];
