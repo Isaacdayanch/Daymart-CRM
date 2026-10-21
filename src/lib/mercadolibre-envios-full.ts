@@ -285,12 +285,12 @@ async function generarSalidasLineas(envio: EnvioFullMl, lineas: EnvioFullMlLinea
   const planes: { linea: EnvioFullMlLinea; sku: string; full: number; merma: number; factor: number; declaradas: number }[] = [];
   let sinLigar = 0;
   for (const l of pendientes) {
-    const sku = resolvedor.skuDe(l.item_id, l.variation_id, l.seller_sku);
+    const sku = resolvedor.skuDe(l.item_id, l.variation_id, l.seller_sku, l.inventory_id);
     if (!sku) {
       sinLigar++;
       continue;
     }
-    const factor = resolvedor.factorDe(l.item_id, l.variation_id, l.seller_sku);
+    const factor = resolvedor.factorDe(l.item_id, l.variation_id, l.seller_sku, l.inventory_id);
     const declaradas = l.cantidad_planeada ?? l.cantidad_recibida;
     const full = Math.round((cerrado ? l.cantidad_recibida : declaradas) * factor);
     const diff = cerrado ? declaradas - l.cantidad_recibida : 0;
@@ -409,8 +409,8 @@ export async function previsualizarEnvioDesdePanel(numero: string, texto: string
   const [existente, porInventario, resolvedor] = await Promise.all([cargarEnvio(inboundId), publicacionesPorInventario(), resolvedorSku()]);
   const base = lineasPanel.map((l) => {
     const pub = porInventario.get(l.inventoryId) ?? null;
-    const r = resolvedor.resolver(pub?.item_id ?? null, pub?.variation_id ?? null, pub?.seller_sku ?? null);
-    const factor = pub ? resolvedor.factorDe(pub.item_id, pub.variation_id, pub.seller_sku) : 1;
+    const r = resolvedor.resolver(pub?.item_id ?? null, pub?.variation_id ?? null, pub?.seller_sku ?? null, l.inventoryId);
+    const factor = resolvedor.factorDe(pub?.item_id ?? null, pub?.variation_id ?? null, pub?.seller_sku ?? null, l.inventoryId);
     return { l, pub, r, factor };
   });
   const skus = Array.from(new Set(base.map((b) => b.r.sku).filter((x): x is string => Boolean(x))));
@@ -705,7 +705,7 @@ export async function cerrarEnvioFullMl(inboundId: string, decisiones: { lineaId
   let mermas = 0;
 
   const conDiferencia = lineas.filter((l) => diferenciaLinea(l) !== 0);
-  const skus = Array.from(new Set(conDiferencia.map((l) => resolvedor.skuDe(l.item_id, l.variation_id, l.seller_sku)).filter((x): x is string => Boolean(x))));
+  const skus = Array.from(new Set(conDiferencia.map((l) => resolvedor.skuDe(l.item_id, l.variation_id, l.seller_sku, l.inventory_id)).filter((x): x is string => Boolean(x))));
   const fichas = await fichasPorSku(skus);
   const { data: movs } = await supabase.from("movimientos_stock").select("bodega_id").eq("inbound_ml_id", inboundId).limit(1).returns<{ bodega_id: string | null }[]>();
   const bodegaId = movs?.[0]?.bodega_id ?? (await bodegaPrincipal())?.id ?? null;
@@ -714,8 +714,8 @@ export async function cerrarEnvioFullMl(inboundId: string, decisiones: { lineaId
     const diff = diferenciaLinea(l);
     // Negativo = ML recibió MÁS de lo declarado: salieron más piezas, no hay merma.
     const decision: DecisionDiferencia = diff > 0 ? (decisionPor.get(l.id) ?? "QUEDO_EN_BODEGA") : "QUEDO_EN_BODEGA";
-    const sku = resolvedor.skuDe(l.item_id, l.variation_id, l.seller_sku);
-    const factor = resolvedor.factorDe(l.item_id, l.variation_id, l.seller_sku);
+    const sku = resolvedor.skuDe(l.item_id, l.variation_id, l.seller_sku, l.inventory_id);
+    const factor = resolvedor.factorDe(l.item_id, l.variation_id, l.seller_sku, l.inventory_id);
     if (l.salida_generada_en && sku && bodegaId) {
       const nuevaFull = Math.round(l.cantidad_recibida * factor);
       const ficha = fichas.get(sku);

@@ -3,6 +3,7 @@ import { todosLosMovimientosStock } from "@/lib/cargar-todo";
 import { createClient } from "@/lib/supabase/server";
 import { resumenPorSku } from "@/lib/calculos-stock";
 import { obtenerPiezasPorCajaPorSku } from "@/lib/productos-stock";
+import { obtenerCatalogo } from "@/lib/catalogo";
 import { fechaTextoMx, formatoFechaMx } from "@/lib/fechas-mx";
 import type { Bodega, ConfiguracionStock, RecepcionFull } from "@/lib/tipos";
 import { devolucionesPorConfirmar, resolvedorSku, ventasPendientesPorLigar } from "@/lib/salidas-ml";
@@ -19,16 +20,25 @@ export const maxDuration = 60;
  * sale de bodega sin motivo registrado. */
 export default async function FullYMercadoLibre() {
   const supabase = await createClient();
-  const [{ data: movimientos }, { data: bodegas }, { data: configuracion }, piezasPorCajaPorSku] = await Promise.all([
+  const [{ data: movimientos }, { data: bodegas }, { data: configuracion }, piezasPorCajaPorSku, catalogo] = await Promise.all([
     todosLosMovimientosStock(supabase),
     supabase.from("bodegas").select("*").is("eliminado_en", null).order("nombre").returns<Bodega[]>(),
     supabase.from("configuracion_stock").select("*").single<ConfiguracionStock>(),
     obtenerPiezasPorCajaPorSku(supabase),
+    obtenerCatalogo(supabase).catch(() => []),
   ]);
   const resumenes = resumenPorSku(movimientos ?? [], configuracion?.dias_espera ?? 60, piezasPorCajaPorSku);
   const nombrePorSku = new Map(resumenes.map((r) => [r.sku, r.nombre]));
   const stockPorSku = new Map(resumenes.map((r) => [r.sku, r]));
   const opcionesBodega = (bodegas ?? []).map((b) => ({ id: b.id, nombre: b.nombre }));
+  // Productos del CRM (con foto y stock) para ligar un Código ML ahí mismo en la vista previa del envío.
+  const productosCrm = new Map<string, { sku: string; nombre: string; imagenUrl: string | null; stockActual: number }>();
+  for (const p of catalogo) productosCrm.set(p.sku, { sku: p.sku, nombre: p.nombre, imagenUrl: p.imagen_url, stockActual: 0 });
+  for (const r of resumenes) {
+    const previo = productosCrm.get(r.sku);
+    productosCrm.set(r.sku, { sku: r.sku, nombre: previo?.nombre ?? r.nombre, imagenUrl: previo?.imagenUrl ?? r.imagenUrl, stockActual: r.stockActual });
+  }
+  const opcionesProducto = Array.from(productosCrm.values()).sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
 
   let pendientes: Awaited<ReturnType<typeof ventasPendientesPorLigar>> = [];
   let devoluciones: Awaited<ReturnType<typeof devolucionesPorConfirmar>> = [];
@@ -56,14 +66,14 @@ export default async function FullYMercadoLibre() {
       return {
         envio,
         lineas: agruparLineas(lineas).map((l) => {
-          const sku = resolvedor.skuDe(l.item_id, l.variation_id, l.seller_sku);
+          const sku = resolvedor.skuDe(l.item_id, l.variation_id, l.seller_sku, l.inventory_id);
           const r = sku ? stockPorSku.get(sku) : undefined;
           return {
             ...l,
             sku,
             nombreCrm: r?.nombre ?? null,
             stockBodega: r?.stockActual ?? null,
-            factor: resolvedor.factorDe(l.item_id, l.variation_id, l.seller_sku),
+            factor: resolvedor.factorDe(l.item_id, l.variation_id, l.seller_sku, l.inventory_id),
           };
         }),
       };
@@ -105,7 +115,7 @@ export default async function FullYMercadoLibre() {
             )}
           </p>
         </div>
-        <CapturarEnvioMl bodegas={opcionesBodega} />
+        <CapturarEnvioMl bodegas={opcionesBodega} productos={opcionesProducto} />
         {errorEnviosMl && <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{errorEnviosMl} — si dice que falta una columna o una tabla, corre los SQL 0042 y 0049 en Supabase.</div>}
 
         {porCerrar.length > 0 && (

@@ -12,6 +12,8 @@ import { CampoFecha } from "@/components/campo-fecha";
 import { capturarEnvioMl, cerrarEnvioMl, deshacerEnvioMl, ignorarEnvioMl, ignorarRecepcionMl, llegadaCompletaMl, llegadaDesdePanelMl, previsualizarEnvioMl, registrarSalidaEnvioMl } from "./actions";
 
 import { BotonGuardar } from "@/components/boton-guardar";
+import { FormLigarCodigo, type OpcionProducto } from "@/app/mercadolibre/skus/ligar-codigo";
+import { sugerirProducto } from "@/lib/sugerir-producto";
 export interface LineaParaPantalla extends LineaAgrupada {
   /** Producto del CRM resuelto por la liga (null = sin ligar). */
   sku: string | null;
@@ -48,14 +50,14 @@ function TextareaPanel({ value, onChange, rows = 6 }: { value: string; onChange:
   return <textarea value={value} onChange={(e) => onChange(e.target.value)} required rows={rows} placeholder={PLACEHOLDER_PANEL} className="mt-2 block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 font-mono text-xs" />;
 }
 
-const ETIQUETA_ORIGEN: Record<NonNullable<OrigenLiga>, string> = { manual: "ligado por publicación", sku: "ligado por SKU de ML", auto: "mismo SKU en los dos lados" };
+const ETIQUETA_ORIGEN: Record<NonNullable<OrigenLiga>, string> = { codigo: "ligado por Código ML", manual: "ligado por publicación", sku: "ligado por SKU de ML", auto: "mismo SKU en los dos lados" };
 
 /** Registrar un envío a Full pegando la tabla del panel de ML, en dos pasos:
  * primero una VISTA PREVIA (qué leyó el sistema y a qué producto del CRM cae
  * cada renglón) y, solo si Isaac dice que sí, se registra. Dos momentos:
  * "acaba de salir" (la bodega se descuenta con las declaradas) o "ya llegó"
  * (se descuenta y de una vez se concilia con las Aptas para Full). */
-export function CapturarEnvioMl({ bodegas }: { bodegas: BodegaOpcion[] }) {
+export function CapturarEnvioMl({ bodegas, productos }: { bodegas: BodegaOpcion[]; productos: OpcionProducto[] }) {
   const router = useRouter();
   const hoy = fechaTextoMx(new Date());
   const [numero, setNumero] = useState("");
@@ -65,6 +67,8 @@ export function CapturarEnvioMl({ bodegas }: { bodegas: BodegaOpcion[] }) {
   const [textoPanel, setTextoPanel] = useState("");
   const [previa, setPrevia] = useState<PreviaEnvio | null>(null);
   const [faltaNumero, setFaltaNumero] = useState(false);
+  /** Códigos ML que Isaac abrió para cambiar su liga en la vista previa. */
+  const [cambiando, setCambiando] = useState<Set<string>>(new Set());
   const [cargando, setCargando] = useState(false);
   const [mensaje, setMensaje] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -119,6 +123,10 @@ export function CapturarEnvioMl({ bodegas }: { bodegas: BodegaOpcion[] }) {
   return (
     <form
       id="capturar"
+      onKeyDown={(e) => {
+        // Un Enter en el buscador de productos (al ligar) NO debe registrar el envío.
+        if (e.key === "Enter" && e.target instanceof HTMLInputElement) e.preventDefault();
+      }}
       onSubmit={(e) => {
         e.preventDefault();
         if (previa) void registrar();
@@ -165,7 +173,6 @@ export function CapturarEnvioMl({ bodegas }: { bodegas: BodegaOpcion[] }) {
           <ul className="divide-y divide-emerald-100 rounded-xl border border-emerald-200 bg-white">
             {previa.lineas.map((l) => {
               const mal = !l.tituloMl || !l.skuCrm;
-              const qLiga = l.sellerSku ?? l.itemId ?? l.inventoryId;
               return (
                 <li key={l.inventoryId} className={`flex flex-wrap items-center justify-between gap-3 px-3 py-2 text-sm ${mal ? "bg-amber-50/60" : ""}`}>
                   <div className="flex min-w-0 items-center gap-3">
@@ -181,34 +188,49 @@ export function CapturarEnvioMl({ bodegas }: { bodegas: BodegaOpcion[] }) {
                         Código ML <span className="font-mono">{l.inventoryId}</span>
                         {l.sellerSku && <> · SKU ML {l.sellerSku}</>}
                         {!l.tituloMl && (
-                          <span className="text-amber-700">
-                            {" "}
-                            · no está en la copia de publicaciones del CRM:{" "}
-                            <Link href="/mercadolibre/skus#faltantes" target="_blank" className="underline">
-                              búscala por su número de publicación y tráela
-                            </Link>{" "}
-                            (en el panel de Full, &ldquo;Publicaciones con este producto&rdquo;)
-                          </span>
+                          <span className="text-zinc-500"> · no está en tu copia de publicaciones (no pasa nada: se liga por su Código ML)</span>
                         )}
                       </p>
-                      <p className="text-xs">
-                        {l.skuCrm ? (
-                          <>
-                            <span className="text-zinc-500">→ CRM: </span>
-                            <span className="font-medium text-zinc-800">{l.nombreCrm ?? l.skuCrm}</span> <span className="font-mono text-zinc-500">{l.skuCrm}</span>
-                            {l.stockBodega !== null && <span className="text-zinc-400"> · {l.stockBodega.toLocaleString("es-MX")} en bodega</span>}
-                            {l.origen && <span className="text-zinc-400"> · {ETIQUETA_ORIGEN[l.origen]}</span>}
-                            {" · "}
-                            <Link href={`/mercadolibre/skus?q=${encodeURIComponent(qLiga)}`} target="_blank" className="text-[#2D3277] underline-offset-2 hover:underline">
-                              ¿no es ese? cambiar liga
-                            </Link>
-                          </>
-                        ) : (
-                          <Link href={`/mercadolibre/skus?q=${encodeURIComponent(qLiga)}`} target="_blank" className="text-amber-700 underline-offset-2 hover:underline">
-                            → sin ligar a un producto del CRM: ligar primero (si lo registras así, sus piezas no se descuentan hasta ligarlo)
-                          </Link>
-                        )}
-                      </p>
+                      {l.skuCrm && !cambiando.has(l.inventoryId) ? (
+                        <p className="text-xs">
+                          <span className="text-zinc-500">→ CRM: </span>
+                          <span className="font-medium text-zinc-800">{l.nombreCrm ?? l.skuCrm}</span> <span className="font-mono text-zinc-500">{l.skuCrm}</span>
+                          {l.stockBodega !== null && <span className="text-zinc-400"> · {l.stockBodega.toLocaleString("es-MX")} en bodega</span>}
+                          {l.origen && <span className="text-zinc-400"> · {ETIQUETA_ORIGEN[l.origen]}</span>}
+                          {" · "}
+                          <button type="button" onClick={() => setCambiando((c) => new Set(c).add(l.inventoryId))} className="text-[#2D3277] underline-offset-2 hover:underline">
+                            ¿no es ese? cambiar
+                          </button>
+                        </p>
+                      ) : (
+                        <div className="mt-1 max-w-md">
+                          {!l.skuCrm && <p className="text-xs text-amber-700">Sin ligar: ¿qué producto de tu bodega es? Lígalo aquí y se queda para siempre.</p>}
+                          <FormLigarCodigo
+                            inventoryId={l.inventoryId}
+                            opciones={productos}
+                            inicial={l.skuCrm ?? sugerirProducto({ titulo: l.tituloMl ?? l.tituloPanel, variacion: null, sellerSku: l.sellerSku ?? "" }, productos)?.sku ?? null}
+                            factorInicial={l.factor}
+                            alLigar={async () => {
+                              setCambiando((c) => {
+                                const n = new Set(c);
+                                n.delete(l.inventoryId);
+                                return n;
+                              });
+                              await revisar();
+                            }}
+                            alCancelar={
+                              l.skuCrm
+                                ? () =>
+                                    setCambiando((c) => {
+                                      const n = new Set(c);
+                                      n.delete(l.inventoryId);
+                                      return n;
+                                    })
+                                : undefined
+                            }
+                          />
+                        </div>
+                      )}
                     </div>
                   </div>
                   <div className="shrink-0 text-right text-xs text-zinc-600">
@@ -371,7 +393,7 @@ function LineaEnvio({ l, fase }: { l: LineaParaPantalla; fase: FaseEnvio }) {
                 {!l.salidaGenerada && fase !== "PENDIENTE_REGISTRAR" && <span className="text-amber-700"> · su salida se genera en la siguiente revisión</span>}
               </span>
             ) : (
-              <Link href="/mercadolibre/skus" className="text-amber-700 underline-offset-2 hover:underline">
+              <Link href={l.inventory_id ? `/mercadolibre/skus?q=${encodeURIComponent(l.inventory_id)}` : "/mercadolibre/skus"} className="text-amber-700 underline-offset-2 hover:underline">
                 sin ligar con un producto del CRM → ligar (sus piezas se descuentan solas al ligarlo)
               </Link>
             )}

@@ -5,9 +5,10 @@
 // pantallas del servidor).
 
 import { createServiceClient } from "@/lib/supabase/servicio";
+import { skusExistentes } from "@/lib/catalogo";
 import { insertarMovimientosStock } from "@/lib/movimientos-stock";
 import { costoPromedioPonderado } from "@/lib/calculos-stock";
-import { claveLigaSku, claveVinculo, factorDePublicacion, factoresVinculos, normalizarSellerSku, obtenerPublicaciones, obtenerVinculos, skuCrmDe, type OrigenLiga, type PublicacionMl } from "@/lib/mercadolibre-stock";
+import { claveCodigoMl, claveLigaSku, claveVinculo, factorDePublicacion, factoresVinculos, normalizarSellerSku, obtenerPublicaciones, obtenerVinculos, skuCrmDe, type OrigenLiga, type PublicacionMl } from "@/lib/mercadolibre-stock";
 import type { OrdenItemMl, OrdenMl } from "@/lib/mercadolibre-ordenes";
 import type { Bodega, MovimientoStock, RecepcionFull } from "@/lib/tipos";
 
@@ -25,14 +26,9 @@ async function bodegaPrincipal(): Promise<Bodega | null> {
 /** Liga publicación → SKU del CRM (manual o automática por SKU igual). */
 export async function resolvedorSku() {
   const supabase = createServiceClient();
-  const [publicaciones, vinculos, { data: skus }] = await Promise.all([
-    obtenerPublicaciones(),
-    obtenerVinculos(),
-    supabase.from("movimientos_stock").select("sku").returns<{ sku: string }[]>(),
-  ]);
+  const [publicaciones, vinculos, skusCrm] = await Promise.all([obtenerPublicaciones(), obtenerVinculos(), skusExistentes(supabase)]);
   const mapaVinculos = new Map(vinculos.map((v) => [claveVinculo(v.item_id, v.variation_id), v.sku_crm]));
   const factores = factoresVinculos(vinculos);
-  const skusCrm = new Set((skus ?? []).map((s) => s.sku));
   const porClave = new Map(publicaciones.map((p) => [claveVinculo(p.item_id, p.variation_id), p]));
   // Items que tienen variantes (color, talla…): una liga guardada "al item"
   // sin variante NO se hereda a sus variantes — cada color es un producto
@@ -41,12 +37,20 @@ export async function resolvedorSku() {
   const conVariantes = new Set(publicaciones.filter((p) => p.variation_id !== null).map((p) => p.item_id));
   const ligaItem = (itemId: string, variationId: number | null) =>
     variationId !== null && !conVariantes.has(itemId) ? mapaVinculos.get(claveVinculo(itemId, null)) : undefined;
-  const resolver = (itemId: string | null, variationId: number | null, sellerSku: string | null) => api.resolver(itemId, variationId, sellerSku);
+  const resolver = (itemId: string | null, variationId: number | null, sellerSku: string | null, inventoryId?: string | null) => api.resolver(itemId, variationId, sellerSku, inventoryId);
+  /** Código ML de Full: el que trae la orden/envío, o el de la publicación. */
+  const codigoDe = (itemId: string | null, variationId: number | null, inventoryId?: string | null) =>
+    inventoryId?.trim() || (itemId ? porClave.get(claveVinculo(itemId, variationId))?.inventory_id : null) || null;
   const api = {
     publicaciones,
     factores,
     /** Piezas del CRM por unidad de ML (1 normal, 2 para un par). */
-    factorDe(itemId: string | null, variationId: number | null, sellerSku?: string | null): number {
+    factorDe(itemId: string | null, variationId: number | null, sellerSku?: string | null, inventoryId?: string | null): number {
+      const codigo = codigoDe(itemId, variationId, inventoryId);
+      if (codigo) {
+        const f = factores.get(claveCodigoMl(codigo));
+        if (f !== undefined) return f;
+      }
       if (itemId) {
         const directo = factores.get(claveVinculo(itemId, variationId));
         if (directo !== undefined) return directo;
@@ -60,8 +64,14 @@ export async function resolvedorSku() {
       if (variationId !== null && conVariantes.has(itemId)) return 1;
       return factorDePublicacion(itemId, variationId, factores);
     },
-    /** Producto del CRM y por qué liga se resolvió (manual = esa publicación/variante, sku = liga por SKU de ML, auto = mismo SKU). */
-    resolver(itemId: string | null, variationId: number | null, sellerSku: string | null): { sku: string | null; origen: OrigenLiga } {
+    /** Producto del CRM y por qué liga se resolvió (codigo = Código ML de Full, manual = esa publicación/variante, sku = liga por SKU de ML, auto = mismo SKU). */
+    resolver(itemId: string | null, variationId: number | null, sellerSku: string | null, inventoryId?: string | null): { sku: string | null; origen: OrigenLiga } {
+      // 0) Liga por Código ML de Full: la que manda.
+      const codigo = codigoDe(itemId, variationId, inventoryId);
+      if (codigo) {
+        const porCodigo = mapaVinculos.get(claveCodigoMl(codigo));
+        if (porCodigo) return { sku: porCodigo, origen: "codigo" };
+      }
       // 1) Liga de ESA publicación/variante (lo más específico).
       if (itemId) {
         const propia = mapaVinculos.get(claveVinculo(itemId, variationId));
@@ -85,8 +95,8 @@ export async function resolvedorSku() {
       if (sellerSku && skusCrm.has(sellerSku)) return { sku: sellerSku, origen: "auto" };
       return { sku: null, origen: null };
     },
-    skuDe(itemId: string | null, variationId: number | null, sellerSku: string | null): string | null {
-      return resolver(itemId, variationId, sellerSku).sku;
+    skuDe(itemId: string | null, variationId: number | null, sellerSku: string | null, inventoryId?: string | null): string | null {
+      return resolver(itemId, variationId, sellerSku, inventoryId).sku;
     },
   };
   return api;
@@ -139,10 +149,10 @@ export async function registrarHistorialFull(publicaciones?: PublicacionMl[]) {
         item_id: p.item_id,
         variation_id: p.variation_id,
         titulo: [p.titulo, p.variacion].filter(Boolean).join(" · "),
-        sku_crm: skuDe(p.item_id, p.variation_id, p.seller_sku),
+        sku_crm: skuDe(p.item_id, p.variation_id, p.seller_sku, p.inventory_id),
         // En piezas del CRM (un par en Full = 2 piezas), para que "ML detectó
         // N" y la salida propuesta ya vengan convertidas.
-        cantidad: (total - previa.total) * factorDe(p.item_id, p.variation_id, p.seller_sku),
+        cantidad: (total - previa.total) * factorDe(p.item_id, p.variation_id, p.seller_sku, p.inventory_id),
         total_antes: previa.total,
         total_despues: total,
         detectado_en: ahora,

@@ -257,7 +257,7 @@ function LigaEnResultado({
     return (
       <li className="text-[11px] text-zinc-600">
         {etiquetaVariante}→ ligada a <strong className="text-zinc-900">{producto?.nombre ?? variante.skuCrm}</strong> <span className="font-mono text-zinc-400">({variante.skuCrm})</span>
-        <span className="text-zinc-400">{variante.origen === "sku" ? " · por SKU de ML" : variante.origen === "auto" ? " · mismo SKU" : " · por publicación"}</span>
+        <span className="text-zinc-400">{variante.origen === "codigo" ? " · por Código ML" : variante.origen === "sku" ? " · por SKU de ML" : variante.origen === "auto" ? " · mismo SKU" : " · por publicación"}</span>
         {variante.factor > 1 && <span className="font-medium text-violet-700"> · {variante.factor} pzas por unidad</span>}
         {" · "}
         <button type="button" onClick={() => setEditando(true)} className="text-zinc-500 underline-offset-2 hover:text-zinc-900 hover:underline">
