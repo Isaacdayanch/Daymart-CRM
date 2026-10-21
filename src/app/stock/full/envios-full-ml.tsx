@@ -35,6 +35,7 @@ export interface BodegaOpcion {
 
 const btnSec = "rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50";
 const btnPri = "rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50";
+const btnGrande = "rounded-2xl bg-zinc-900 px-6 py-3 text-base font-semibold text-white shadow-sm transition hover:bg-zinc-800 disabled:opacity-40";
 const PLACEHOLDER_PANEL = "Pega aquí toda la página del envío (Ctrl+A y Ctrl+C dentro del envío en Mercado Libre).\n\nEnvío N.º 77396370 - Daymart - Amarillo\nProcesamiento finalizado\n…\nCódigo ML: IPYX23014\n50 u.  49 u.  1 u.  49 u.\n…";
 
 const ETIQUETA_FASE: Record<FaseEnvio, { texto: string; clase: string }> = {
@@ -46,8 +47,21 @@ const ETIQUETA_FASE: Record<FaseEnvio, { texto: string; clase: string }> = {
   CANCELADO: { texto: "Cancelado", clase: "bg-red-50 text-red-700 ring-red-600/20" },
 };
 
-function TextareaPanel({ value, onChange, rows = 6 }: { value: string; onChange: (v: string) => void; rows?: number }) {
-  return <textarea value={value} onChange={(e) => onChange(e.target.value)} required rows={rows} placeholder={PLACEHOLDER_PANEL} className="mt-2 block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 font-mono text-xs" />;
+function TextareaPanel({ value, onChange, rows = 6, grande = false }: { value: string; onChange: (v: string) => void; rows?: number; grande?: boolean }) {
+  return (
+    <textarea
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      required
+      rows={rows}
+      placeholder={PLACEHOLDER_PANEL}
+      className={
+        grande
+          ? "mt-4 block w-full resize-y rounded-2xl border border-zinc-200 bg-zinc-50/70 px-4 py-3 font-mono text-xs leading-relaxed text-zinc-700 outline-none transition placeholder:text-zinc-400 focus:border-zinc-400 focus:bg-white focus:ring-4 focus:ring-zinc-100"
+          : "mt-2 block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 font-mono text-xs"
+      }
+    />
+  );
 }
 
 const ETIQUETA_ORIGEN: Record<NonNullable<OrigenLiga>, string> = { codigo: "ligado por Código ML", manual: "ligado por publicación", sku: "ligado por SKU de ML", auto: "mismo SKU en los dos lados" };
@@ -132,26 +146,26 @@ export function CapturarEnvioMl({ bodegas, productos }: { bodegas: BodegaOpcion[
         if (previa) void registrar();
         else void revisar();
       }}
-      className="rounded-2xl border border-emerald-300 bg-emerald-50/60 p-4 sm:p-5"
+      className="rounded-3xl border border-zinc-200/80 bg-white p-6 shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_24px_-12px_rgba(0,0,0,0.12)] sm:p-8"
     >
-      <p className="text-sm font-semibold text-zinc-900">Registrar un envío a Full</p>
+      <p className="text-xl font-semibold tracking-tight text-zinc-900">Registrar un envío</p>
       {!previa && (
         <>
-          <p className="mt-1 text-xs text-zinc-600">
-            En Mercado Libre abre el envío (Gestión de envíos Full → el envío), selecciona <strong>toda la página</strong> con Ctrl+A (Cmd+A en Mac), cópiala y pégala aquí. Yo saco solo el número, la etiqueta, si va en camino o ya llegó, y los productos.
+          <p className="mt-1 text-sm text-zinc-500">
+            Abre el envío en Mercado Libre, presiona <kbd className="rounded-md border border-zinc-200 bg-zinc-50 px-1.5 py-0.5 font-sans text-xs text-zinc-600">Ctrl A</kbd> y <kbd className="rounded-md border border-zinc-200 bg-zinc-50 px-1.5 py-0.5 font-sans text-xs text-zinc-600">Ctrl C</kbd>, y pégalo aquí. Del resto me encargo yo.
           </p>
-          <TextareaPanel value={textoPanel} onChange={setTextoPanel} rows={7} />
+          <TextareaPanel value={textoPanel} onChange={setTextoPanel} rows={6} grande />
           {faltaNumero && (
             <div className="mt-2">
               <label className="block text-[11px] font-medium text-zinc-500">Número de envío (no venía en lo que pegaste)</label>
               <input type="text" value={numero} onChange={(e) => setNumero(e.target.value)} placeholder="77396369" className="mt-1 w-44 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm" />
             </div>
           )}
-          <div className="mt-2 flex flex-wrap items-center gap-3">
-            <BotonGuardar cargando={cargando} disabled={!textoPanel.trim() || (faltaNumero && !numero.trim())} textoCargando="Leyendo…" className={btnPri}>
+          <div className="mt-4 flex flex-wrap items-center gap-4">
+            <BotonGuardar cargando={cargando} disabled={!textoPanel.trim() || (faltaNumero && !numero.trim())} textoCargando="Leyendo…" className={btnGrande}>
               Revisar envío
             </BotonGuardar>
-            <span className="text-[11px] text-zinc-500">Todavía no se registra nada: primero ves lo que leí.</span>
+            <span className="text-sm text-zinc-400">Todavía no se guarda nada: primero ves lo que leí.</span>
           </div>
         </>
       )}
@@ -468,7 +482,7 @@ export function TarjetaEnvioMl({ datos, bodegas }: { datos: EnvioParaPantalla; b
   }
 
   return (
-    <details id={`envio-${envio.inbound_id}`} open={abierto} className={`group rounded-2xl border bg-white shadow-sm ${fase === "POR_CERRAR" || fase === "PENDIENTE_REGISTRAR" ? "border-amber-300 ring-2 ring-amber-100" : fase === "EN_CAMINO" ? "border-[#2D3277]/30" : "border-zinc-200"}`}>
+    <details id={`envio-${envio.inbound_id}`} open={abierto} className={`group rounded-3xl border bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04)] ${fase === "POR_CERRAR" || fase === "PENDIENTE_REGISTRAR" ? "border-amber-300 ring-2 ring-amber-100" : fase === "EN_CAMINO" ? "border-[#2D3277]/20" : "border-zinc-200/80"}`}>
       <summary className="flex cursor-pointer select-none flex-wrap items-center justify-between gap-2 px-5 py-3">
         <div className="flex items-center gap-3">
           <span className="inline-block transition-transform group-open:rotate-90">▸</span>
