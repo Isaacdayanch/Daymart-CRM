@@ -65,7 +65,7 @@ const SIN_SESION: ResultadoCaptura = { error: "Inicia sesión.", productos: 0, p
 
 /** Vista previa: qué leyó el sistema de la tabla pegada y a qué producto cae cada renglón. No guarda nada. */
 export async function previsualizarEnvioMl(numero: string, textoPanel: string): Promise<PreviaEnvio> {
-  if (!(await conSesion())) return { error: "Inicia sesión.", inboundId: "", lineas: [], faseExistente: null, totalDeclaradas: 0, totalSalen: 0, sinLigar: 0, sinPublicacion: 0 };
+  if (!(await conSesion())) return { error: "Inicia sesión.", inboundId: "", lineas: [], faseExistente: null, totalDeclaradas: 0, totalSalen: 0, sinLigar: 0, sinPublicacion: 0, etiqueta: null, momentoDetectado: "EN_CAMINO", faltaNumero: false };
   const { previsualizarEnvioDesdePanel } = await import("@/lib/mercadolibre-envios-full");
   return previsualizarEnvioDesdePanel(numero, textoPanel);
 }

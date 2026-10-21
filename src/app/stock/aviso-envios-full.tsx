@@ -1,13 +1,14 @@
 import Link from "next/link";
-import { DIAS_EN_CAMINO_AVISO, diasEnCamino, faseDe, obtenerEnviosFullMl, recepcionesSinExplicar } from "@/lib/mercadolibre-envios-full";
+import { DIAS_EN_CAMINO_AVISO, diasEnCamino, faseDe, obtenerEnviosFullMl } from "@/lib/mercadolibre-envios-full";
 
 /** Aviso arriba de todas las pantallas de Stock: lo que falta hacer con los
  * envíos a Full para que la bodega quede bien (diferencias por resolver,
- * envíos tardados, productos sin ligar, subidas en Full sin envío). */
+ * envíos tardados, productos sin ligar). Las subidas en Full sin envío ya
+ * no avisan aquí: viven escondidas al final de Full y ML. */
 export async function AvisoEnviosFull() {
   let avisos: { texto: string; ancla: string }[] = [];
   try {
-    const [envios, sinExplicar] = await Promise.all([obtenerEnviosFullMl(), recepcionesSinExplicar()]);
+    const envios = await obtenerEnviosFullMl();
     const ids = (lista: { envio: { inbound_id: string } }[]) => lista.map((e) => e.envio.inbound_id).join(", ");
     const porCerrar = envios.filter((e) => faseDe(e.envio) === "POR_CERRAR");
     const pendientes = envios.filter((e) => faseDe(e.envio) === "PENDIENTE_REGISTRAR");
@@ -18,7 +19,6 @@ export async function AvisoEnviosFull() {
       pendientes.length ? { texto: `${pendientes.length === 1 ? "El envío" : "Los envíos"} ${ids(pendientes)} ${pendientes.length === 1 ? "está capturado" : "están capturados"} pero todavía no se ${pendientes.length === 1 ? "descuenta" : "descuentan"} de tu bodega.`, ancla: "#envios-ml" } : null,
       tardados.length ? { texto: `${tardados.length === 1 ? "El envío" : "Los envíos"} ${ids(tardados)} ${tardados.length === 1 ? "lleva" : "llevan"} más de ${DIAS_EN_CAMINO_AVISO} días en camino: si ML ya lo recibió, ciérralo.`, ancla: "#envios-ml" } : null,
       sinLigar.length ? { texto: `${sinLigar.length === 1 ? "El envío" : "Los envíos"} ${ids(sinLigar)} ${sinLigar.length === 1 ? "tiene" : "tienen"} productos sin ligar: esas piezas todavía no se descuentan de tu bodega.`, ancla: "#envios-ml" } : null,
-      sinExplicar.length ? { texto: `Subió el stock en Full de ${sinExplicar.length} producto(s) y no hay ningún envío capturado que lo explique: ¿se te olvidó capturar un envío?`, ancla: "#sin-explicar" } : null,
     ].filter((a): a is { texto: string; ancla: string } => Boolean(a));
   } catch {
     return null;
