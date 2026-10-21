@@ -128,6 +128,28 @@ export interface LineaPanelMl {
   declaradas: number;
   /** Aptas para Full (si el envío todavía no llega, viene igual a declaradas). */
   recibidas: number;
+  /** ML ya llenó Procesadas/Diferencias/Aptas (el envío ya llegó). */
+  conAptas: boolean;
+}
+
+export interface EncabezadoPanelMl {
+  /** "Envío N.º 77396370" → "77396370" (null si no se encontró). */
+  numero: string | null;
+  /** Lo que sigue al número: "Daymart - Amarillo" (marca y color de etiqueta). */
+  etiqueta: string | null;
+  /** Momento que se deduce de la página: ya llegó si ML terminó de procesarlo
+   * o ya trae "Aptas para Full"; si no, va en camino. */
+  momento: MomentoEnvio;
+}
+
+/** Lee de la página COMPLETA del envío (Ctrl+A, Ctrl+C en ML) el número,
+ * la etiqueta y si ya llegó. Puro; probado con la página real del 77396370. */
+export function leerEncabezadoPanelMl(texto: string, lineas = parsearPanelEnvioMl(texto)): EncabezadoPanelMl {
+  const m = texto.match(/env[ií]o\s*n\.?\s*[º°o]?\.?\s*#?\s*(\d{6,12})[ \t]*(?:-[ \t]*([^\r\n]+))?/i);
+  const etiqueta = m?.[2]?.trim().replace(/\s+/g, " ") || null;
+  const terminado = /procesamiento\s+finalizado/i.test(texto);
+  const llego = terminado || (lineas.length > 0 && lineas.every((l) => l.conAptas));
+  return { numero: m?.[1] ?? null, etiqueta, momento: llego ? "LLEGO" : "EN_CAMINO" };
 }
 
 /** Lee el texto copiado del panel "Gestión de envíos Full" de Mercado
@@ -157,7 +179,7 @@ export function parsearPanelEnvioMl(texto: string): LineaPanelMl[] {
         .split(/\r?\n|\t/)
         .map((t) => t.trim())
         .find((t) => t && !/cm\s*3|cm³|^\d[\d,.]*\s*u\b/i.test(t)) ?? codigo;
-    lineas.push({ inventoryId: codigo, titulo, declaradas: numeros[0], recibidas: Number.isFinite(recibidas) ? recibidas : numeros[0] });
+    lineas.push({ inventoryId: codigo, titulo, declaradas: numeros[0], recibidas: Number.isFinite(recibidas) ? recibidas : numeros[0], conAptas: numeros.length >= 4 });
   }
   // Un mismo código repetido (ej. pegó dos veces) se queda con el último.
   const porCodigo = new Map(lineas.map((l) => [l.inventoryId, l]));
@@ -263,12 +285,12 @@ async function generarSalidasLineas(envio: EnvioFullMl, lineas: EnvioFullMlLinea
   const planes: { linea: EnvioFullMlLinea; sku: string; full: number; merma: number; factor: number; declaradas: number }[] = [];
   let sinLigar = 0;
   for (const l of pendientes) {
-    const sku = resolvedor.skuDe(l.item_id, l.variation_id, l.seller_sku);
+    const sku = resolvedor.skuDe(l.item_id, l.variation_id, l.seller_sku, l.inventory_id);
     if (!sku) {
       sinLigar++;
       continue;
     }
-    const factor = resolvedor.factorDe(l.item_id, l.variation_id, l.seller_sku);
+    const factor = resolvedor.factorDe(l.item_id, l.variation_id, l.seller_sku, l.inventory_id);
     const declaradas = l.cantidad_planeada ?? l.cantidad_recibida;
     const full = Math.round((cerrado ? l.cantidad_recibida : declaradas) * factor);
     const diff = cerrado ? declaradas - l.cantidad_recibida : 0;
@@ -363,20 +385,32 @@ export interface PreviaEnvio {
   totalSalen: number;
   sinLigar: number;
   sinPublicacion: number;
+  /** "Daymart - Amarillo", leído de la página pegada. */
+  etiqueta: string | null;
+  /** Lo que se deduce de la página (ya llegó / va en camino). */
+  momentoDetectado: MomentoEnvio;
+  /** No venía el número en lo pegado: hay que escribirlo. */
+  faltaNumero: boolean;
+}
+
+/** El número escrito a mano gana; si no, el que viene en la página pegada. */
+function numeroDeEnvio(numero: string, encabezado: EncabezadoPanelMl) {
+  return limpiarNumero(numero) || encabezado.numero || "";
 }
 
 export async function previsualizarEnvioDesdePanel(numero: string, texto: string): Promise<PreviaEnvio> {
-  const vacia: Omit<PreviaEnvio, "error"> = { inboundId: "", lineas: [], faseExistente: null, totalDeclaradas: 0, totalSalen: 0, sinLigar: 0, sinPublicacion: 0 };
-  const inboundId = limpiarNumero(numero);
-  if (!inboundId) return { ...vacia, error: "Escribe el número del envío tal como sale en tu panel (ej. 77396369)." };
   const lineasPanel = parsearPanelEnvioMl(texto);
-  if (!lineasPanel.length) return { ...vacia, inboundId, error: "No encontré productos en lo que pegaste. Copia la tabla del envío en Mercado Libre (desde \"Código ML:\" hasta los totales) y vuelve a pegarla." };
+  const encabezado = leerEncabezadoPanelMl(texto, lineasPanel);
+  const vacia: Omit<PreviaEnvio, "error"> = { inboundId: "", lineas: [], faseExistente: null, totalDeclaradas: 0, totalSalen: 0, sinLigar: 0, sinPublicacion: 0, etiqueta: encabezado.etiqueta, momentoDetectado: encabezado.momento, faltaNumero: false };
+  if (!lineasPanel.length) return { ...vacia, error: "No encontré productos en lo que pegaste. En Mercado Libre abre el envío, selecciona toda la página (Ctrl+A / Cmd+A), cópiala y pégala aquí." };
+  const inboundId = numeroDeEnvio(numero, encabezado);
+  if (!inboundId) return { ...vacia, faltaNumero: true, error: "Sí leí los productos, pero no encontré el número del envío en lo que pegaste (sale arriba como “Envío N.º 77396370”). Escríbelo abajo." };
 
   const [existente, porInventario, resolvedor] = await Promise.all([cargarEnvio(inboundId), publicacionesPorInventario(), resolvedorSku()]);
   const base = lineasPanel.map((l) => {
     const pub = porInventario.get(l.inventoryId) ?? null;
-    const r = resolvedor.resolver(pub?.item_id ?? null, pub?.variation_id ?? null, pub?.seller_sku ?? null);
-    const factor = pub ? resolvedor.factorDe(pub.item_id, pub.variation_id, pub.seller_sku) : 1;
+    const r = resolvedor.resolver(pub?.item_id ?? null, pub?.variation_id ?? null, pub?.seller_sku ?? null, l.inventoryId);
+    const factor = resolvedor.factorDe(pub?.item_id ?? null, pub?.variation_id ?? null, pub?.seller_sku ?? null, l.inventoryId);
     return { l, pub, r, factor };
   });
   const skus = Array.from(new Set(base.map((b) => b.r.sku).filter((x): x is string => Boolean(x))));
@@ -406,6 +440,7 @@ export async function previsualizarEnvioDesdePanel(numero: string, texto: string
     piezasSalen: Math.round(l.declaradas * factor),
   }));
   return {
+    ...vacia,
     error: null,
     inboundId,
     lineas,
@@ -466,12 +501,13 @@ const SIN_RESULTADO: Omit<ResultadoCaptura, "error"> = { productos: 0, piezas: 0
  * ya estaba en camino y se pega otra vez como `LLEGO`, es la llegada. */
 export async function capturarEnvioDesdePanel(numero: string, texto: string, opciones: { momento: MomentoEnvio; fechaSalida?: string | null; bodegaId?: string | null }): Promise<ResultadoCaptura> {
   const supabase = createServiceClient();
-  const inboundId = limpiarNumero(numero);
-  if (!inboundId) return { ...SIN_RESULTADO, error: "Escribe el número del envío tal como sale en tu panel (ej. 77396369)." };
   const lineasPanel = parsearPanelEnvioMl(texto);
   if (!lineasPanel.length) {
-    return { ...SIN_RESULTADO, error: "No encontré productos en lo que pegaste. Copia la tabla del envío en Mercado Libre (desde \"Código ML:\" hasta los totales) y vuelve a pegarla." };
+    return { ...SIN_RESULTADO, error: "No encontré productos en lo que pegaste. En Mercado Libre abre el envío, selecciona toda la página (Ctrl+A / Cmd+A), cópiala y pégala aquí." };
   }
+  const encabezado = leerEncabezadoPanelMl(texto, lineasPanel);
+  const inboundId = numeroDeEnvio(numero, encabezado);
+  if (!inboundId) return { ...SIN_RESULTADO, error: "No encontré el número del envío en lo que pegaste: escríbelo (ej. 77396369)." };
 
   const existente = await cargarEnvio(inboundId);
   if (existente?.envio.confirmado_en) {
@@ -516,7 +552,7 @@ export async function capturarEnvioDesdePanel(numero: string, texto: string, opc
     piezas_planeadas: declaradas,
     piezas_recibidas: llego ? lineas.reduce((s, l) => s + l.cantidad_recibida, 0) : 0,
     origen: "manual",
-    crudo: { numero: inboundId, nota: "Capturado pegando la tabla del panel de ML. Declaradas = lo que salió de bodega; Aptas para Full = lo que ML recibió." },
+    crudo: { numero: inboundId, etiqueta: encabezado.etiqueta, nota: "Capturado pegando la página del envío en el panel de ML. Declaradas = lo que salió de bodega; Aptas para Full = lo que ML recibió." },
     confirmado_en: null,
     ignorado_en: null,
     cerrado_en: null,
@@ -589,7 +625,9 @@ export async function registrarLlegadaDesdePanel(inboundId: string, texto: strin
   if (!envio.confirmado_en) return { error: "Primero registra la salida de bodega de este envío.", diferencias: 0, cerrado: false, sinPublicacion: [] };
   if (envio.cerrado_en) return { error: "Ese envío ya está cerrado. Si quieres corregirlo, dale \"deshacer\" y vuelve a capturarlo.", diferencias: 0, cerrado: false, sinPublicacion: [] };
   const lineasPanel = parsearPanelEnvioMl(texto);
-  if (!lineasPanel.length) return { error: "No encontré productos en lo que pegaste. Copia la tabla del envío (desde \"Código ML:\" hasta los totales).", diferencias: 0, cerrado: false, sinPublicacion: [] };
+  if (!lineasPanel.length) return { error: "No encontré productos en lo que pegaste. Abre el envío en Mercado Libre, selecciona toda la página (Ctrl+A / Cmd+A), cópiala y pégala.", diferencias: 0, cerrado: false, sinPublicacion: [] };
+  const numeroPegado = leerEncabezadoPanelMl(texto, lineasPanel).numero;
+  if (numeroPegado && numeroPegado !== inboundId) return { error: `Lo que pegaste es del envío ${numeroPegado}, no del ${inboundId}. Revisa que copiaste la página correcta.`, diferencias: 0, cerrado: false, sinPublicacion: [] };
 
   const porInventario = await publicacionesPorInventario();
   const porInv = new Map(lineas.filter((l) => l.inventory_id).map((l) => [l.inventory_id as string, l]));
@@ -667,7 +705,7 @@ export async function cerrarEnvioFullMl(inboundId: string, decisiones: { lineaId
   let mermas = 0;
 
   const conDiferencia = lineas.filter((l) => diferenciaLinea(l) !== 0);
-  const skus = Array.from(new Set(conDiferencia.map((l) => resolvedor.skuDe(l.item_id, l.variation_id, l.seller_sku)).filter((x): x is string => Boolean(x))));
+  const skus = Array.from(new Set(conDiferencia.map((l) => resolvedor.skuDe(l.item_id, l.variation_id, l.seller_sku, l.inventory_id)).filter((x): x is string => Boolean(x))));
   const fichas = await fichasPorSku(skus);
   const { data: movs } = await supabase.from("movimientos_stock").select("bodega_id").eq("inbound_ml_id", inboundId).limit(1).returns<{ bodega_id: string | null }[]>();
   const bodegaId = movs?.[0]?.bodega_id ?? (await bodegaPrincipal())?.id ?? null;
@@ -676,8 +714,8 @@ export async function cerrarEnvioFullMl(inboundId: string, decisiones: { lineaId
     const diff = diferenciaLinea(l);
     // Negativo = ML recibió MÁS de lo declarado: salieron más piezas, no hay merma.
     const decision: DecisionDiferencia = diff > 0 ? (decisionPor.get(l.id) ?? "QUEDO_EN_BODEGA") : "QUEDO_EN_BODEGA";
-    const sku = resolvedor.skuDe(l.item_id, l.variation_id, l.seller_sku);
-    const factor = resolvedor.factorDe(l.item_id, l.variation_id, l.seller_sku);
+    const sku = resolvedor.skuDe(l.item_id, l.variation_id, l.seller_sku, l.inventory_id);
+    const factor = resolvedor.factorDe(l.item_id, l.variation_id, l.seller_sku, l.inventory_id);
     if (l.salida_generada_en && sku && bodegaId) {
       const nuevaFull = Math.round(l.cantidad_recibida * factor);
       const ficha = fichas.get(sku);

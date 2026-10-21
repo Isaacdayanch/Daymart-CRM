@@ -1,18 +1,23 @@
 import Link from "next/link";
 import { claveLigaSku, claveVinculo, normalizarSellerSku, obtenerIgnorados, obtenerPublicaciones, obtenerVinculos, skuCrmDe } from "@/lib/mercadolibre-stock";
+import { agruparPorCodigoMl, esCodigoPendiente } from "@/lib/mercadolibre-codigos";
 
-/** Aviso ámbar "N SKUs de ML pendientes de ligar" (se usa en Publicaciones y
- * en Full y ML). Solo cuenta lo que importa: SKUs con alguna publicación
- * ACTIVA que no resuelve y que Isaac no haya marcado "olvidar". */
+/** Aviso ámbar "N productos de ML sin ligar" (se usa en Publicaciones y en
+ * Full y ML). Solo cuenta lo que importa: Códigos ML de Full (y, fuera de
+ * Full, SKUs/publicaciones) con algo ACTIVO que no resuelve y que Isaac no
+ * haya marcado "olvidar". */
 export async function AvisoSkusPendientes({ skusCrm }: { skusCrm: Set<string> }) {
   let pendientes = 0;
   let sinSku = 0;
+  let codigos = 0;
   try {
     const [publicaciones, vinculos, ignoradosLista] = await Promise.all([obtenerPublicaciones(), obtenerVinculos(), obtenerIgnorados()]);
     const mapa = new Map(vinculos.map((v) => [claveVinculo(v.item_id, v.variation_id), v.sku_crm]));
     const ignorados = new Set(ignoradosLista.map((i) => i.clave));
+    codigos = agruparPorCodigoMl(publicaciones, vinculos, [], skusCrm, ignorados).filter(esCodigoPendiente).length;
     const porSku = new Map<string, { sinResolver: boolean; activa: boolean }>();
-    for (const p of publicaciones) {
+    // Fuera de Full (sin Código ML): por SKU de ML o publicación, como antes.
+    for (const p of publicaciones.filter((x) => !x.inventory_id)) {
       const resuelve = Boolean(skuCrmDe(p, mapa, skusCrm).sku);
       const k = normalizarSellerSku(p.seller_sku);
       if (!k) {
@@ -28,25 +33,19 @@ export async function AvisoSkusPendientes({ skusCrm }: { skusCrm: Set<string> })
   } catch {
     return null;
   }
-  if (pendientes === 0 && sinSku === 0) return null;
+  if (pendientes === 0 && sinSku === 0 && codigos === 0) return null;
+  const partes = [
+    codigos ? `${codigos} producto(s) en Full (Código ML)` : null,
+    pendientes ? `${pendientes} SKU(s) de ML fuera de Full` : null,
+    sinSku ? `${sinSku} publicación(es) sin SKU fuera de Full` : null,
+  ].filter(Boolean);
   return (
     <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
       <span>
-        {pendientes > 0 && (
-          <>
-            <strong>{pendientes}</strong> SKU(s) de Mercado Libre activos todavía no están ligados a un producto del CRM
-          </>
-        )}
-        {pendientes > 0 && sinSku > 0 && " y "}
-        {sinSku > 0 && (
-          <>
-            <strong>{sinSku}</strong> publicación(es) activas sin SKU en ML siguen sin ligar
-          </>
-        )}
-        : sus ventas y envíos a Full no pueden descontar de tu bodega.
+        Sin ligar a un producto del CRM: <strong>{partes.join(", ")}</strong>. Sus ventas y envíos a Full no pueden descontar de tu bodega.
       </span>
-      <Link href="/mercadolibre/skus" className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700">
-        Ligar SKUs →
+      <Link href={codigos ? "/mercadolibre/skus" : "/mercadolibre/skus?vista=sinfull"} className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700">
+        Ligar →
       </Link>
     </div>
   );

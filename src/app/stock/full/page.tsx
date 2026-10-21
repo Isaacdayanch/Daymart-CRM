@@ -3,11 +3,12 @@ import { todosLosMovimientosStock } from "@/lib/cargar-todo";
 import { createClient } from "@/lib/supabase/server";
 import { resumenPorSku } from "@/lib/calculos-stock";
 import { obtenerPiezasPorCajaPorSku } from "@/lib/productos-stock";
+import { obtenerCatalogo } from "@/lib/catalogo";
 import { fechaTextoMx, formatoFechaMx } from "@/lib/fechas-mx";
 import type { Bodega, ConfiguracionStock, RecepcionFull } from "@/lib/tipos";
-import { devolucionesPorConfirmar, obtenerRecepcionesPendientes, resolvedorSku, ventasPendientesPorLigar } from "@/lib/salidas-ml";
+import { devolucionesPorConfirmar, resolvedorSku, ventasPendientesPorLigar } from "@/lib/salidas-ml";
 import { BotonesDevolucion, BotonProcesarAhora, InterruptorVentasMl } from "./acciones-full";
-import { agruparLineas, faseDe, generarSalidasPendientesEnvios, obtenerEnviosFullMl, recepcionesSinExplicar, subidasDetectadas } from "@/lib/mercadolibre-envios-full";
+import { agruparLineas, faseDe, generarSalidasPendientesEnvios, obtenerEnviosFullMl, recepcionesSinExplicar } from "@/lib/mercadolibre-envios-full";
 import { AvisoSkusPendientes } from "@/app/mercadolibre/skus/aviso-skus";
 import { AvisoSinExplicar, CapturarEnvioMl, TarjetaEnvioMl, type EnvioParaPantalla } from "./envios-full-ml";
 
@@ -19,16 +20,25 @@ export const maxDuration = 60;
  * sale de bodega sin motivo registrado. */
 export default async function FullYMercadoLibre() {
   const supabase = await createClient();
-  const [{ data: movimientos }, { data: bodegas }, { data: configuracion }, piezasPorCajaPorSku] = await Promise.all([
+  const [{ data: movimientos }, { data: bodegas }, { data: configuracion }, piezasPorCajaPorSku, catalogo] = await Promise.all([
     todosLosMovimientosStock(supabase),
     supabase.from("bodegas").select("*").is("eliminado_en", null).order("nombre").returns<Bodega[]>(),
     supabase.from("configuracion_stock").select("*").single<ConfiguracionStock>(),
     obtenerPiezasPorCajaPorSku(supabase),
+    obtenerCatalogo(supabase).catch(() => []),
   ]);
   const resumenes = resumenPorSku(movimientos ?? [], configuracion?.dias_espera ?? 60, piezasPorCajaPorSku);
   const nombrePorSku = new Map(resumenes.map((r) => [r.sku, r.nombre]));
   const stockPorSku = new Map(resumenes.map((r) => [r.sku, r]));
   const opcionesBodega = (bodegas ?? []).map((b) => ({ id: b.id, nombre: b.nombre }));
+  // Productos del CRM (con foto y stock) para ligar un Código ML ahí mismo en la vista previa del envío.
+  const productosCrm = new Map<string, { sku: string; nombre: string; imagenUrl: string | null; stockActual: number }>();
+  for (const p of catalogo) productosCrm.set(p.sku, { sku: p.sku, nombre: p.nombre, imagenUrl: p.imagen_url, stockActual: 0 });
+  for (const r of resumenes) {
+    const previo = productosCrm.get(r.sku);
+    productosCrm.set(r.sku, { sku: r.sku, nombre: previo?.nombre ?? r.nombre, imagenUrl: previo?.imagenUrl ?? r.imagenUrl, stockActual: r.stockActual });
+  }
+  const opcionesProducto = Array.from(productosCrm.values()).sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
 
   let pendientes: Awaited<ReturnType<typeof ventasPendientesPorLigar>> = [];
   let devoluciones: Awaited<ReturnType<typeof devolucionesPorConfirmar>> = [];
@@ -41,7 +51,6 @@ export default async function FullYMercadoLibre() {
 
   // Envíos a Full (migraciones 0042 y 0049).
   let enviosMl: EnvioParaPantalla[] = [];
-  let recepciones: RecepcionFull[] = [];
   let sinExplicar: RecepcionFull[] = [];
   let errorEnviosMl: string | null = null;
   try {
@@ -51,23 +60,20 @@ export default async function FullYMercadoLibre() {
       const r = await generarSalidasPendientesEnvios();
       if (r.generadas) lista = await obtenerEnviosFullMl();
     }
-    const [resolvedor, recs, sinExp] = await Promise.all([resolvedorSku(), obtenerRecepcionesPendientes(), recepcionesSinExplicar()]);
-    recepciones = recs;
+    const [resolvedor, sinExp] = await Promise.all([resolvedorSku(), recepcionesSinExplicar()]);
     sinExplicar = sinExp;
     enviosMl = lista.map(({ envio, lineas }) => {
-      const subidas = subidasDetectadas(recepciones, envio);
       return {
         envio,
         lineas: agruparLineas(lineas).map((l) => {
-          const sku = resolvedor.skuDe(l.item_id, l.variation_id, l.seller_sku);
+          const sku = resolvedor.skuDe(l.item_id, l.variation_id, l.seller_sku, l.inventory_id);
           const r = sku ? stockPorSku.get(sku) : undefined;
           return {
             ...l,
             sku,
             nombreCrm: r?.nombre ?? null,
             stockBodega: r?.stockActual ?? null,
-            factor: resolvedor.factorDe(l.item_id, l.variation_id, l.seller_sku),
-            subioEnFull: l.inventory_id ? (subidas.get(l.inventory_id) ?? 0) : 0,
+            factor: resolvedor.factorDe(l.item_id, l.variation_id, l.seller_sku, l.inventory_id),
           };
         }),
       };
@@ -100,7 +106,7 @@ export default async function FullYMercadoLibre() {
         <div>
           <h2 className="text-lg font-semibold text-zinc-900">Envíos a Full</h2>
           <p className="text-sm text-zinc-500">
-            Cuando un envío sale de tu bodega, pega aquí la tabla del panel de Mercado Libre: se descuenta en ese momento con las piezas declaradas. Cuando ML lo recibe, lo cierras con un clic (o pegas la tabla si hubo diferencias).
+            Cuando un envío sale de tu bodega, pega aquí la página del envío de Mercado Libre: se descuenta en ese momento con las piezas declaradas. Cuando ML lo recibe, lo cierras con un clic (o pegas la página otra vez si hubo diferencias).
             {piezasEnCamino > 0 && (
               <>
                 {" "}
@@ -109,9 +115,8 @@ export default async function FullYMercadoLibre() {
             )}
           </p>
         </div>
-        <CapturarEnvioMl bodegas={opcionesBodega} />
+        <CapturarEnvioMl bodegas={opcionesBodega} productos={opcionesProducto} />
         {errorEnviosMl && <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{errorEnviosMl} — si dice que falta una columna o una tabla, corre los SQL 0042 y 0049 en Supabase.</div>}
-        <AvisoSinExplicar recepciones={sinExplicar} />
 
         {porCerrar.length > 0 && (
           <div className="space-y-3">
@@ -234,6 +239,8 @@ export default async function FullYMercadoLibre() {
           </details>
         )}
       </section>
+
+      <AvisoSinExplicar recepciones={sinExplicar} />
 
       <p className="text-xs text-zinc-400">
         Lo que no viene de Mercado Libre (muestras, paquetería fuera de ML, ajustes) se sigue registrando en <Link href="/stock/salidas" className="underline">Salidas</Link>. Las ventas directas ya descuentan solas.
