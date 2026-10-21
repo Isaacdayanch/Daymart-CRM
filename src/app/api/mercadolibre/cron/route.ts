@@ -30,9 +30,19 @@ export async function GET(request: NextRequest) {
   const inicio = Date.now();
   const resultado: Record<string, unknown> = {};
 
+  // Preguntas de compradores primero (son lo más urgente): traerlas,
+  // redactar borradores con la IA (máx. ~20 s) y avisar por Telegram.
+  try {
+    const { atenderPreguntas } = await import("@/lib/mercadolibre-preguntas");
+    resultado.preguntas = await atenderPreguntas(20000);
+    revalidatePath("/mercadolibre/atencion");
+  } catch (e) {
+    resultado.preguntas = { error: e instanceof Error ? e.message : "Falló atender preguntas." };
+  }
+
   try {
     const { avanzarSyncPublicaciones } = await import("@/lib/mercadolibre-stock");
-    const stock = await avanzarSyncPublicaciones({ presupuestoMs: 40000, cadaMinutos: 55 });
+    const stock = await avanzarSyncPublicaciones({ presupuestoMs: Math.max(10000, 40000 - (Date.now() - inicio)), cadaMinutos: 55 });
     resultado.stock = stock;
     if (stock.estado === "termino") {
       revalidatePath("/mercadolibre/stock");
