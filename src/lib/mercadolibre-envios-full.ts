@@ -47,7 +47,10 @@ export const ETIQUETA_ESTADO_ENVIO_ML: Record<EstadoEnvioMl, string> = {
   DESCONOCIDO: "Sin estatus",
 };
 
-export type DecisionDiferencia = "QUEDO_EN_BODEGA" | "MERMA";
+/** Faltaron piezas: QUEDO_EN_BODEGA (regresan al stock) o MERMA.
+ * Sobraron piezas (ML recibió de más): SALIERON_DE_MAS (sí salieron de la
+ * bodega, se descuentan) o NO_SALIERON (no se descuentan). */
+export type DecisionDiferencia = "QUEDO_EN_BODEGA" | "MERMA" | "SALIERON_DE_MAS" | "NO_SALIERON";
 export type MomentoEnvio = "EN_CAMINO" | "LLEGO";
 
 export interface EnvioFullMl {
@@ -292,8 +295,10 @@ async function generarSalidasLineas(envio: EnvioFullMl, lineas: EnvioFullMlLinea
     }
     const factor = resolvedor.factorDe(l.item_id, l.variation_id, l.seller_sku, l.inventory_id);
     const declaradas = l.cantidad_planeada ?? l.cantidad_recibida;
-    const full = Math.round((cerrado ? l.cantidad_recibida : declaradas) * factor);
     const diff = cerrado ? declaradas - l.cantidad_recibida : 0;
+    // De más que NO salió de la bodega: se descuenta solo lo declarado.
+    const base = cerrado && !(diff < 0 && l.diferencia_decision === "NO_SALIERON") ? l.cantidad_recibida : declaradas;
+    const full = Math.round(base * factor);
     const merma = cerrado && l.diferencia_decision === "MERMA" && diff > 0 ? Math.round(diff * factor) : 0;
     planes.push({ linea: l, sku, full, merma, factor, declaradas });
   }
@@ -691,18 +696,19 @@ export async function registrarLlegadaDesdePanel(inboundId: string, texto: strin
 /** Cierra el envío: aplica la decisión de cada diferencia (se quedó en
  * bodega → la salida baja a lo recibido; merma → la salida baja y se
  * registra una salida destino "Merma") y lo deja `cerrado_en`. */
-export async function cerrarEnvioFullMl(inboundId: string, decisiones: { lineaId: string; decision: DecisionDiferencia }[]): Promise<{ error: string | null; regresaron: number; mermas: number }> {
+export async function cerrarEnvioFullMl(inboundId: string, decisiones: { lineaId: string; decision: DecisionDiferencia }[]): Promise<{ error: string | null; regresaron: number; mermas: number; deMas: number }> {
   const supabase = createServiceClient();
   const cargado = await cargarEnvio(inboundId);
-  if (!cargado) return { error: "No se encontró ese envío.", regresaron: 0, mermas: 0 };
+  if (!cargado) return { error: "No se encontró ese envío.", regresaron: 0, mermas: 0, deMas: 0 };
   const { envio, lineas } = cargado;
-  if (!envio.confirmado_en) return { error: "Primero registra la salida de bodega de este envío.", regresaron: 0, mermas: 0 };
-  if (envio.cerrado_en) return { error: "Ese envío ya está cerrado.", regresaron: 0, mermas: 0 };
+  if (!envio.confirmado_en) return { error: "Primero registra la salida de bodega de este envío.", regresaron: 0, mermas: 0, deMas: 0 };
+  if (envio.cerrado_en) return { error: "Ese envío ya está cerrado.", regresaron: 0, mermas: 0, deMas: 0 };
   const decisionPor = new Map(decisiones.map((d) => [d.lineaId, d.decision]));
   const resolvedor = await resolvedorSku();
   const ahora = new Date().toISOString();
   let regresaron = 0;
   let mermas = 0;
+  let deMas = 0;
 
   const conDiferencia = lineas.filter((l) => diferenciaLinea(l) !== 0);
   const skus = Array.from(new Set(conDiferencia.map((l) => resolvedor.skuDe(l.item_id, l.variation_id, l.seller_sku, l.inventory_id)).filter((x): x is string => Boolean(x))));
@@ -712,21 +718,24 @@ export async function cerrarEnvioFullMl(inboundId: string, decisiones: { lineaId
 
   for (const l of conDiferencia) {
     const diff = diferenciaLinea(l);
-    // Negativo = ML recibió MÁS de lo declarado: salieron más piezas, no hay merma.
-    const decision: DecisionDiferencia = diff > 0 ? (decisionPor.get(l.id) ?? "QUEDO_EN_BODEGA") : "QUEDO_EN_BODEGA";
+    // Negativo = ML recibió MÁS de lo declarado: Isaac dice si esas piezas
+    // salieron de su bodega (se descuentan, lo normal) o no.
+    const decision: DecisionDiferencia = diff > 0 ? (decisionPor.get(l.id) ?? "QUEDO_EN_BODEGA") : (decisionPor.get(l.id) ?? "SALIERON_DE_MAS");
+    const declaradas = l.cantidad_planeada ?? l.cantidad_recibida;
     const sku = resolvedor.skuDe(l.item_id, l.variation_id, l.seller_sku, l.inventory_id);
     const factor = resolvedor.factorDe(l.item_id, l.variation_id, l.seller_sku, l.inventory_id);
     if (l.salida_generada_en && sku && bodegaId) {
-      const nuevaFull = Math.round(l.cantidad_recibida * factor);
+      const nuevaFull = Math.round((diff < 0 && decision === "NO_SALIERON" ? declaradas : l.cantidad_recibida) * factor);
+      if (diff < 0 && decision === "SALIERON_DE_MAS") deMas += Math.round(-diff * factor);
       const ficha = fichas.get(sku);
       let salidaId = l.salida_movimiento_id ?? null;
       if (salidaId) {
         if (nuevaFull > 0) {
           const { error } = await supabase.from("movimientos_stock").update({ cantidad: nuevaFull }).eq("id", salidaId);
-          if (error) return { error: error.message, regresaron, mermas };
+          if (error) return { error: error.message, regresaron, mermas, deMas };
         } else {
           const { error } = await supabase.from("movimientos_stock").delete().eq("id", salidaId);
-          if (error) return { error: error.message, regresaron, mermas };
+          if (error) return { error: error.message, regresaron, mermas, deMas };
           salidaId = null;
         }
       } else if (nuevaFull > 0) {
@@ -746,7 +755,7 @@ export async function cerrarEnvioFullMl(inboundId: string, decisiones: { lineaId
             creado_en: envio.salio_en ?? ahora,
           },
         ]);
-        if (error) return { error, regresaron, mermas };
+        if (error) return { error, regresaron, mermas, deMas };
         salidaId = data?.[0]?.id ?? null;
       }
       if (diff > 0) {
@@ -768,18 +777,18 @@ export async function cerrarEnvioFullMl(inboundId: string, decisiones: { lineaId
               creado_en: envio.fecha_recepcion ?? ahora,
             },
           ]);
-          if (error) return { error, regresaron, mermas };
+          if (error) return { error, regresaron, mermas, deMas };
           mermas += piezasDiff;
         } else {
           regresaron += piezasDiff;
         }
       }
-      const { error: errorLinea } = await supabase.from("mercadolibre_envios_full_lineas").update({ salida_movimiento_id: salidaId, diferencia_decision: diff > 0 ? decision : null }).eq("id", l.id);
-      if (errorLinea) return { error: mensajeSql(errorLinea), regresaron, mermas };
+      const { error: errorLinea } = await supabase.from("mercadolibre_envios_full_lineas").update({ salida_movimiento_id: salidaId, diferencia_decision: decision }).eq("id", l.id);
+      if (errorLinea) return { error: mensajeSql(errorLinea), regresaron, mermas, deMas };
     } else {
       // Sin ligar todavía: la decisión se guarda y se aplica al generar su salida.
-      const { error: errorLinea } = await supabase.from("mercadolibre_envios_full_lineas").update({ diferencia_decision: diff > 0 ? decision : null }).eq("id", l.id);
-      if (errorLinea) return { error: mensajeSql(errorLinea), regresaron, mermas };
+      const { error: errorLinea } = await supabase.from("mercadolibre_envios_full_lineas").update({ diferencia_decision: decision }).eq("id", l.id);
+      if (errorLinea) return { error: mensajeSql(errorLinea), regresaron, mermas, deMas };
     }
   }
 
@@ -793,9 +802,9 @@ export async function cerrarEnvioFullMl(inboundId: string, decisiones: { lineaId
       actualizado_en: ahora,
     })
     .eq("inbound_id", inboundId);
-  if (error) return { error: mensajeSql(error), regresaron, mermas };
+  if (error) return { error: mensajeSql(error), regresaron, mermas, deMas };
   await atenderRecepcionesDeEnvio(lineas, envio.salio_en ?? envio.confirmado_en);
-  return { error: null, regresaron, mermas };
+  return { error: null, regresaron, mermas, deMas };
 }
 
 // ---------------------------------------------------------------------------

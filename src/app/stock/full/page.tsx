@@ -10,6 +10,7 @@ import { devolucionesPorConfirmar, resolvedorSku, ventasPendientesPorLigar } fro
 import { BotonesDevolucion, BotonProcesarAhora, InterruptorVentasMl } from "./acciones-full";
 import { agruparLineas, faseDe, generarSalidasPendientesEnvios, obtenerEnviosFullMl, recepcionesSinExplicar } from "@/lib/mercadolibre-envios-full";
 import { AvisoSkusPendientes } from "@/app/mercadolibre/skus/aviso-skus";
+import { AbrirAncla } from "./abrir-ancla";
 import { AvisoSinExplicar, CapturarEnvioMl, TarjetaEnvioMl, type EnvioParaPantalla } from "./envios-full-ml";
 
 export const maxDuration = 60;
@@ -86,6 +87,26 @@ export default async function FullYMercadoLibre() {
   const pendientesRegistrar = porFase(["PENDIENTE_REGISTRAR"]);
   const enCamino = porFase(["EN_CAMINO"]);
   const cerrados = porFase(["CERRADO", "IGNORADO", "CANCELADO"]);
+  // Historial compacto (Isaac, 21 oct: "nada más el número de full, la
+  // cantidad de piezas y la fecha, para ir viendo cuáles ya están registrados").
+  const ESTADO_HISTORIAL: Record<string, { texto: string; clase: string }> = {
+    EN_CAMINO: { texto: "En camino", clase: "bg-[#2D3277]/5 text-[#2D3277]" },
+    POR_CERRAR: { texto: "Diferencias por resolver", clase: "bg-amber-50 text-amber-700" },
+    PENDIENTE_REGISTRAR: { texto: "Falta descontar", clase: "bg-amber-50 text-amber-700" },
+    CERRADO: { texto: "Cerrado", clase: "bg-emerald-50 text-emerald-700" },
+    IGNORADO: { texto: "No salió de bodega", clase: "bg-zinc-100 text-zinc-500" },
+    CANCELADO: { texto: "Cancelado", clase: "bg-red-50 text-red-700" },
+  };
+  const historial = enviosMl
+    .map((e) => ({
+      id: e.envio.inbound_id,
+      etiqueta: typeof e.envio.crudo?.etiqueta === "string" ? e.envio.crudo.etiqueta : null,
+      fecha: e.envio.salio_en ?? e.envio.fecha_creacion ?? e.envio.actualizado_en,
+      piezas: e.lineas.reduce((t, l) => t + (l.planeadas ?? l.recibidas), 0),
+      recibidas: e.envio.cerrado_en ? e.lineas.reduce((t, l) => t + l.recibidas, 0) : null,
+      fase: faseDe(e.envio),
+    }))
+    .sort((a, b) => (b.fecha ?? "").localeCompare(a.fecha ?? ""));
   const piezasEnCamino = enCamino.reduce((s, e) => s + e.lineas.reduce((t, l) => t + (l.planeadas ?? l.recibidas) * (l.factor || 1), 0), 0);
 
   const desde = configuracion?.salidas_ml_desde ?? null;
@@ -103,6 +124,7 @@ export default async function FullYMercadoLibre() {
 
       {/* ---- Envíos a Full ---- */}
       <section id="envios-ml" className="space-y-4">
+        <AbrirAncla />
         <div>
           <h2 className="text-lg font-semibold text-zinc-900">Envíos a Full</h2>
           <p className="text-sm text-zinc-500">
@@ -142,6 +164,44 @@ export default async function FullYMercadoLibre() {
             enCamino.map((e) => <TarjetaEnvioMl key={e.envio.inbound_id} datos={e} bodegas={opcionesBodega} />)
           )}
         </div>
+        {historial.length > 0 && (
+          <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+            <h3 className="text-sm font-semibold text-zinc-900">Envíos a Full registrados ({historial.length})</h3>
+            <p className="text-xs text-zinc-500">Del más nuevo al más viejo. Pícale al número para ver el detalle.</p>
+            <div className="mt-2 overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-zinc-100 text-left text-[11px] uppercase tracking-wide text-zinc-400">
+                    <th className="py-1.5 pr-3 font-medium">Envío</th>
+                    <th className="py-1.5 pr-3 text-right font-medium">Piezas</th>
+                    <th className="py-1.5 pr-3 font-medium">Salió</th>
+                    <th className="py-1.5 font-medium">Estado</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-50">
+                  {historial.map((h) => (
+                    <tr key={h.id}>
+                      <td className="py-1.5 pr-3">
+                        <a href={`#envio-${h.id}`} className="font-mono font-medium text-[#2D3277] hover:underline">
+                          {h.id}
+                        </a>
+                        {h.etiqueta && <span className="ml-1.5 text-xs text-zinc-400">{h.etiqueta}</span>}
+                      </td>
+                      <td className="py-1.5 pr-3 text-right tabular-nums text-zinc-900">
+                        {h.piezas.toLocaleString("es-MX")}
+                        {h.recibidas !== null && h.recibidas !== h.piezas && <span className="block text-[11px] text-zinc-400">ML recibió {h.recibidas.toLocaleString("es-MX")}</span>}
+                      </td>
+                      <td className="whitespace-nowrap py-1.5 pr-3 text-zinc-600">{h.fecha ? formatoFechaMx(h.fecha) : "—"}</td>
+                      <td className="py-1.5">
+                        <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium ${ESTADO_HISTORIAL[h.fase]?.clase ?? "bg-zinc-100 text-zinc-500"}`}>{ESTADO_HISTORIAL[h.fase]?.texto ?? h.fase}</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
         {cerrados.length > 0 && (
           <details className="group rounded-2xl border border-zinc-200 bg-zinc-50/60">
             <summary className="cursor-pointer select-none px-5 py-3 text-sm text-zinc-500 hover:text-zinc-800">
