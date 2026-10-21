@@ -81,7 +81,7 @@ export async function capturarEnvioMl(numero: string, textoPanel: string, moment
 
 /** Momento 2a: ML lo recibió tal como se declaró. */
 export async function llegadaCompletaMl(inboundId: string) {
-  if (!(await conSesion())) return { error: "Inicia sesión.", regresaron: 0, mermas: 0 };
+  if (!(await conSesion())) return { error: "Inicia sesión.", regresaron: 0, mermas: 0, deMas: 0 };
   const { registrarLlegadaCompleta } = await import("@/lib/mercadolibre-envios-full");
   const r = await registrarLlegadaCompleta(inboundId);
   refrescar();
@@ -99,7 +99,7 @@ export async function llegadaDesdePanelMl(inboundId: string, textoPanel: string)
 
 /** Cerrar el envío con la decisión de cada diferencia. */
 export async function cerrarEnvioMl(inboundId: string, decisiones: { lineaId: string; decision: DecisionDiferencia }[]) {
-  if (!(await conSesion())) return { error: "Inicia sesión.", regresaron: 0, mermas: 0 };
+  if (!(await conSesion())) return { error: "Inicia sesión.", regresaron: 0, mermas: 0, deMas: 0 };
   const { cerrarEnvioFullMl } = await import("@/lib/mercadolibre-envios-full");
   const r = await cerrarEnvioFullMl(inboundId, decisiones);
   refrescar();

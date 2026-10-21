@@ -416,10 +416,15 @@ function LineaEnvio({ l, fase }: { l: LineaParaPantalla; fase: FaseEnvio }) {
         {diff > 0 && (
           <span className="rounded-full bg-amber-50 px-2 py-0.5 font-medium text-amber-700 ring-1 ring-inset ring-amber-600/20">
             faltaron {diff.toLocaleString("es-MX")}
-            {fase === "CERRADO" && l.decision && <> · {l.decision === "MERMA" ? "merma" : "se quedaron en bodega"}</>}
+            {fase === "CERRADO" && l.decision && <> · {l.decision === "MERMA" ? "merma" : "regresaron a tu bodega"}</>}
           </span>
         )}
-        {diff < 0 && <span className="rounded-full bg-[#2D3277]/5 px-2 py-0.5 font-medium text-[#2D3277]">{Math.abs(diff).toLocaleString("es-MX")} de más</span>}
+        {diff < 0 && (
+          <span className="rounded-full bg-[#2D3277]/5 px-2 py-0.5 font-medium text-[#2D3277]">
+            {Math.abs(diff).toLocaleString("es-MX")} de más
+            {fase === "CERRADO" && <> · {l.decision === "NO_SALIERON" ? "no salieron de tu bodega" : "salieron de tu bodega"}</>}
+          </span>
+        )}
       </div>
     </li>
   );
@@ -447,6 +452,7 @@ export function TarjetaEnvioMl({ datos, bodegas }: { datos: EnvioParaPantalla; b
   const sinLigar = lineas.filter((l) => !l.sku).length;
   const conDiferencia = lineas.filter((l) => diferenciaLinea({ cantidad_planeada: l.planeadas, cantidad_recibida: l.recibidas }) !== 0);
   const faltantes = conDiferencia.filter((l) => diferenciaLinea({ cantidad_planeada: l.planeadas, cantidad_recibida: l.recibidas }) > 0);
+  const sobrantes = conDiferencia.filter((l) => diferenciaLinea({ cantidad_planeada: l.planeadas, cantidad_recibida: l.recibidas }) < 0);
   const abierto = fase === "EN_CAMINO" || fase === "POR_CERRAR" || fase === "PENDIENTE_REGISTRAR";
   const etiqueta = ETIQUETA_FASE[fase];
 
@@ -462,7 +468,7 @@ export function TarjetaEnvioMl({ datos, bodegas }: { datos: EnvioParaPantalla; b
   }
 
   return (
-    <details open={abierto} className={`group rounded-2xl border bg-white shadow-sm ${fase === "POR_CERRAR" || fase === "PENDIENTE_REGISTRAR" ? "border-amber-300 ring-2 ring-amber-100" : fase === "EN_CAMINO" ? "border-[#2D3277]/30" : "border-zinc-200"}`}>
+    <details id={`envio-${envio.inbound_id}`} open={abierto} className={`group rounded-2xl border bg-white shadow-sm ${fase === "POR_CERRAR" || fase === "PENDIENTE_REGISTRAR" ? "border-amber-300 ring-2 ring-amber-100" : fase === "EN_CAMINO" ? "border-[#2D3277]/30" : "border-zinc-200"}`}>
       <summary className="flex cursor-pointer select-none flex-wrap items-center justify-between gap-2 px-5 py-3">
         <div className="flex items-center gap-3">
           <span className="inline-block transition-transform group-open:rotate-90">▸</span>
@@ -563,8 +569,18 @@ export function TarjetaEnvioMl({ datos, bodegas }: { datos: EnvioParaPantalla; b
         {/* ---- Llegó con diferencias: decidir y cerrar ---- */}
         {fase === "POR_CERRAR" && !pegando && (
           <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50/60 p-3">
-            <p className="text-sm font-medium text-zinc-900">¿Qué pasó con lo que no llegó?</p>
-            <p className="text-xs text-zinc-600">Por cada producto que ML recibió de menos: si se quedó en tu bodega, esas piezas regresan a tu stock; si se perdió o llegó dañado, queda como merma (ya no están en tu bodega ni en Full).</p>
+            <p className="text-sm font-medium text-zinc-900">Llegó con diferencias: dime qué pasó</p>
+            {faltantes.length > 0 && sobrantes.length > 0 && (
+              <p className="mt-1 rounded-lg bg-white/70 p-2 text-xs text-zinc-700">
+                Faltaron piezas de un producto y sobraron de otro: casi siempre es un <strong>cambio</strong> (mandaste unas en lugar de otras). Lo normal es: lo que faltó <strong>regresa a tu bodega</strong> y lo que sobró <strong>sí salió de tu bodega</strong>. Así tu stock queda exacto.
+              </p>
+            )}
+            {faltantes.length > 0 && (
+              <>
+                <p className="mt-2 text-xs font-medium text-zinc-800">Lo que llegó de MENOS</p>
+                <p className="text-xs text-zinc-600">Si se quedó en tu bodega, regresa a tu stock. Si se perdió o llegó dañado, queda como merma.</p>
+              </>
+            )}
             <ul className="mt-2 space-y-2">
               {faltantes.map((l) => {
                 const diff = diferenciaLinea({ cantidad_planeada: l.planeadas, cantidad_recibida: l.recibidas });
@@ -575,7 +591,7 @@ export function TarjetaEnvioMl({ datos, bodegas }: { datos: EnvioParaPantalla; b
                       {l.titulo ?? l.inventory_id} · faltaron <strong>{piezas.toLocaleString("es-MX")} pzas</strong>
                       {!l.sku && <span className="text-amber-700"> (sin ligar: se aplica cuando lo ligues)</span>}
                     </span>
-                    <div className="w-64">
+                    <div className="w-72">
                       <Selector
                         defaultValue={decisiones[l.clave] ?? "QUEDO_EN_BODEGA"}
                         onChange={(v) => setDecisiones((d) => ({ ...d, [l.clave]: v as DecisionDiferencia }))}
@@ -588,23 +604,48 @@ export function TarjetaEnvioMl({ datos, bodegas }: { datos: EnvioParaPantalla; b
                   </li>
                 );
               })}
-              {conDiferencia
-                .filter((l) => diferenciaLinea({ cantidad_planeada: l.planeadas, cantidad_recibida: l.recibidas }) < 0)
-                .map((l) => (
-                  <li key={l.clave} className="text-xs text-zinc-700">
-                    {l.titulo ?? l.inventory_id}: ML recibió {Math.abs(diferenciaLinea({ cantidad_planeada: l.planeadas, cantidad_recibida: l.recibidas })).toLocaleString("es-MX")} de más de lo declarado; esas piezas también salen de tu bodega.
-                  </li>
-                ))}
             </ul>
+            {sobrantes.length > 0 && (
+              <>
+                <p className="mt-3 text-xs font-medium text-zinc-800">Lo que llegó de MÁS</p>
+                <p className="text-xs text-zinc-600">ML recibió más de lo que declaraste. Si esas piezas salieron de tu bodega, se descuentan; si no (por ejemplo, ML se equivocó al contar), no se tocan.</p>
+                <ul className="mt-2 space-y-2">
+                  {sobrantes.map((l) => {
+                    const piezas = -diferenciaLinea({ cantidad_planeada: l.planeadas, cantidad_recibida: l.recibidas }) * (l.factor || 1);
+                    return (
+                      <li key={l.clave} className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                        <span className="text-zinc-800">
+                          {l.titulo ?? l.inventory_id} · sobraron <strong>{piezas.toLocaleString("es-MX")} pzas</strong>
+                          {!l.sku && <span className="text-amber-700"> (sin ligar: se aplica cuando lo ligues)</span>}
+                        </span>
+                        <div className="w-72">
+                          <Selector
+                            defaultValue={decisiones[l.clave] ?? "SALIERON_DE_MAS"}
+                            onChange={(v) => setDecisiones((d) => ({ ...d, [l.clave]: v as DecisionDiferencia }))}
+                            opciones={[
+                              { value: "SALIERON_DE_MAS", label: "Sí salieron de mi bodega (se descuentan)" },
+                              { value: "NO_SALIERON", label: "No salieron de mi bodega (no se descuentan)" },
+                            ]}
+                          />
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </>
+            )}
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 disabled={enviando}
                 onClick={() => {
-                  const decis = faltantes.flatMap((l) => l.lineaIds.map((lineaId) => ({ lineaId, decision: decisiones[l.clave] ?? ("QUEDO_EN_BODEGA" as DecisionDiferencia) })));
+                  const decis = [
+                    ...faltantes.flatMap((l) => l.lineaIds.map((lineaId) => ({ lineaId, decision: decisiones[l.clave] ?? ("QUEDO_EN_BODEGA" as DecisionDiferencia) }))),
+                    ...sobrantes.flatMap((l) => l.lineaIds.map((lineaId) => ({ lineaId, decision: decisiones[l.clave] ?? ("SALIERON_DE_MAS" as DecisionDiferencia) }))),
+                  ];
                   void correr(async () => {
                     const r = await cerrarEnvioMl(envio.inbound_id, decis);
-                    if (!r.error) setMensaje(`Listo: envío cerrado.${r.regresaron ? ` ${r.regresaron.toLocaleString("es-MX")} pzas regresaron a tu bodega.` : ""}${r.mermas ? ` ${r.mermas.toLocaleString("es-MX")} pzas quedaron como merma.` : ""}`);
+                    if (!r.error) setMensaje(`Listo: envío cerrado.${r.regresaron ? ` ${r.regresaron.toLocaleString("es-MX")} pzas regresaron a tu bodega.` : ""}${r.mermas ? ` ${r.mermas.toLocaleString("es-MX")} pzas quedaron como merma.` : ""}${r.deMas ? ` ${r.deMas.toLocaleString("es-MX")} pzas de más se descontaron de tu bodega.` : ""}`);
                     return r;
                   });
                 }}
