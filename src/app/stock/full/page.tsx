@@ -1,16 +1,31 @@
 import Link from "next/link";
+import { todosLosMovimientosStock } from "@/lib/cargar-todo";
 import { createClient } from "@/lib/supabase/server";
 import { resumenPorSku } from "@/lib/calculos-stock";
 import { obtenerPiezasPorCajaPorSku } from "@/lib/productos-stock";
+import { obtenerCatalogo } from "@/lib/catalogo";
 import { fechaTextoMx, formatoFechaMx } from "@/lib/fechas-mx";
-import type { Bodega, ConfiguracionStock, MovimientoStock, RecepcionFull } from "@/lib/tipos";
-import { devolucionesPorConfirmar, obtenerRecepcionesPendientes, resolvedorSku, ventasPendientesPorLigar } from "@/lib/salidas-ml";
+import type { Bodega, ConfiguracionStock, RecepcionFull } from "@/lib/tipos";
+import { devolucionesPorConfirmar, resolvedorSku, ventasPendientesPorLigar } from "@/lib/salidas-ml";
 import { BotonesDevolucion, BotonProcesarAhora, InterruptorVentasMl } from "./acciones-full";
-import { agruparLineas, faseDe, generarSalidasPendientesEnvios, obtenerEnviosFullMl, recepcionesSinExplicar, subidasDetectadas } from "@/lib/mercadolibre-envios-full";
-import { AvisoSkusPendientes } from "@/app/mercadolibre/skus/aviso-skus";
+import { agruparLineas, faseDe, generarSalidasPendientesEnvios, obtenerEnviosFullMl, recepcionesSinExplicar } from "@/lib/mercadolibre-envios-full";
+import { AbrirAncla } from "./abrir-ancla";
 import { AvisoSinExplicar, CapturarEnvioMl, TarjetaEnvioMl, type EnvioParaPantalla } from "./envios-full-ml";
 
 export const maxDuration = 60;
+
+/** "21" · "oct" · "martes" (+ año si no es el actual), en horario CDMX. */
+function partesFecha(iso: string) {
+  const d = new Date(iso);
+  const parte = (o: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat("es-MX", { timeZone: "America/Mexico_City", ...o }).format(d);
+  const anio = parte({ year: "numeric" });
+  return {
+    dia: parte({ day: "numeric" }),
+    mes: parte({ month: "short" }).replace(".", ""),
+    semana: parte({ weekday: "long" }),
+    anio: anio !== new Intl.DateTimeFormat("es-MX", { timeZone: "America/Mexico_City", year: "numeric" }).format(new Date()) ? anio : null,
+  };
+}
 
 /** Stock ↔ Mercado Libre. Envíos a Full en dos momentos (sale de bodega →
  * se descuenta; llega a Full → se concilia), salidas automáticas por ventas
@@ -18,16 +33,25 @@ export const maxDuration = 60;
  * sale de bodega sin motivo registrado. */
 export default async function FullYMercadoLibre() {
   const supabase = await createClient();
-  const [{ data: movimientos }, { data: bodegas }, { data: configuracion }, piezasPorCajaPorSku] = await Promise.all([
-    supabase.from("movimientos_stock").select("*").returns<MovimientoStock[]>(),
+  const [{ data: movimientos }, { data: bodegas }, { data: configuracion }, piezasPorCajaPorSku, catalogo] = await Promise.all([
+    todosLosMovimientosStock(supabase),
     supabase.from("bodegas").select("*").is("eliminado_en", null).order("nombre").returns<Bodega[]>(),
     supabase.from("configuracion_stock").select("*").single<ConfiguracionStock>(),
     obtenerPiezasPorCajaPorSku(supabase),
+    obtenerCatalogo(supabase).catch(() => []),
   ]);
   const resumenes = resumenPorSku(movimientos ?? [], configuracion?.dias_espera ?? 60, piezasPorCajaPorSku);
   const nombrePorSku = new Map(resumenes.map((r) => [r.sku, r.nombre]));
   const stockPorSku = new Map(resumenes.map((r) => [r.sku, r]));
   const opcionesBodega = (bodegas ?? []).map((b) => ({ id: b.id, nombre: b.nombre }));
+  // Productos del CRM (con foto y stock) para ligar un Código ML ahí mismo en la vista previa del envío.
+  const productosCrm = new Map<string, { sku: string; nombre: string; imagenUrl: string | null; stockActual: number }>();
+  for (const p of catalogo) productosCrm.set(p.sku, { sku: p.sku, nombre: p.nombre, imagenUrl: p.imagen_url, stockActual: 0 });
+  for (const r of resumenes) {
+    const previo = productosCrm.get(r.sku);
+    productosCrm.set(r.sku, { sku: r.sku, nombre: previo?.nombre ?? r.nombre, imagenUrl: previo?.imagenUrl ?? r.imagenUrl, stockActual: r.stockActual });
+  }
+  const opcionesProducto = Array.from(productosCrm.values()).sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
 
   let pendientes: Awaited<ReturnType<typeof ventasPendientesPorLigar>> = [];
   let devoluciones: Awaited<ReturnType<typeof devolucionesPorConfirmar>> = [];
@@ -40,7 +64,6 @@ export default async function FullYMercadoLibre() {
 
   // Envíos a Full (migraciones 0042 y 0049).
   let enviosMl: EnvioParaPantalla[] = [];
-  let recepciones: RecepcionFull[] = [];
   let sinExplicar: RecepcionFull[] = [];
   let errorEnviosMl: string | null = null;
   try {
@@ -50,23 +73,20 @@ export default async function FullYMercadoLibre() {
       const r = await generarSalidasPendientesEnvios();
       if (r.generadas) lista = await obtenerEnviosFullMl();
     }
-    const [resolvedor, recs, sinExp] = await Promise.all([resolvedorSku(), obtenerRecepcionesPendientes(), recepcionesSinExplicar()]);
-    recepciones = recs;
+    const [resolvedor, sinExp] = await Promise.all([resolvedorSku(), recepcionesSinExplicar()]);
     sinExplicar = sinExp;
     enviosMl = lista.map(({ envio, lineas }) => {
-      const subidas = subidasDetectadas(recepciones, envio);
       return {
         envio,
         lineas: agruparLineas(lineas).map((l) => {
-          const sku = resolvedor.skuDe(l.item_id, l.variation_id, l.seller_sku);
+          const sku = resolvedor.skuDe(l.item_id, l.variation_id, l.seller_sku, l.inventory_id);
           const r = sku ? stockPorSku.get(sku) : undefined;
           return {
             ...l,
             sku,
             nombreCrm: r?.nombre ?? null,
             stockBodega: r?.stockActual ?? null,
-            factor: resolvedor.factorDe(l.item_id, l.variation_id, l.seller_sku),
-            subioEnFull: l.inventory_id ? (subidas.get(l.inventory_id) ?? 0) : 0,
+            factor: resolvedor.factorDe(l.item_id, l.variation_id, l.seller_sku, l.inventory_id),
           };
         }),
       };
@@ -79,6 +99,26 @@ export default async function FullYMercadoLibre() {
   const pendientesRegistrar = porFase(["PENDIENTE_REGISTRAR"]);
   const enCamino = porFase(["EN_CAMINO"]);
   const cerrados = porFase(["CERRADO", "IGNORADO", "CANCELADO"]);
+  // Historial compacto (Isaac, 21 oct: "nada más el número de full, la
+  // cantidad de piezas y la fecha, para ir viendo cuáles ya están registrados").
+  const ESTADO_HISTORIAL: Record<string, { texto: string; clase: string }> = {
+    EN_CAMINO: { texto: "En camino", clase: "bg-[#2D3277]/5 text-[#2D3277]" },
+    POR_CERRAR: { texto: "Diferencias por resolver", clase: "bg-amber-50 text-amber-700" },
+    PENDIENTE_REGISTRAR: { texto: "Falta descontar", clase: "bg-amber-50 text-amber-700" },
+    CERRADO: { texto: "Cerrado", clase: "bg-emerald-50 text-emerald-700" },
+    IGNORADO: { texto: "No salió de bodega", clase: "bg-zinc-100 text-zinc-500" },
+    CANCELADO: { texto: "Cancelado", clase: "bg-red-50 text-red-700" },
+  };
+  const historial = enviosMl
+    .map((e) => ({
+      id: e.envio.inbound_id,
+      etiqueta: typeof e.envio.crudo?.etiqueta === "string" ? e.envio.crudo.etiqueta : null,
+      fecha: e.envio.salio_en ?? e.envio.fecha_creacion ?? e.envio.actualizado_en,
+      piezas: e.lineas.reduce((t, l) => t + (l.planeadas ?? l.recibidas), 0),
+      recibidas: e.envio.cerrado_en ? e.lineas.reduce((t, l) => t + l.recibidas, 0) : null,
+      fase: faseDe(e.envio),
+    }))
+    .sort((a, b) => (b.fecha ?? "").localeCompare(a.fecha ?? ""));
   const piezasEnCamino = enCamino.reduce((s, e) => s + e.lineas.reduce((t, l) => t + (l.planeadas ?? l.recibidas) * (l.factor || 1), 0), 0);
 
   const desde = configuracion?.salidas_ml_desde ?? null;
@@ -86,63 +126,105 @@ export default async function FullYMercadoLibre() {
   const salidasMl = (movimientos ?? []).filter((m) => m.orden_ml_id && m.tipo === "SALIDA");
   const salidasHoy = salidasMl.filter((m) => fechaTextoMx(new Date(m.creado_en)) === hoyTexto).reduce((s, m) => s + m.cantidad, 0);
 
+  const avisosVentas = pendientes.length + devoluciones.length;
+  const grupo = (titulo: string, lista: EnvioParaPantalla[], tono: "ambar" | "normal" = "normal") =>
+    lista.length > 0 && (
+      <div className="space-y-3">
+        <h3 className={`text-xs font-semibold uppercase tracking-wider ${tono === "ambar" ? "text-amber-700" : "text-zinc-400"}`}>
+          {titulo} · {lista.length}
+        </h3>
+        {lista.map((e) => (
+          <TarjetaEnvioMl key={e.envio.inbound_id} datos={e} bodegas={opcionesBodega} />
+        ))}
+      </div>
+    );
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-12">
       {errorLectura && (
-        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{errorLectura} — si dice que falta una tabla, corre el SQL 0035 en Supabase.</div>
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{errorLectura} — si dice que falta una tabla, corre el SQL 0035 en Supabase.</div>
       )}
 
-      <AvisoSkusPendientes skusCrm={new Set(resumenes.map((r) => r.sku))} />
-
       {/* ---- Envíos a Full ---- */}
-      <section id="envios-ml" className="space-y-4">
+      <section id="envios-ml" className="space-y-8">
+        <AbrirAncla />
         <div>
-          <h2 className="text-lg font-semibold text-zinc-900">Envíos a Full</h2>
-          <p className="text-sm text-zinc-500">
-            Cuando un envío sale de tu bodega, pega aquí la tabla del panel de Mercado Libre: se descuenta en ese momento con las piezas declaradas. Cuando ML lo recibe, lo cierras con un clic (o pegas la tabla si hubo diferencias).
-            {piezasEnCamino > 0 && (
-              <>
-                {" "}
-                Ahora mismo van <strong className="text-zinc-700">{piezasEnCamino.toLocaleString("es-MX")} piezas</strong> en camino a Full.
-              </>
-            )}
-          </p>
+          <h2 className="text-3xl font-semibold tracking-tight text-zinc-900">Envíos a Full</h2>
+          <p className="mt-1 text-base text-zinc-500">Pega el envío cuando sale de tu bodega y ciérralo cuando Mercado Libre lo reciba.</p>
+          <div className="mt-5 grid grid-cols-3 gap-3">
+            {[
+              { valor: enCamino.length, etiqueta: "En camino", detalle: piezasEnCamino > 0 ? `${piezasEnCamino.toLocaleString("es-MX")} pzas` : null },
+              { valor: porCerrar.length + pendientesRegistrar.length, etiqueta: "Por resolver", detalle: null, alerta: porCerrar.length + pendientesRegistrar.length > 0 },
+              { valor: historial.length, etiqueta: "Registrados", detalle: null },
+            ].map((c) => (
+              <div key={c.etiqueta} className={`rounded-2xl border px-4 py-3 ${c.alerta ? "border-amber-200 bg-amber-50/70" : "border-zinc-200/80 bg-white"}`}>
+                <p className={`text-2xl font-semibold tabular-nums tracking-tight ${c.alerta ? "text-amber-700" : "text-zinc-900"}`}>{c.valor.toLocaleString("es-MX")}</p>
+                <p className="text-xs font-medium text-zinc-500">
+                  {c.etiqueta}
+                  {c.detalle && <span className="text-zinc-400"> · {c.detalle}</span>}
+                </p>
+              </div>
+            ))}
+          </div>
         </div>
-        <CapturarEnvioMl bodegas={opcionesBodega} />
-        {errorEnviosMl && <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{errorEnviosMl} — si dice que falta una columna o una tabla, corre los SQL 0042 y 0049 en Supabase.</div>}
-        <AvisoSinExplicar recepciones={sinExplicar} />
 
-        {porCerrar.length > 0 && (
+        <CapturarEnvioMl bodegas={opcionesBodega} productos={opcionesProducto} />
+        {errorEnviosMl && <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{errorEnviosMl} — si dice que falta una columna o una tabla, corre los SQL 0042 y 0049 en Supabase.</div>}
+
+        {grupo("Llegaron con diferencias", porCerrar, "ambar")}
+        {grupo("Falta descontarlos de tu bodega", pendientesRegistrar, "ambar")}
+        {grupo("En camino a Full", enCamino)}
+
+        {historial.length > 0 && (
           <div className="space-y-3">
-            <h3 className="text-sm font-semibold text-amber-800">Llegaron a Full con diferencias por resolver ({porCerrar.length})</h3>
-            {porCerrar.map((e) => (
-              <TarjetaEnvioMl key={e.envio.inbound_id} datos={e} bodegas={opcionesBodega} />
-            ))}
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">Historial · {historial.length}</h3>
+            <ul className="divide-y divide-zinc-100 overflow-hidden rounded-3xl border border-zinc-200/80 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
+              {historial.map((h) => {
+                const f = h.fecha ? partesFecha(h.fecha) : null;
+                const estado = ESTADO_HISTORIAL[h.fase] ?? { texto: h.fase, clase: "bg-zinc-100 text-zinc-500" };
+                return (
+                  <li key={h.id}>
+                    <a href={`#envio-${h.id}`} className="flex items-center gap-4 px-5 py-4 transition hover:bg-zinc-50/80 sm:gap-6 sm:px-6">
+                      <div className="w-14 shrink-0 text-center">
+                        {f ? (
+                          <>
+                            <p className="text-3xl font-bold leading-none tracking-tight text-zinc-900">{f.dia}</p>
+                            <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">{f.mes}</p>
+                          </>
+                        ) : (
+                          <p className="text-sm text-zinc-300">—</p>
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-mono text-base font-semibold text-zinc-900">{h.id}</p>
+                        <p className="truncate text-sm text-zinc-500">
+                          {f && <span className="capitalize">{f.semana}</span>}
+                          {f?.anio && <span> {f.anio}</span>}
+                          {h.etiqueta && <span> · {h.etiqueta}</span>}
+                        </p>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <p className="text-lg font-semibold tabular-nums text-zinc-900">
+                          {h.piezas.toLocaleString("es-MX")} <span className="text-sm font-normal text-zinc-400">pzas</span>
+                        </p>
+                        {h.recibidas !== null && h.recibidas !== h.piezas && <p className="text-xs text-zinc-400">ML recibió {h.recibidas.toLocaleString("es-MX")}</p>}
+                        <span className={`mt-1 inline-block whitespace-nowrap rounded-full px-2.5 py-0.5 text-[11px] font-medium ${estado.clase}`}>{estado.texto}</span>
+                      </div>
+                    </a>
+                  </li>
+                );
+              })}
+            </ul>
           </div>
         )}
-        {pendientesRegistrar.length > 0 && (
-          <div className="space-y-3">
-            <h3 className="text-sm font-semibold text-amber-800">Capturados antes del cambio, falta descontarlos de bodega ({pendientesRegistrar.length})</h3>
-            {pendientesRegistrar.map((e) => (
-              <TarjetaEnvioMl key={e.envio.inbound_id} datos={e} bodegas={opcionesBodega} />
-            ))}
-          </div>
-        )}
-        <div className="space-y-3">
-          <h3 className="text-sm font-semibold text-zinc-700">En camino a Full ({enCamino.length})</h3>
-          {enCamino.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-zinc-300 bg-white p-6 text-center text-sm text-zinc-400">No hay envíos en camino. Cuando salga uno, regístralo arriba.</p>
-          ) : (
-            enCamino.map((e) => <TarjetaEnvioMl key={e.envio.inbound_id} datos={e} bodegas={opcionesBodega} />)
-          )}
-        </div>
+
         {cerrados.length > 0 && (
-          <details className="group rounded-2xl border border-zinc-200 bg-zinc-50/60">
-            <summary className="cursor-pointer select-none px-5 py-3 text-sm text-zinc-500 hover:text-zinc-800">
+          <details className="group">
+            <summary className="cursor-pointer select-none text-sm text-zinc-400 hover:text-zinc-700">
               <span className="mr-1 inline-block transition-transform group-open:rotate-90">▸</span>
-              Envíos cerrados ({cerrados.length})
+              Ver el detalle de los envíos cerrados ({cerrados.length})
             </summary>
-            <div className="space-y-3 px-2 pb-2">
+            <div className="mt-3 space-y-3">
               {cerrados.map((e) => (
                 <TarjetaEnvioMl key={e.envio.inbound_id} datos={e} bodegas={opcionesBodega} />
               ))}
@@ -151,11 +233,18 @@ export default async function FullYMercadoLibre() {
         )}
       </section>
 
-      {/* ---- Ventas de ML que salen de bodega ---- */}
-      <section className="space-y-3">
+      {/* ---- Ventas de ML que salen de bodega (secundario, cerrado) ---- */}
+      <details className="group rounded-3xl border border-zinc-200/80 bg-white" open={devoluciones.length > 0}>
+        <summary className="flex cursor-pointer select-none items-center justify-between gap-3 px-6 py-4">
+          <span className="text-base font-semibold text-zinc-900">
+            <span className="mr-2 inline-block text-zinc-400 transition-transform group-open:rotate-90">▸</span>
+            Ventas de ML que salen de tu bodega
+          </span>
+          {avisosVentas > 0 && <span className="rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-700">{avisosVentas} por revisar</span>}
+        </summary>
+      <section className="space-y-3 border-t border-zinc-100 px-6 py-5">
         <div className="flex flex-wrap items-end justify-between gap-2">
           <div>
-            <h2 className="text-lg font-semibold text-zinc-900">Ventas de Mercado Libre que salen de tu bodega</h2>
             <p className="text-sm text-zinc-500">Colecta, Flex, Punto de envío y Acordado: cuando el envío ya salió, la salida se registra sola, ligada al número de venta. Las ventas desde Full las descuenta Mercado Libre.</p>
           </div>
           <BotonProcesarAhora />
@@ -233,6 +322,9 @@ export default async function FullYMercadoLibre() {
           </details>
         )}
       </section>
+      </details>
+
+      <AvisoSinExplicar recepciones={sinExplicar} />
 
       <p className="text-xs text-zinc-400">
         Lo que no viene de Mercado Libre (muestras, paquetería fuera de ML, ajustes) se sigue registrando en <Link href="/stock/salidas" className="underline">Salidas</Link>. Las ventas directas ya descuentan solas.

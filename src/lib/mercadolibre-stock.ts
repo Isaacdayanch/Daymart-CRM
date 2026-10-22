@@ -5,6 +5,7 @@
 
 import { createServiceClient } from "@/lib/supabase/servicio";
 import { mercadolibreGet, obtenerConexion } from "@/lib/mercadolibre-auth";
+import { todasLasFilas } from "@/lib/cargar-todo";
 
 export interface PublicacionMl {
   id: string;
@@ -43,6 +44,18 @@ export interface VinculoMl {
   piezas_por_unidad?: number | null;
   /** true = es una liga por SKU de ML (item_id = "sku:XXX"), no por publicación. */
   por_sku?: boolean;
+  /** true = es una liga por Código ML de Full (item_id = "inv:XXX"). */
+  por_codigo?: boolean;
+}
+
+/** Liga por Código ML (migración 0055, 21 oct): el Código ML de Full
+ * (inventory_id, tipo IPYX23014) → producto del CRM. Es la liga que manda:
+ * un código es un producto físico (la publicación normal y la de catálogo lo
+ * comparten; cada color tiene el suyo). */
+export interface LigaCodigoMl {
+  inventory_id: string;
+  sku_crm: string;
+  piezas_por_unidad: number | null;
 }
 
 /** Liga por SKU de Mercado Libre (migración 0048): el SKU que Isaac pone en
@@ -68,9 +81,37 @@ export function claveLigaSku(sellerSku: string) {
   return claveVinculo(`${PREFIJO_SKU}${sellerSku}`, null);
 }
 
+const PREFIJO_CODIGO = "inv:";
+export function normalizarCodigoMl(codigo: string | null | undefined) {
+  const c = (codigo ?? "").trim().toUpperCase();
+  return c || null;
+}
+export function claveCodigoMl(inventoryId: string) {
+  return claveVinculo(`${PREFIJO_CODIGO}${normalizarCodigoMl(inventoryId) ?? inventoryId}`, null);
+}
+
+export async function obtenerLigasCodigo(): Promise<LigaCodigoMl[]> {
+  const supabase = createServiceClient();
+  const { data, error } = await todasLasFilas<LigaCodigoMl>((desde, hasta) =>
+    supabase.from("mercadolibre_codigo_vinculos").select("inventory_id, sku_crm, piezas_por_unidad", { count: "exact" }).order("inventory_id").range(desde, hasta),
+  );
+  if (error) return []; // sin el SQL 0058 simplemente no hay ligas por Código ML
+  return data ?? [];
+}
+
+/** Las ligas por Código ML convertidas a "vínculos" sintéticos (item_id = "inv:XXX"). */
+export function vinculosDesdeLigasCodigo(ligas: LigaCodigoMl[]): VinculoMl[] {
+  return ligas
+    .map((l) => ({ l, k: normalizarCodigoMl(l.inventory_id) }))
+    .filter((x): x is { l: LigaCodigoMl; k: string } => Boolean(x.k))
+    .map(({ l, k }) => ({ id: `inv:${k}`, item_id: `${PREFIJO_CODIGO}${k}`, variation_id: null, sku_crm: l.sku_crm, piezas_por_unidad: l.piezas_por_unidad, por_codigo: true }));
+}
+
 export async function obtenerLigasSku(): Promise<LigaSkuMl[]> {
   const supabase = createServiceClient();
-  const { data, error } = await supabase.from("mercadolibre_sku_vinculos").select("seller_sku, sku_crm, piezas_por_unidad").returns<LigaSkuMl[]>();
+  const { data, error } = await todasLasFilas<LigaSkuMl>((desde, hasta) =>
+    supabase.from("mercadolibre_sku_vinculos").select("seller_sku, sku_crm, piezas_por_unidad", { count: "exact" }).order("seller_sku").range(desde, hasta),
+  );
   if (error) return []; // sin el SQL 0048 simplemente no hay ligas por SKU
   return data ?? [];
 }
@@ -88,7 +129,7 @@ export interface LigaIgnorada {
 
 export async function obtenerIgnorados(): Promise<LigaIgnorada[]> {
   const supabase = createServiceClient();
-  const { data, error } = await supabase.from("mercadolibre_ligas_ignoradas").select("*").returns<LigaIgnorada[]>();
+  const { data, error } = await todasLasFilas<LigaIgnorada>((desde, hasta) => supabase.from("mercadolibre_ligas_ignoradas").select("*", { count: "exact" }).order("clave").range(desde, hasta));
   if (error) return []; // sin el SQL 0050 simplemente no hay olvidados
   return data ?? [];
 }
@@ -106,10 +147,14 @@ export function factoresVinculos(vinculos: VinculoMl[]): Map<string, number> {
   return new Map(vinculos.map((v) => [claveVinculo(v.item_id, v.variation_id), Math.max(1, Math.round(Number(v.piezas_por_unidad) || 1))]));
 }
 
-/** Factor de una publicación, en el mismo orden que la liga: por
- * publicación/variante → por SKU de ML → item sin variación → 1. */
-export function factorDePublicacion(itemId: string, variationId: number | null, factores: Map<string, number> | undefined, sellerSku?: string | null) {
+/** Factor de una publicación, en el mismo orden que la liga: Código ML →
+ * publicación/variante → SKU de ML → item sin variación → 1. */
+export function factorDePublicacion(itemId: string, variationId: number | null, factores: Map<string, number> | undefined, sellerSku?: string | null, inventoryId?: string | null) {
   if (!factores) return 1;
+  if (inventoryId) {
+    const f = factores.get(claveCodigoMl(inventoryId));
+    if (f !== undefined) return f;
+  }
   const propio = factores.get(claveVinculo(itemId, variationId));
   if (propio !== undefined) return propio;
   const porSku = normalizarSellerSku(sellerSku);
@@ -429,7 +474,10 @@ export async function sincronizarLotePublicaciones(ids: string[]): Promise<{ ren
     }
     return { renglones: filas.length, fallidos };
   } catch (e) {
-    const mensaje = e instanceof Error ? e.message : "Error desconocido";
+    const crudo = e instanceof Error ? e.message : "Error desconocido";
+    // "TypeError: fetch failed" = Mercado Libre no contestó (falla de red
+    // pasajera entre Vercel y ML); se reintenta sola en la siguiente pasada.
+    const mensaje = /fetch failed/i.test(crudo) ? "Mercado Libre no contestó en la última pasada (falla de red pasajera); se conservó la copia anterior y se reintenta en la siguiente actualización." : crudo;
     await supabase.from("mercadolibre_sync").upsert({ id: 1, ultimo_error_stock: mensaje });
     throw e;
   }
@@ -586,7 +634,7 @@ export async function avanzarSyncPublicaciones(opciones: { presupuestoMs?: numbe
 export async function compararConMl(): Promise<{ enMl: number; enCrm: number; faltantes: string[]; sobrantes: string[] }> {
   const supabase = createServiceClient();
   const ids = await listarIdsPublicaciones();
-  const { data } = await supabase.from("mercadolibre_publicaciones").select("item_id").returns<{ item_id: string }[]>();
+  const { data } = await todasLasFilas<{ item_id: string }>((desde, hasta) => supabase.from("mercadolibre_publicaciones").select("item_id", { count: "exact" }).order("id").range(desde, hasta));
   const locales = new Set((data ?? []).map((d) => d.item_id));
   const enMl = new Set(ids);
   return {
@@ -610,6 +658,22 @@ export interface PublicacionEncontradaMl {
   nota?: string | null;
   /** Se puede traer al CRM (Mercado Libre sí la devolvió). */
   traible?: boolean;
+  /** Si ya está en la copia del CRM: cada variante con su liga actual, para
+   * poder ligarla ahí mismo desde el resultado de la búsqueda (20 oct;
+   * Isaac: "que me deje ahí mismo, en el mismo botón, ligar este producto a
+   * lo que ya está cargado en el CRM"). */
+  variantes?: VarianteEncontradaMl[];
+}
+
+export interface VarianteEncontradaMl {
+  variation_id: number | null;
+  variacion: string | null;
+  seller_sku: string | null;
+  /** Producto del CRM al que resuelve hoy (null = sin ligar). */
+  skuCrm: string | null;
+  origen: OrigenLiga;
+  /** Piezas del CRM por unidad de ML de esa liga (1 si no hay). */
+  factor: number;
 }
 
 /** Números de publicación escritos en un texto: "MLM2230571531",
@@ -625,7 +689,7 @@ export function idsPublicacionEnTexto(texto: string): string[] {
  * (búsqueda pública del sitio filtrada por vendedor, que solo lista las
  * activas, + búsqueda del vendedor por SKU). Dice cuáles ya están en la
  * copia local, para traer las que falten. */
-export async function buscarPublicacionesEnMl(texto: string): Promise<PublicacionEncontradaMl[]> {
+export async function buscarPublicacionesEnMl(texto: string, skusCrm: Set<string> = new Set()): Promise<PublicacionEncontradaMl[]> {
   const conexion = await obtenerConexion();
   if (!conexion) throw new Error("Mercado Libre no está conectado.");
   const q = texto.trim();
@@ -715,21 +779,50 @@ export async function buscarPublicacionesEnMl(texto: string): Promise<Publicacio
   //    con otro nombre, aquí se ve bajo qué título.
   const normalizar = (t: string | null | undefined) => (t ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
   const q2 = normalizar(q);
-  const { data: locales } = await supabase.from("mercadolibre_publicaciones").select("item_id, titulo, variacion, estado, precio, imagen_url, seller_sku").returns<Pick<PublicacionMl, "item_id" | "titulo" | "variacion" | "estado" | "precio" | "imagen_url" | "seller_sku">[]>();
-  const enCopia = new Set((locales ?? []).map((l) => l.item_id));
+  type Local = Pick<PublicacionMl, "item_id" | "variation_id" | "titulo" | "variacion" | "estado" | "precio" | "imagen_url" | "seller_sku" | "inventory_id">;
+  const [{ data: locales }, vinculosLista] = await Promise.all([
+    todasLasFilas<Local>((desde, hasta) =>
+      supabase.from("mercadolibre_publicaciones").select("item_id, variation_id, titulo, variacion, estado, precio, imagen_url, seller_sku, inventory_id", { count: "exact" }).order("id").range(desde, hasta),
+    ),
+    obtenerVinculos().catch(() => [] as VinculoMl[]),
+  ]);
+  const vinculos = new Map(vinculosLista.map((v) => [claveVinculo(v.item_id, v.variation_id), v.sku_crm]));
+  const factores = factoresVinculos(vinculosLista);
+  const porItem = new Map<string, Local[]>();
+  for (const l of locales ?? []) porItem.set(l.item_id, [...(porItem.get(l.item_id) ?? []), l]);
   for (const l of locales ?? []) {
     if (encontrados.has(l.item_id)) continue;
     const coincideId = idsTexto.includes(l.item_id);
     if (coincideId || normalizar(`${l.titulo ?? ""} ${l.variacion ?? ""} ${l.seller_sku ?? ""} ${l.item_id}`).includes(q2)) {
-      encontrados.set(l.item_id, { item_id: l.item_id, titulo: [l.titulo, l.variacion].filter(Boolean).join(" · ") || null, estado: l.estado, precio: l.precio ?? null, imagen_url: l.imagen_url, seller_sku: l.seller_sku, enCopia: true, traible: true });
+      const variantes = porItem.get(l.item_id) ?? [l];
+      const titulo = variantes.length > 1 ? l.titulo : [l.titulo, l.variacion].filter(Boolean).join(" · ") || null;
+      encontrados.set(l.item_id, { item_id: l.item_id, titulo, estado: l.estado, precio: l.precio ?? null, imagen_url: l.imagen_url, seller_sku: l.seller_sku, enCopia: true, traible: true });
     }
   }
-  return Array.from(encontrados.values()).map((e) => ({ ...e, enCopia: enCopia.has(e.item_id), traible: e.traible ?? true }));
+  // A todo lo que ya está en el CRM se le anota su liga actual, variante por
+  // variante, para ligarla desde el mismo resultado.
+  return Array.from(encontrados.values()).map((e) => {
+    const variantes = porItem.get(e.item_id);
+    return {
+      ...e,
+      enCopia: Boolean(variantes),
+      traible: e.traible ?? true,
+      variantes: variantes?.map((v) => {
+        const liga = skuCrmDe(v, vinculos, skusCrm);
+        return { variation_id: v.variation_id, variacion: v.variacion, seller_sku: v.seller_sku, skuCrm: liga.sku, origen: liga.origen, factor: factorDePublicacion(v.item_id, v.variation_id, factores, v.seller_sku, v.inventory_id) };
+      }),
+    };
+  });
 }
 
 export async function obtenerPublicaciones(): Promise<PublicacionMl[]> {
   const supabase = createServiceClient();
-  const { data, error } = await supabase.from("mercadolibre_publicaciones").select("*").order("titulo").returns<PublicacionMl[]>();
+  // Tope de 1,000 filas de Supabase (20 oct): Isaac tiene más de 1,000
+  // publicaciones/variantes y la lista de Ligar SKUs decía "1000" exactas —
+  // las demás no existían para el sistema. Se pagina siempre.
+  const { data, error } = await todasLasFilas<PublicacionMl>((desde, hasta) =>
+    supabase.from("mercadolibre_publicaciones").select("*", { count: "exact" }).order("titulo").order("id").range(desde, hasta),
+  );
   if (error) throw new Error(error.message);
   return data ?? [];
 }
@@ -738,8 +831,12 @@ export async function obtenerPublicaciones(): Promise<PublicacionMl[]> {
  * para que todas las pantallas resuelvan igual con `skuCrmDe`. */
 export async function obtenerVinculos(): Promise<VinculoMl[]> {
   const supabase = createServiceClient();
-  const [{ data }, ligas] = await Promise.all([supabase.from("mercadolibre_vinculos").select("*").returns<VinculoMl[]>(), obtenerLigasSku()]);
-  return [...(data ?? []), ...vinculosDesdeLigasSku(ligas)];
+  const [{ data }, ligas, ligasCodigo] = await Promise.all([
+    todasLasFilas<VinculoMl>((desde, hasta) => supabase.from("mercadolibre_vinculos").select("*", { count: "exact" }).order("id").range(desde, hasta)),
+    obtenerLigasSku(),
+    obtenerLigasCodigo(),
+  ]);
+  return [...(data ?? []), ...vinculosDesdeLigasSku(ligas), ...vinculosDesdeLigasCodigo(ligasCodigo)];
 }
 
 export function claveVinculo(itemId: string, variationId: number | null) {
@@ -748,12 +845,17 @@ export function claveVinculo(itemId: string, variationId: number | null) {
 
 /** SKU del CRM de cada publicación: la liga manual manda; si no hay,
  * coincidencia automática cuando el SKU de ML es igual a un SKU del CRM. */
-/** Orden de resolución (Isaac, 7 oct: "todo sobre ese SKU", y luego "cada
- * color de una misma publicación es un producto distinto"): 1) liga de ESA
- * publicación/variante (lo más específico gana: así cuatro colores con el
- * mismo SKU en ML pueden ir a cuatro productos), 2) liga por SKU de ML,
- * 3) el SKU de ML es igual a uno del CRM. */
-export function skuCrmDe(pub: Pick<PublicacionMl, "item_id" | "variation_id" | "seller_sku">, vinculos: Map<string, string>, skusCrm: Set<string>) {
+/** Orden de resolución ÚNICO (21 oct; Isaac: "no es constante ni
+ * consistente"): 0) liga por Código ML de Full — un código es un producto
+ * físico, así la publicación normal, la de catálogo y el envío a Full caen
+ * siempre en el mismo lado; 1) liga de ESA publicación/variante (para lo que
+ * no está en Full); 2) liga por SKU de ML; 3) el SKU de ML es igual a uno del
+ * CRM. */
+export function skuCrmDe(pub: Pick<PublicacionMl, "item_id" | "variation_id" | "seller_sku"> & { inventory_id?: string | null }, vinculos: Map<string, string>, skusCrm: Set<string>) {
+  if (pub.inventory_id) {
+    const porCodigo = vinculos.get(claveCodigoMl(pub.inventory_id));
+    if (porCodigo) return { sku: porCodigo, origen: "codigo" as const };
+  }
   const manual = vinculos.get(claveVinculo(pub.item_id, pub.variation_id));
   if (manual) return { sku: manual, origen: "manual" as const };
   const sellerSku = normalizarSellerSku(pub.seller_sku);
@@ -766,7 +868,7 @@ export function skuCrmDe(pub: Pick<PublicacionMl, "item_id" | "variation_id" | "
   return { sku: null, origen: null };
 }
 
-export type OrigenLiga = "sku" | "auto" | "manual" | null;
+export type OrigenLiga = "codigo" | "sku" | "auto" | "manual" | null;
 
 export interface ResumenFull {
   /** Piezas disponibles en Full, contando cada inventario UNA vez. */
@@ -802,7 +904,7 @@ export function resumenFull(
     const { sku } = skuCrmDe(p, vinculos, skusCrm);
     if (sku) {
       // En piezas del CRM: un "par" en Full son 2 piezas en bodega.
-      const piezasCrm = p.full_disponible * factorDePublicacion(p.item_id, p.variation_id, factores, p.seller_sku);
+      const piezasCrm = p.full_disponible * factorDePublicacion(p.item_id, p.variation_id, factores, p.seller_sku, p.inventory_id);
       r.valor += piezasCrm * (costoPorSku.get(sku) ?? 0);
       r.porSku.set(sku, (r.porSku.get(sku) ?? 0) + piezasCrm);
     } else if (p.full_disponible > 0) {
@@ -815,18 +917,36 @@ export function resumenFull(
 /** Resumen de Full listo para usar desde Stock del CRM y el dashboard.
  * Regresa null si la tabla no existe todavía o ML no está conectado —
  * las pantallas siguen funcionando sin Full. */
-export async function obtenerResumenFull(resumenes: { sku: string; costoPromedio: number }[]): Promise<ResumenFull | null> {
+/** Publicaciones + ligas, tal cual vienen de la base. Se puede pedir EN
+ * PARALELO con los movimientos de stock (no depende de ellos) y luego
+ * armar el resumen con `resumenFullDesde` — así la pantalla no espera dos
+ * vueltas seguidas al servidor. Null si ML no está conectado o falla. */
+export interface DatosFull {
+  publicaciones: PublicacionMl[];
+  vinculos: VinculoMl[];
+}
+
+export async function cargarDatosFull(): Promise<DatosFull | null> {
   try {
     const [publicaciones, vinculos] = await Promise.all([obtenerPublicaciones(), obtenerVinculos()]);
     if (!publicaciones.length) return null;
-    return resumenFull(
-      publicaciones,
-      new Map(vinculos.map((v) => [claveVinculo(v.item_id, v.variation_id), v.sku_crm])),
-      new Set(resumenes.map((r) => r.sku)),
-      new Map(resumenes.map((r) => [r.sku, r.costoPromedio])),
-      factoresVinculos(vinculos),
-    );
+    return { publicaciones, vinculos };
   } catch {
     return null;
   }
+}
+
+export function resumenFullDesde(datos: DatosFull | null, resumenes: { sku: string; costoPromedio: number }[]): ResumenFull | null {
+  if (!datos) return null;
+  return resumenFull(
+    datos.publicaciones,
+    new Map(datos.vinculos.map((v) => [claveVinculo(v.item_id, v.variation_id), v.sku_crm])),
+    new Set(resumenes.map((r) => r.sku)),
+    new Map(resumenes.map((r) => [r.sku, r.costoPromedio])),
+    factoresVinculos(datos.vinculos),
+  );
+}
+
+export async function obtenerResumenFull(resumenes: { sku: string; costoPromedio: number }[]): Promise<ResumenFull | null> {
+  return resumenFullDesde(await cargarDatosFull(), resumenes);
 }

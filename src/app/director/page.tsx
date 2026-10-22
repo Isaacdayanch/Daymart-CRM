@@ -70,7 +70,7 @@ export default async function DirectorPage() {
 
       {faltaSql && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-          Falta correr el SQL 0055 en Supabase para que exista la pantalla del Director.
+          Falta correr el SQL 0058 en Supabase para que exista la pantalla del Director.
         </div>
       )}
       {error && !faltaSql && <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error.message}</div>}

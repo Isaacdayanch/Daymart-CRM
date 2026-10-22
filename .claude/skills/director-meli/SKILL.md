@@ -58,7 +58,7 @@ Qué trae (todo calculado con las mismas reglas que las pantallas del CRM):
 | `publicaciones` | `margen_minimo_pct` y `lista[]` de las ACTIVAS: precio, precio base, si está en promoción, comisión, envío promedio, costo, **te_queda**, **margen_pct**, `abajo_del_margen_minimo`, Full disponible, `dias_de_full` (a cuántos días se acaba Full), vendidas 30/14 días, `en_bodega`, `sku_crm` (null = sin ligar) |
 | `analisis_30_dias` | Análisis de venta: por producto, ventas por día DISPONIBLE, stock hoy (bodega + Full), `dias_alcanza`, **`sugerido_pedir`** (ventas/día × días de espera − stock) y `se_acaba_antes_del_pedido` |
 | `promociones_crm` | Descuentos del vendedor aplicados desde el CRM que siguen vigentes |
-| `ligas_pendientes` | SKUs de ML activos sin ligar a un producto del CRM (sus ventas no descuentan bodega) |
+| `ligas_pendientes` | Sin ligar a un producto del CRM: `codigos_ml_full` (Códigos ML de Full, la liga que manda), `skus_ml_fuera_de_full`, `publicaciones_sin_sku_fuera_de_full`, `total` (sus ventas no descuentan bodega) |
 | `preguntas_sin_responder` | Preguntas de compradores sin contestar (null = no se pudo consultar) |
 | `contenedores` | `por_llegar` (≤ 14 días o ya vencidos) y `vivos` (en configuración o en camino, con sus productos) |
 | `finanzas` | Facturas y cargos de proveedor que vencen en 7 días o ya vencieron |
@@ -81,13 +81,19 @@ La bitácora del día va en el CRM (esa puerta), **no en `bitacora.md`**; en el 
 
 ## La rutina de la mañana (tarea programada, 8:25 am CDMX)
 
+**Paso 0 — pedir permiso antes de gastar** (Isaac, 22 oct: "quiero que antes de que el agente consuma tokens me pregunte"). La sesión programada NO lee el CRM ni el manual completo ni analiza nada hasta que Isaac diga que sí. Lo primero y único que haces al despertar es mandar UNA línea y terminar el turno:
+
+> Buenos días, Isaac. ¿Hago la revisión de hoy de Mercado Libre (relámpago, Full, lo que toque)? Contesta **"va"** para que arranque, o **"hoy no"**.
+
+Solo cuando conteste "va" (o cualquier sí) sigues con los pasos 1–7. Si dice "hoy no" o no contesta, no haces nada más: mañana vuelves a preguntar. Si Isaac te dice un día "ya no me preguntes, corre directo", anótalo en `reglas-de-isaac.md` y a partir de ahí la rutina arranca sin el paso 0 (el programador quita la pregunta de la tarea programada).
+
 1. Lee `calendario.md` y `reglas-de-isaac.md`.
 2. Lee el CRM (arriba). Revisa `propuestas.decididas_7_dias`: lo rechazado esta semana no se vuelve a proponer igual (si cambió algo, dilo). Revisa `propuestas.decididas_sin_reportar`: si hay aprobadas que ya se ejecutaron o fallaron, inclúyelas en el mensaje como "Lo de ayer" y márcalas reportadas.
 3. Con el calendario, decide **qué áreas tocan hoy**. Las diarias siempre; las semanales solo su día; las "cuando pase algo" solo si el dato lo dispara (ej. llegó un contenedor → promociones y publicaciones de lo que llegó).
 4. Analiza cada área que toca (abajo dice cómo) y arma la lista. **Mándala al CRM** con `POST /api/director/propuestas` (un solo lote). Usa los números (`orden`) que te devuelve: son los que Isaac ve en la pantalla y los que te contestará en el chat.
 5. Anota la corrida con `POST /api/director/bitacora` (`CORRIDA_MANANA`: cuántas por área, errores del JSON, qué faltó).
 6. Escribe el mensaje de la mañana (formato abajo, con el link `https://daymart-crm.vercel.app/director`) y **termina tu turno**. No te quedes esperando ni programes recordatorios: la tarea programada te vuelve a despertar mañana. Isaac decide en la pantalla o te contesta aquí.
-7. Si el CRM no acepta las propuestas (falta el SQL 0055, 401, error), manda el mensaje igual con la lista completa en el chat y di en una línea por qué no quedó en la pantalla.
+7. Si el CRM no acepta las propuestas (falta el SQL 0058, 401, error), manda el mensaje igual con la lista completa en el chat y di en una línea por qué no quedó en la pantalla.
 
 ### Formato del mensaje de la mañana
 

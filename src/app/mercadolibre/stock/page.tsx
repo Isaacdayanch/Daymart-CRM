@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { todosLosMovimientosStock } from "@/lib/cargar-todo";
 import { createClient } from "@/lib/supabase/server";
 import { obtenerConexion } from "@/lib/mercadolibre-auth";
 import { obtenerEstadoSync } from "@/lib/mercadolibre-ordenes";
@@ -21,7 +22,7 @@ import { obtenerSugerenciasCatalogo } from "@/lib/catalogo-proveedores";
 import type { Bodega } from "@/lib/tipos";
 import { formatoFechaHoraMx } from "@/lib/fechas-mx";
 import { formatoPesos } from "@/lib/formato";
-import type { ConfiguracionStock, MovimientoStock } from "@/lib/tipos";
+import type { ConfiguracionStock } from "@/lib/tipos";
 import { BotonSincronizarStock } from "./boton-sincronizar-stock";
 import { RevisarFaltantes } from "./revisar-faltantes";
 import { LigaProducto } from "./liga-producto";
@@ -60,7 +61,7 @@ export default async function StockMercadoLibre({
   const conexion = await obtenerConexion().catch(() => null);
 
   const [{ data: movimientos }, { data: configuracion }, piezasPorCajaPorSku, marcas, sugerencias, { data: bodegas }, skusTodos] = await Promise.all([
-    supabase.from("movimientos_stock").select("*").returns<MovimientoStock[]>(),
+    todosLosMovimientosStock(supabase),
     supabase.from("configuracion_stock").select("*").single<ConfiguracionStock>(),
     obtenerPiezasPorCajaPorSku(supabase),
     obtenerMarcas(supabase).catch(() => []),
@@ -264,7 +265,7 @@ export default async function StockMercadoLibre({
                     sku={liga.sku}
                     origen={liga.origen}
                     nombre={liga.sku ? (nombrePorSku.get(liga.sku) ?? null) : null}
-                    piezasPorUnidad={factorDePublicacion(liga.de.item_id, liga.de.variation_id, factores, liga.de.seller_sku)}
+                    piezasPorUnidad={factorDePublicacion(liga.de.item_id, liga.de.variation_id, factores, liga.de.seller_sku, liga.de.inventory_id)}
                     opciones={opcionesProducto}
                     datosMl={{
                       itemId: liga.de.item_id,
@@ -299,7 +300,7 @@ export default async function StockMercadoLibre({
           {sync?.ultima_sync_stock && <p className="text-[11px] text-zinc-400">actualizado {formatoFechaHoraMx(sync.ultima_sync_stock)} · se actualiza solo cada hora</p>}
         </div>
       </div>
-      <RevisarFaltantes conectado={Boolean(conexion)} />
+      <RevisarFaltantes conectado={Boolean(conexion)} opciones={opcionesProducto} />
 
       {!conexion && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">

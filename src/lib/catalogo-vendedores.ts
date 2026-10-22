@@ -6,12 +6,13 @@
 // páginas públicas; Finanzas y contenedores jamás pasan por aquí.
 
 import { randomBytes } from "crypto";
+import { todosLosMovimientosStock } from "@/lib/cargar-todo";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { resumenPorSku } from "./calculos-stock";
 import { gananciaVendedor, type ReglaComision } from "./calculos-vendedores";
 import { obtenerPiezasPorCajaPorSku } from "./productos-stock";
 import { createServiceClient } from "./supabase/servicio";
-import type { ComisionVendedorProducto, Marca, MovimientoStock, PrecioVendedor, ProductoCatalogo, Vendedor } from "./tipos";
+import type { ComisionVendedorProducto, Marca, PrecioVendedor, ProductoCatalogo, Vendedor } from "./tipos";
 
 export interface ProductoVendedores {
   sku: string;
@@ -102,7 +103,7 @@ export async function cargarCatalogoVendedores(
   const [{ data: catalogo }, { data: marcas }, { data: movimientos }, piezasPorCajaPorSku] = await Promise.all([
     supabase.from("productos_catalogo").select("*").is("eliminado_en", null).order("nombre").returns<ProductoCatalogo[]>(),
     supabase.from("marcas").select("id, nombre").is("eliminado_en", null).returns<Pick<Marca, "id" | "nombre">[]>(),
-    supabase.from("movimientos_stock").select("*").returns<MovimientoStock[]>(),
+    todosLosMovimientosStock(supabase),
     obtenerPiezasPorCajaPorSku(supabase),
   ]);
 

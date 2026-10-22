@@ -5,7 +5,9 @@
 // no, Isaac lo captura en el producto; sin código, la etiqueta sale sin
 // código de barras (solo SKU y nombre).
 
-import { claveVinculo, obtenerPublicaciones, obtenerVinculos, skuCrmDe } from "./mercadolibre-stock";
+import { claveVinculo, obtenerVinculos, skuCrmDe, type PublicacionMl } from "./mercadolibre-stock";
+import { createServiceClient } from "./supabase/servicio";
+import { todasLasFilas } from "./cargar-todo";
 import type { CamposMancuerna } from "./mancuernas";
 
 /** Formatos de impresión. Medidas en mm. `hoja` = null es rollo (cada
@@ -68,28 +70,51 @@ export interface ProductoEtiqueta {
   copiasPropuestas: number;
 }
 
+type PublicacionConInventario = Pick<PublicacionMl, "item_id" | "variation_id" | "seller_sku" | "inventory_id" | "estado">;
+
+export interface DatosCodigosMl {
+  publicaciones: PublicacionConInventario[];
+  ligas: Map<string, string>;
+}
+
+/** Solo lo necesario para resolver códigos: las publicaciones CON
+ * inventario de Full (pocas columnas) y las ligas. Se puede pedir en
+ * paralelo con el resto de la pantalla. Nunca truena: sin conexión/SQL
+ * devuelve vacío (las etiquetas usan solo el código capturado). */
+export async function cargarCodigosMl(): Promise<DatosCodigosMl> {
+  try {
+    const supabase = createServiceClient();
+    const [{ data }, vinculos] = await Promise.all([
+      todasLasFilas<PublicacionConInventario>((desde, hasta) =>
+        supabase.from("mercadolibre_publicaciones").select("item_id, variation_id, seller_sku, inventory_id, estado", { count: "exact" }).not("inventory_id", "is", null).order("id").range(desde, hasta),
+      ),
+      obtenerVinculos(),
+    ]);
+    return { publicaciones: data ?? [], ligas: new Map(vinculos.map((v) => [claveVinculo(v.item_id, v.variation_id), v.sku_crm])) };
+  } catch {
+    return { publicaciones: [], ligas: new Map() };
+  }
+}
+
 /** Códigos ML (inventory_id de Full) por SKU del CRM, según las ligas con
  * Mercado Libre (mismo orden de resolución que el resto del sistema). Las
- * publicaciones activas van primero. Nunca truena: sin conexión/SQL
- * devuelve un mapa vacío. */
-export async function codigosMlPorSku(skusCrm: Set<string>): Promise<Map<string, string[]>> {
+ * publicaciones activas van primero. */
+export function codigosMlDesde(datos: DatosCodigosMl, skusCrm: Set<string>): Map<string, string[]> {
   const mapa = new Map<string, string[]>();
-  try {
-    const [publicaciones, vinculos] = await Promise.all([obtenerPublicaciones(), obtenerVinculos()]);
-    const ligas = new Map(vinculos.map((v) => [claveVinculo(v.item_id, v.variation_id), v.sku_crm]));
-    const ordenadas = [...publicaciones].sort((a, b) => Number(b.estado === "active") - Number(a.estado === "active"));
-    for (const p of ordenadas) {
-      if (!p.inventory_id) continue;
-      const { sku } = skuCrmDe(p, ligas, skusCrm);
-      if (!sku) continue;
-      const lista = mapa.get(sku) ?? [];
-      if (!lista.includes(p.inventory_id)) lista.push(p.inventory_id);
-      mapa.set(sku, lista);
-    }
-  } catch {
-    // Sin Mercado Libre conectado o sin sus tablas: las etiquetas solo usan el código capturado.
+  const ordenadas = [...datos.publicaciones].sort((a, b) => Number(b.estado === "active") - Number(a.estado === "active"));
+  for (const p of ordenadas) {
+    if (!p.inventory_id) continue;
+    const { sku } = skuCrmDe(p, datos.ligas, skusCrm);
+    if (!sku) continue;
+    const lista = mapa.get(sku) ?? [];
+    if (!lista.includes(p.inventory_id)) lista.push(p.inventory_id);
+    mapa.set(sku, lista);
   }
   return mapa;
+}
+
+export async function codigosMlPorSku(skusCrm: Set<string>): Promise<Map<string, string[]>> {
+  return codigosMlDesde(await cargarCodigosMl(), skusCrm);
 }
 
 /** Decide qué código va en la etiqueta: el capturado en el producto del

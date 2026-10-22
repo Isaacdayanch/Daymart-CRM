@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { todasLasFilas } from "@/lib/cargar-todo";
 import { estadoDeCuenta, periodoDeParams } from "@/lib/estado-cuenta";
 import { fechaTextoMx } from "@/lib/fechas-mx";
 import type { CategoriaFinanciera, CuentaFinanciera, Moneda, MovimientoFinanciero } from "@/lib/tipos";
@@ -20,11 +21,15 @@ export async function cargarEstadoCuenta(cuentaId: string, params: ParamsPeriodo
 
   const [{ data: movimientos }, { data: cuentas }, { data: categorias }, { data: pagosMercancia }, { data: movimientosDeuda }, { data: pagosFactura }, { data: cobrosVenta }, { data: enviosChina }] =
     await Promise.all([
-      supabase
-        .from("movimientos_financieros")
-        .select("*")
-        .or(`cuenta_id.eq.${cuentaId},cuenta_destino_id.eq.${cuentaId}`)
-        .returns<MovimientoFinanciero[]>(),
+      todasLasFilas<MovimientoFinanciero>((desde, hasta) =>
+        supabase
+          .from("movimientos_financieros")
+          .select("*", { count: "exact" })
+          .or(`cuenta_id.eq.${cuentaId},cuenta_destino_id.eq.${cuentaId}`)
+          .order("fecha", { ascending: true })
+          .order("id", { ascending: true })
+          .range(desde, hasta),
+      ),
       supabase.from("cuentas_financieras").select("*").returns<CuentaFinanciera[]>(),
       supabase.from("categorias_financieras").select("*").order("orden").returns<CategoriaFinanciera[]>(),
       supabase.from("pagos_mercancia").select("movimiento_financiero_id").not("movimiento_financiero_id", "is", null),

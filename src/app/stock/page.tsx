@@ -1,47 +1,46 @@
 import Link from "next/link";
+import { todosLosMovimientosStock } from "@/lib/cargar-todo";
 import { createClient } from "@/lib/supabase/server";
-import { resumenPorSku, valorTotalInventario } from "@/lib/calculos-stock";
+import { resumenPorSku, sugeridosReorden, valorTotalInventario } from "@/lib/calculos-stock";
 import { formatoPesos } from "@/lib/formato";
 import { obtenerPerfilActual } from "@/lib/perfil";
 import { obtenerCategoriaPorSku, obtenerPiezasPorCajaPorSku } from "@/lib/productos-stock";
-import type { Bodega, ConfiguracionStock, MovimientoStock } from "@/lib/tipos";
+import type { Bodega, ConfiguracionStock } from "@/lib/tipos";
 import { TablaStock } from "./tabla-stock";
-import { obtenerResumenFull } from "@/lib/mercadolibre-stock";
-import { enCaminoAFull } from "@/lib/mercadolibre-envios-full";
+import { cargarDatosFull, resumenFullDesde } from "@/lib/mercadolibre-stock";
+import { cargarEnCaminoAFull, enCaminoAFullDesde } from "@/lib/mercadolibre-envios-full";
 
 export default async function ResumenStock() {
   const supabase = await createClient();
-  const perfil = await obtenerPerfilActual();
-  const verDinero = perfil?.rol !== "operadora";
-
-  const [
-    { data: movimientos },
-    { data: bodegas },
-    { data: configuracion },
-    { count: pendientesCount },
-    piezasPorCajaPorSku,
-    categoriaPorSku,
-  ] = await Promise.all([
-    supabase.from("movimientos_stock").select("*").returns<MovimientoStock[]>(),
+  // Velocidad: perfil, stock, copia de ML y envíos en camino, todo de una vez.
+  const [perfil, { data: movimientos }, { data: bodegas }, { data: configuracion }, { count: pendientesCount }, piezasPorCajaPorSku, categoriaPorSku, datosFull, enCaminoDatos] = await Promise.all([
+    obtenerPerfilActual(),
+    todosLosMovimientosStock(supabase),
     supabase.from("bodegas").select("*").is("eliminado_en", null).returns<Bodega[]>(),
     supabase.from("configuracion_stock").select("*").single<ConfiguracionStock>(),
     supabase.from("pendientes_china").select("*", { count: "exact", head: true }).eq("estado", "PENDIENTE"),
     obtenerPiezasPorCajaPorSku(supabase),
     obtenerCategoriaPorSku(supabase),
+    cargarDatosFull(),
+    cargarEnCaminoAFull(),
   ]);
+  const verDinero = perfil?.rol !== "operadora";
 
   const listaMovimientos = movimientos ?? [];
   const diasEspera = configuracion?.dias_espera ?? 60;
   const resumenes = resumenPorSku(listaMovimientos, diasEspera, piezasPorCajaPorSku, categoriaPorSku);
   const categorias = [...new Set(resumenes.map((r) => r.categoria))].sort();
   const valorTotal = valorTotalInventario(resumenes);
-  const paraReordenar = resumenes.filter((r) => r.necesitaReorden && r.stockActual > 0);
+  // Las sugerencias de restock viven en su pestaña (/stock/restock); aquí
+  // solo un link discreto (Isaac, 20 oct: "que no me estorben cuando entro
+  // a ver el panel").
+  const porPedir = sugeridosReorden(resumenes).length;
   const bodegasPorId = Object.fromEntries((bodegas ?? []).map((b) => [b.id, b.nombre]));
   // Stock en Full de Mercado Libre (solo dueño; null si no está conectado).
-  const full = verDinero ? await obtenerResumenFull(resumenes) : null;
+  const full = verDinero ? resumenFullDesde(datosFull, resumenes) : null;
   const fullPorSku = full ? Object.fromEntries(full.porSku) : undefined;
   // Piezas que ya salieron de bodega y van en camino a Full (envíos sin cerrar).
-  const enCamino = verDinero ? await enCaminoAFull(new Map(resumenes.map((r) => [r.sku, r.costoPromedio]))).catch(() => null) : null;
+  const enCamino = verDinero ? enCaminoAFullDesde(enCaminoDatos, new Map(resumenes.map((r) => [r.sku, r.costoPromedio]))) : null;
   const enCaminoPorSku = enCamino && enCamino.piezas > 0 ? Object.fromEntries(enCamino.porSku) : undefined;
   const piezasBodega = resumenes.reduce((s, r) => s + r.stockActual, 0);
 
@@ -92,7 +91,17 @@ export default async function ResumenStock() {
           <p className="mt-2 text-3xl font-semibold tracking-tight text-zinc-900">
             {resumenes.filter((r) => r.stockActual > 0).length}
           </p>
-          <p className="mt-1 text-xs text-zinc-400">En {bodegas?.length ?? 0} bodega(s)</p>
+          <p className="mt-1 text-xs text-zinc-400">
+            En {bodegas?.length ?? 0} bodega(s)
+            {porPedir > 0 && (
+              <>
+                {" · "}
+                <Link href="/stock/restock" className="font-medium text-amber-700 hover:underline">
+                  {porPedir} por pedir →
+                </Link>
+              </>
+            )}
+          </p>
         </div>
         <Link
           href="/stock/pendientes"
@@ -103,34 +112,6 @@ export default async function ResumenStock() {
           <p className="mt-1 text-xs text-amber-700">Productos por consolidar →</p>
         </Link>
       </div>
-
-      {paraReordenar.length > 0 && (
-        <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-zinc-900">Sugerido reordenar</h2>
-            <span className="rounded-full bg-rose-50 px-2.5 py-0.5 text-xs font-medium text-rose-600 ring-1 ring-inset ring-rose-200">
-              {paraReordenar.length}
-            </span>
-          </div>
-          <p className="mt-1 text-xs text-zinc-500">
-            Según su rotación real de salidas y tu tiempo de espera configurado ({diasEspera} días).
-          </p>
-          <div className="mt-4 divide-y divide-zinc-100">
-            {paraReordenar.map((r) => (
-              <div key={r.sku} className="flex items-center justify-between py-2.5 text-sm">
-                <div>
-                  <p className="font-medium text-zinc-900">{r.nombre}</p>
-                  <p className="font-mono text-xs text-zinc-400">{r.sku}</p>
-                </div>
-                <div className="text-right">
-                  <p className="font-semibold text-zinc-900">{r.stockActual} pzas</p>
-                  <p className="text-xs text-zinc-400">punto: {r.puntoReorden.toFixed(0)}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       <div className="rounded-2xl border border-zinc-200 bg-white shadow-sm">
         <div className="border-b border-zinc-100 p-6">

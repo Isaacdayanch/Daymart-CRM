@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { saldoFactura } from "@/lib/calculos-facturas";
 import { formatoPesos, formatoDolares, formatoFecha } from "@/lib/formato";
@@ -21,6 +22,13 @@ export default async function FacturasFinanzas() {
     supabase.from("categorias_financieras").select("*").is("eliminado_en", null).returns<CategoriaFinanciera[]>(),
     ultimosPagosPorProveedor(supabase),
   ]);
+  // Las cuentas por pagar que vienen de una orden de compra (Compras) se
+  // enlazan a su orden y no se quitan desde aquí (se cancelan desde la orden).
+  const idsOrdenes = (facturas ?? []).map((f) => f.orden_compra_id).filter((id): id is string => Boolean(id));
+  const { data: ordenesCompra } = idsOrdenes.length
+    ? await supabase.from("ordenes_compra").select("id, numero").in("id", idsOrdenes).returns<{ id: string; numero: number }[]>()
+    : { data: [] as { id: string; numero: number }[] };
+  const numeroOrden = (id: string | null | undefined) => (id ? (ordenesCompra ?? []).find((o) => o.id === id)?.numero ?? null : null);
 
   const listaFacturas = facturas ?? [];
   const listaPagos = pagos ?? [];
@@ -92,7 +100,17 @@ export default async function FacturasFinanzas() {
                         {factura.folio ? `Folio ${factura.folio} — ` : ""}
                         {factura.proveedor}
                       </p>
-                      <p className="text-xs text-zinc-500">{factura.concepto || "—"}</p>
+                      <p className="text-xs text-zinc-500">
+                        {factura.concepto || "—"}
+                        {factura.orden_compra_id && (
+                          <>
+                            {" · "}
+                            <Link href={`/compras/${factura.orden_compra_id}`} className="text-[#2D3277] hover:underline">
+                              ver orden de compra{numeroOrden(factura.orden_compra_id) ? ` #${numeroOrden(factura.orden_compra_id)}` : ""} →
+                            </Link>
+                          </>
+                        )}
+                      </p>
                       <p className="mt-1 text-xs text-zinc-400">
                         {factura.fecha_limite ? <>Vence {formatoFecha(factura.fecha_limite)}</> : "Sin fecha límite"}
                       </p>
@@ -102,7 +120,7 @@ export default async function FacturasFinanzas() {
                         {factura.moneda === "USD" ? formatoDolares(saldo) : formatoPesos(saldo)}
                         <span className="ml-1 text-xs font-normal text-zinc-400">de {factura.moneda === "USD" ? formatoDolares(factura.monto) : formatoPesos(factura.monto)}</span>
                       </p>
-                      {pagado === 0 && (
+                      {pagado === 0 && !factura.orden_compra_id && (
                         <form action={eliminarFactura.bind(null, factura.id)} className="mt-1">
                           <button type="submit" className="text-xs font-medium text-red-600 hover:text-red-800">
                             Quitar

@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { todosLosMovimientosStock } from "@/lib/cargar-todo";
 import { obtenerCatalogo, obtenerMarcas } from "@/lib/catalogo";
 import { obtenerSugerenciasCatalogo } from "@/lib/catalogo-proveedores";
 import { resumenPorSku } from "@/lib/calculos-stock";
@@ -16,7 +17,7 @@ export default async function AgregarProductoStock() {
     obtenerMarcas(supabase).catch(() => []),
     obtenerCatalogo(supabase).catch(() => []),
     obtenerSugerenciasCatalogo(supabase),
-    supabase.from("movimientos_stock").select("*").returns<MovimientoStock[]>(),
+    todosLosMovimientosStock(supabase),
     supabase.from("configuracion_stock").select("*").single<ConfiguracionStock>(),
     obtenerPiezasPorCajaPorSku(supabase),
   ]);

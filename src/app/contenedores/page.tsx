@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { costoTotalContenedor } from "@/lib/calculos";
@@ -17,25 +18,14 @@ function etiquetaEstado(estado: Contenedor["estado"]) {
 
 export default async function ListaContenedores() {
   const supabase = await createClient();
-  const perfil = await obtenerPerfilActual();
+  // Velocidad: antes eran cuatro consultas en fila; ahora salen todas juntas.
+  const [perfil, { data: contenedores, error }, { data: pagosMercancia }, { data: movimientosEntrada }] = await Promise.all([
+    obtenerPerfilActual(),
+    supabase.from("contenedores").select("*").is("eliminado_en", null).order("numero", { ascending: false }).returns<Contenedor[]>(),
+    supabase.from("pagos_mercancia").select("*").returns<PagoMercancia[]>(),
+    supabase.from("movimientos_stock").select("id, contenedor_id, tipo, cantidad, costo_unitario_pesos, sku").eq("tipo", "ENTRADA").returns<MovimientoStock[]>(),
+  ]);
   const verDinero = perfil?.rol !== "operadora";
-  const { data: contenedores, error } = await supabase
-    .from("contenedores")
-    .select("*")
-    .is("eliminado_en", null)
-    .order("numero", { ascending: false })
-    .returns<Contenedor[]>();
-
-  const { data: pagosMercancia } = await supabase
-    .from("pagos_mercancia")
-    .select("*")
-    .returns<PagoMercancia[]>();
-
-  const { data: movimientosEntrada } = await supabase
-    .from("movimientos_stock")
-    .select("*")
-    .eq("tipo", "ENTRADA")
-    .returns<MovimientoStock[]>();
 
   function pagosDe(contenedorId: string) {
     return pagosMercancia?.filter((p) => p.contenedor_id === contenedorId) ?? [];
@@ -104,7 +94,9 @@ export default async function ListaContenedores() {
           </div>
         )}
 
-        <AvisoLlegadas />
+        <Suspense fallback={null}>
+          <AvisoLlegadas />
+        </Suspense>
         {contenedores && contenedores.length > 0 && (
           <ul className="grid gap-3 sm:grid-cols-2">
             {contenedores.map((contenedor) => (

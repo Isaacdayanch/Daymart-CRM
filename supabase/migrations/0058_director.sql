@@ -1,4 +1,4 @@
--- 0055 — Director de Mercado Libre: propuestas y bitácora en el CRM (20 oct 2026).
+-- 0058 — Director de Mercado Libre: propuestas y bitácora en el CRM (20 oct 2026).
 --
 -- Isaac: "vamos a pulir mi CRM para que mi CRM pueda alterar mi cuenta de
 -- Mercado Libre y el agente altere el CRM; así ya no necesitamos usar mi

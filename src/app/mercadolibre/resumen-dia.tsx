@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { todosLosMovimientosStock } from "@/lib/cargar-todo";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/servicio";
 import { obtenerConexion } from "@/lib/mercadolibre-auth";
@@ -9,7 +10,7 @@ import { itemsDeOrdenes, type OrdenItemMl, type OrdenMl } from "@/lib/mercadolib
 import { resumenPorSku } from "@/lib/calculos-stock";
 import { obtenerPiezasPorCajaPorSku } from "@/lib/productos-stock";
 import { formatoPesos } from "@/lib/formato";
-import type { ConfiguracionStock, MovimientoStock } from "@/lib/tipos";
+import type { ConfiguracionStock } from "@/lib/tipos";
 import { analisisVentasMl, type FilaAnalisis } from "@/lib/mercadolibre-analisis";
 
 const DIA_MS = 86400000;
@@ -86,7 +87,7 @@ export async function ResumenDia() {
   if (publicaciones.length === 0) return null;
 
   const [{ data: movimientos }, { data: configuracion }, piezasPorCajaPorSku] = await Promise.all([
-    supabase.from("movimientos_stock").select("*").returns<MovimientoStock[]>(),
+    todosLosMovimientosStock(supabase),
     supabase.from("configuracion_stock").select("*").single<ConfiguracionStock>(),
     obtenerPiezasPorCajaPorSku(supabase),
   ]);

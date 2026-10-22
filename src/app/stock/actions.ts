@@ -577,12 +577,15 @@ export async function actualizarCostoManual(movimientoId: string, formData: Form
 
   const { data: movimiento } = await supabase
     .from("movimientos_stock")
-    .select("sku, contenedor_id")
+    .select("sku, contenedor_id, orden_compra_id")
     .eq("id", movimientoId)
-    .maybeSingle<{ sku: string; contenedor_id: string | null }>();
+    .maybeSingle<{ sku: string; contenedor_id: string | null; orden_compra_id?: string | null }>();
   if (!movimiento) return { error: "No se encontró el movimiento." };
   if (movimiento.contenedor_id) {
     return { error: "Esta entrada viene de un contenedor — corrígela desde ahí con \"Recalcular costo →\"." };
+  }
+  if (movimiento.orden_compra_id) {
+    return { error: "Esta entrada viene de una orden de compra — su costo es el precio de la orden (más flete)." };
   }
 
   const { error } = await supabase
@@ -638,6 +641,9 @@ async function movimientoSuelto(supabase: Awaited<ReturnType<typeof createClient
   }
   if (data.venta_id) {
     return { movimiento: null, error: "Este movimiento viene de una venta — corrígelo o cancélalo desde Ventas." };
+  }
+  if (data.orden_compra_id) {
+    return { movimiento: null, error: "Esta entrada viene de una orden de compra — se corrige o cancela desde Compras." };
   }
   if (data.orden_ml_id || data.envio_full_id || data.recepcion_full_id || data.inbound_ml_id) {
     return { movimiento: null, error: "Este movimiento lo generó Mercado Libre (venta o Full) — se atiende desde Stock → Full y ML." };

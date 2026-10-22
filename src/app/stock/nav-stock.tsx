@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 
 const PESTANAS = [
   { href: "/stock", etiqueta: "Resumen" },
+  { href: "/stock/restock", etiqueta: "Restock" },
   { href: "/stock/salidas", etiqueta: "Salidas" },
   { href: "/stock/full", etiqueta: "Full y ML" },
   { href: "/stock/movimientos", etiqueta: "Movimientos" },

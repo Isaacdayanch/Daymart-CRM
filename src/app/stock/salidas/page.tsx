@@ -1,13 +1,14 @@
 import { createClient } from "@/lib/supabase/server";
+import { todosLosMovimientosStock } from "@/lib/cargar-todo";
 import { resumenPorSku } from "@/lib/calculos-stock";
 import { obtenerPiezasPorCajaPorSku } from "@/lib/productos-stock";
-import type { Bodega, ConfiguracionStock, MovimientoStock } from "@/lib/tipos";
+import type { Bodega, ConfiguracionStock } from "@/lib/tipos";
 import { FormularioSalidas } from "./formulario-salidas";
 
 export default async function Salidas() {
   const supabase = await createClient();
   const [{ data: movimientos }, { data: bodegas }, { data: configuracion }, piezasPorCajaPorSku] = await Promise.all([
-    supabase.from("movimientos_stock").select("*").returns<MovimientoStock[]>(),
+    todosLosMovimientosStock(supabase),
     supabase.from("bodegas").select("*").is("eliminado_en", null).order("nombre").returns<Bodega[]>(),
     supabase.from("configuracion_stock").select("*").single<ConfiguracionStock>(),
     obtenerPiezasPorCajaPorSku(supabase),

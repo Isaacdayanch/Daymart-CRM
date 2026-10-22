@@ -1,9 +1,10 @@
 import Link from "next/link";
+import { todosLosMovimientosStock } from "@/lib/cargar-todo";
 import { createClient } from "@/lib/supabase/server";
 import { resumenPorSku } from "@/lib/calculos-stock";
 import { formatoCajas, formatoFecha } from "@/lib/formato";
 import { obtenerCategoriaPorSku, obtenerPiezasPorCajaPorSku } from "@/lib/productos-stock";
-import type { ConfiguracionStock, MovimientoStock } from "@/lib/tipos";
+import type { ConfiguracionStock } from "@/lib/tipos";
 import { BotonImprimir } from "../../contenedores/[id]/imprimir/boton-imprimir";
 import { Logo } from "@/components/logo";
 
@@ -22,7 +23,7 @@ export default async function ImprimirInventario({
   const sinCantidades = sin === "1";
   const supabase = await createClient();
   const [{ data: movimientos }, { data: configuracion }, piezasPorCajaPorSku, categoriaPorSku] = await Promise.all([
-    supabase.from("movimientos_stock").select("*").returns<MovimientoStock[]>(),
+    todosLosMovimientosStock(supabase),
     supabase.from("configuracion_stock").select("*").single<ConfiguracionStock>(),
     obtenerPiezasPorCajaPorSku(supabase),
     obtenerCategoriaPorSku(supabase),

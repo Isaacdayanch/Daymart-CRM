@@ -35,6 +35,10 @@ Cada regla lleva su fecha. Las más nuevas mandan sobre las viejas si chocan. La
 - Nada se publica ni se guarda en ML sin el "va" al paquete completo (título, categoría, ficha, precio, tipo, envío, 10 imágenes).
 - Cero errores: cada dato de una imagen sale de una fuente (PO, ficha del proveedor, foto real o Isaac).
 
+## Costo / tokens
+
+- (2026-10-22) **Antes de gastar, preguntar.** La sesión de la mañana solo manda una línea ("¿hago la revisión de hoy?") y espera el "va" de Isaac; nada de leer el CRM ni analizar hasta entonces. Si un día dice "ya no me preguntes", se quita esta regla.
+
 ## Reglas nuevas (el Director las agrega aquí con fecha)
 
 - (pendiente) …

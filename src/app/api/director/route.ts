@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/servicio";
 import { obtenerConexion } from "@/lib/mercadolibre-auth";
-import { claveLigaSku, claveVinculo, factoresVinculos, normalizarSellerSku, obtenerIgnorados, obtenerPublicaciones, obtenerVinculos, resumenFull, skuCrmDe, type PublicacionMl } from "@/lib/mercadolibre-stock";
+import { claveLigaSku, claveVinculo, factoresVinculos, normalizarSellerSku, obtenerIgnorados, obtenerPublicaciones, obtenerVinculos, resumenFull, skuCrmDe, type PublicacionMl, type VinculoMl } from "@/lib/mercadolibre-stock";
+import { agruparPorCodigoMl, esCodigoPendiente } from "@/lib/mercadolibre-codigos";
 import { envioPromedioPorItem, obtenerBitacoraPromociones, obtenerMargenMinimo, piezasVendidasPorItem, preguntasSinResponder } from "@/lib/mercadolibre-promociones";
 import { margenPublicacion } from "@/lib/mercadolibre-margen";
 import { itemsDeOrdenes, type OrdenItemMl, type OrdenMl } from "@/lib/mercadolibre-ordenes";
@@ -94,12 +95,14 @@ export async function GET(request: NextRequest) {
 
   // ---- Mercado Libre: publicaciones, ligas, Full -------------------------
   let publicaciones: PublicacionMl[] = [];
+  let vinculosLista: VinculoMl[] = [];
   let vinculos = new Map<string, string>();
   let factores = new Map<string, number>();
   let ignorados = new Set<string>();
   try {
     const [pubs, vins, ign] = await Promise.all([obtenerPublicaciones(), obtenerVinculos(), obtenerIgnorados().catch(() => [])]);
     publicaciones = pubs;
+    vinculosLista = vins;
     vinculos = new Map(vins.map((v) => [claveVinculo(v.item_id, v.variation_id), v.sku_crm]));
     factores = factoresVinculos(vins);
     ignorados = new Set(ign.map((i) => i.clave));
@@ -275,11 +278,16 @@ export async function GET(request: NextRequest) {
     errores.promociones = e instanceof Error ? e.message : "No se pudo leer la bitácora de promociones.";
   }
 
-  // ---- SKUs de ML sin ligar (misma regla que el aviso ámbar) -------------
+  // ---- Sin ligar (misma regla que el aviso ámbar `AvisoSkusPendientes`) ---
+  // En Full manda el Código ML (un código = un producto del CRM); fuera de
+  // Full, por SKU de ML o por publicación.
   try {
+    const codigosPendientes = agruparPorCodigoMl(publicaciones, vinculosLista, resumenes.map((r) => ({ sku: r.sku, nombre: r.nombre })), skusCrm, ignorados)
+      .filter(esCodigoPendiente)
+      .map((g) => ({ codigo_ml: g.inventoryId, titulo: g.titulo, seller_sku: g.sellerSku, en_full: g.enFull, estado: g.estado, sugerencia: g.sugerencia ? `${g.sugerencia.nombre} (${g.sugerencia.sku})` : null }));
     const porSku = new Map<string, { sinResolver: boolean; activa: boolean; titulo: string | null }>();
     const sinSku: { item_id: string; titulo: string | null }[] = [];
-    for (const p of publicaciones) {
+    for (const p of publicaciones.filter((x) => !x.inventory_id)) {
       const resuelve = Boolean(skuCrmDe(p, vinculos, skusCrm).sku);
       const k = normalizarSellerSku(p.seller_sku);
       if (!k) {
@@ -294,7 +302,13 @@ export async function GET(request: NextRequest) {
     const pendientes = Array.from(porSku.entries())
       .filter(([k, g]) => g.sinResolver && g.activa && !ignorados.has(claveLigaSku(k)))
       .map(([k, g]) => ({ seller_sku: k, titulo: g.titulo }));
-    salida.ligas_pendientes = { skus_ml: pendientes, publicaciones_sin_sku: sinSku, ligar_en: "https://daymart-crm.vercel.app/mercadolibre/skus" };
+    salida.ligas_pendientes = {
+      codigos_ml_full: codigosPendientes,
+      skus_ml_fuera_de_full: pendientes,
+      publicaciones_sin_sku_fuera_de_full: sinSku,
+      total: codigosPendientes.length + pendientes.length + sinSku.length,
+      ligar_en: "https://daymart-crm.vercel.app/mercadolibre/skus",
+    };
   } catch (e) {
     errores.ligas = e instanceof Error ? e.message : "No se pudieron revisar las ligas.";
   }
@@ -353,7 +367,7 @@ export async function GET(request: NextRequest) {
     errores.finanzas = e instanceof Error ? e.message : "No se pudieron leer los vencimientos.";
   }
 
-  // ---- Propuestas del Director (migración 0055) --------------------------
+  // ---- Propuestas del Director (migración 0058) --------------------------
   // Lo que Isaac ya decidió y el Director todavía no le ha reportado, lo que
   // sigue esperando decisión, y lo decidido en los últimos 7 días (para no
   // volver a proponer lo que ya rechazó).

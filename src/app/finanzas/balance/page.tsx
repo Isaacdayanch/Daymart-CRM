@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { todosLosMovimientosFinancieros, todosLosMovimientosStock } from "@/lib/cargar-todo";
 import { resumenPorSku } from "@/lib/calculos-stock";
 import { obtenerPiezasPorCajaPorSku } from "@/lib/productos-stock";
 import { saldosPorCuenta } from "@/lib/calculos-financieras";
@@ -10,9 +11,7 @@ import type {
   ConfiguracionStock,
   CuentaFinanciera,
   MovimientoDeudaProveedor,
-  MovimientoFinanciero,
   MovimientoPrestamista,
-  MovimientoStock,
   Prestamista,
   Venta,
   VentaLinea,
@@ -33,11 +32,11 @@ export default async function BalanceFinanzas() {
     { data: ventaLineas },
     { data: cobrosVenta },
   ] = await Promise.all([
-    supabase.from("movimientos_stock").select("*").returns<MovimientoStock[]>(),
+    todosLosMovimientosStock(supabase),
     supabase.from("configuracion_stock").select("*").single<ConfiguracionStock>(),
     obtenerPiezasPorCajaPorSku(supabase),
     supabase.from("cuentas_financieras").select("*").is("eliminado_en", null).returns<CuentaFinanciera[]>(),
-    supabase.from("movimientos_financieros").select("*").returns<MovimientoFinanciero[]>(),
+    todosLosMovimientosFinancieros(supabase),
     supabase.from("prestamistas").select("*").returns<Prestamista[]>(),
     supabase.from("movimientos_prestamista").select("*").returns<MovimientoPrestamista[]>(),
     supabase.from("movimientos_deuda_proveedor").select("*").returns<MovimientoDeudaProveedor[]>(),

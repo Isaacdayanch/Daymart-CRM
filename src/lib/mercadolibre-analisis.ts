@@ -13,13 +13,14 @@
 // tuvieron al menos una venta" y se marca como aproximado.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { todosLosMovimientosStock } from "@/lib/cargar-todo";
 import { createServiceClient } from "./supabase/servicio";
 import { claveVinculo, factorDePublicacion, factoresVinculos, obtenerPublicaciones, obtenerVinculos, resumenFull, skuCrmDe, type PublicacionMl } from "./mercadolibre-stock";
 import { itemsDeOrdenes, type OrdenItemMl } from "./mercadolibre-ordenes";
 import { resumenPorSku } from "./calculos-stock";
 import { obtenerPiezasPorCajaPorSku } from "./productos-stock";
 import { fechaTextoMx, inicioDelDiaMx } from "./fechas-mx";
-import type { ConfiguracionStock, MovimientoStock } from "./tipos";
+import type { ConfiguracionStock } from "./tipos";
 
 const DIA_MS = 86400000;
 
@@ -139,7 +140,7 @@ export async function analisisVentasMl(supabase: SupabaseClient, desde: Date, ha
   const [publicaciones, vinculos, { data: movimientos }, { data: configuracion }, piezasPorCajaPorSku] = await Promise.all([
     obtenerPublicaciones(),
     obtenerVinculos(),
-    supabase.from("movimientos_stock").select("*").returns<MovimientoStock[]>(),
+    todosLosMovimientosStock(supabase),
     supabase.from("configuracion_stock").select("*").maybeSingle<ConfiguracionStock>(),
     obtenerPiezasPorCajaPorSku(supabase),
   ]);
@@ -202,11 +203,11 @@ export async function analisisVentasMl(supabase: SupabaseClient, desde: Date, ha
     const { sku } = skuCrmDe(p, mapaVinculos, skusCrm);
     if (!sku) continue;
     const k = claveCompartida(p);
-    if (!ligaCompartida.has(k)) ligaCompartida.set(k, { sku, factor: factorDePublicacion(p.item_id, p.variation_id, factores, p.seller_sku) });
+    if (!ligaCompartida.has(k)) ligaCompartida.set(k, { sku, factor: factorDePublicacion(p.item_id, p.variation_id, factores, p.seller_sku, p.inventory_id) });
   }
   const ligaDe = (p: PublicacionMl): { sku: string | null; factor: number } => {
     const directa = skuCrmDe(p, mapaVinculos, skusCrm).sku;
-    if (directa) return { sku: directa, factor: factorDePublicacion(p.item_id, p.variation_id, factores, p.seller_sku) };
+    if (directa) return { sku: directa, factor: factorDePublicacion(p.item_id, p.variation_id, factores, p.seller_sku, p.inventory_id) };
     return ligaCompartida.get(claveCompartida(p)) ?? { sku: null, factor: 1 };
   };
   const claveGrupoDe = (p: PublicacionMl) => {

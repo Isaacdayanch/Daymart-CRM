@@ -2,7 +2,9 @@ import { NavStock } from "./nav-stock";
 import { Logo } from "@/components/logo";
 import { obtenerPerfilActual } from "@/lib/perfil";
 import { MenuMas } from "../menu-mas";
+import { Suspense } from "react";
 import { AvisoEnviosFull } from "./aviso-envios-full";
+import { OcultarEnFull } from "./ocultar-en-full";
 
 export default async function StockLayout({ children }: { children: React.ReactNode }) {
   const perfil = await obtenerPerfilActual();
@@ -24,7 +26,12 @@ export default async function StockLayout({ children }: { children: React.ReactN
         </div>
       </header>
       <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6 print:px-0 print:py-0">
-        <AvisoEnviosFull />
+        {/* Velocidad: el aviso consulta Mercado Libre; va en Suspense para que la pantalla no lo espere. */}
+        <OcultarEnFull>
+          <Suspense fallback={null}>
+            <AvisoEnviosFull />
+          </Suspense>
+        </OcultarEnFull>
         {children}
       </main>
     </div>

@@ -271,8 +271,10 @@ export function AreaImpresion({ etiquetas, formato }: { etiquetas: ProductoEtiqu
   );
 }
 
-/** Una etiqueta: SKU grande, nombre (máx. 2 líneas), detalle de mancuerna si
- * aplica, código de barras del Código ML y el código escrito debajo. */
+/** Una etiqueta: detalle de mancuerna si aplica (arriba, chiquito), SKU
+ * grande, nombre (1–2 líneas), código de barras del Código ML y el código
+ * escrito debajo. Sin marca ni imagen (Isaac, 20 oct: "quita el Daymart
+ * en pequeño de arriba"). */
 function Etiqueta({ producto: p, formato }: { producto: ProductoEtiqueta; formato: FormatoEtiqueta }) {
   const grande = formato.alto >= 40;
   const altoBarra = grande ? 16 : Math.max(6, formato.alto * 0.34);
@@ -284,11 +286,13 @@ function Etiqueta({ producto: p, formato }: { producto: ProductoEtiqueta; format
       className="etiqueta-item flex flex-col overflow-hidden text-black"
       style={{ width: `${formato.ancho}mm`, height: `${formato.alto}mm`, padding: grande ? "2.5mm 3mm" : "1.3mm 2mm", boxSizing: "border-box", outline: "1px dashed #e4e4e7", outlineOffset: "-1px" }}
     >
-      <div className="flex items-baseline justify-between gap-2" style={{ fontSize: grande ? "7pt" : "5.5pt", lineHeight: 1.1 }}>
-        <span className="font-semibold tracking-[0.18em] text-zinc-500">DAYMART</span>
-        {p.detalle && <span className="truncate text-zinc-700">{p.detalle}</span>}
-      </div>
-      <div className="truncate font-mono font-bold" style={{ fontSize: grande ? "15pt" : "9.5pt", lineHeight: 1.15, marginTop: grande ? "1mm" : "0.4mm" }}>
+      {/* Isaac (20 oct): sin la marca chiquita arriba; solo el detalle de mancuerna si lo hay. */}
+      {p.detalle && (
+        <div className="truncate text-zinc-700" style={{ fontSize: grande ? "7pt" : "5.5pt", lineHeight: 1.1 }}>
+          {p.detalle}
+        </div>
+      )}
+      <div className="truncate font-mono font-bold" style={{ fontSize: grande ? "15pt" : "9.5pt", lineHeight: 1.15, marginTop: p.detalle ? (grande ? "1mm" : "0.4mm") : 0 }}>
         {p.sku}
       </div>
       <div className={lineasNombre === 1 ? "truncate" : "line-clamp-2"} style={{ fontSize: grande ? "9pt" : "6.5pt", lineHeight: 1.2, marginTop: grande ? "0.6mm" : "0.3mm" }}>

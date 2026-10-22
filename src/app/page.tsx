@@ -1,13 +1,15 @@
+import { Suspense } from "react";
 import Link from "next/link";
+import { todosLosMovimientosFinancieros, todosLosMovimientosStock } from "@/lib/cargar-todo";
 import { createClient } from "@/lib/supabase/server";
 import { obtenerPerfilActual } from "@/lib/perfil";
-import { resumenPorSku } from "@/lib/calculos-stock";
+import { resumenPorSku, sugeridosReorden } from "@/lib/calculos-stock";
 import { obtenerPiezasPorCajaPorSku } from "@/lib/productos-stock";
 import { saldosPorCuenta } from "@/lib/calculos-financieras";
 import { formatoPesos, formatoDolares } from "@/lib/formato";
-import type { ConfiguracionStock, CuentaFinanciera, MovimientoFinanciero, MovimientoStock } from "@/lib/tipos";
+import type { ConfiguracionStock, CuentaFinanciera } from "@/lib/tipos";
 import { MenuMas } from "./menu-mas";
-import { obtenerResumenFull } from "@/lib/mercadolibre-stock";
+import { cargarDatosFull, resumenFullDesde } from "@/lib/mercadolibre-stock";
 import { Logo } from "@/components/logo";
 import { AvisoLlegadas } from "@/app/contenedores/aviso-llegadas";
 import { AvisoDirector } from "@/app/director/aviso-director";
@@ -71,32 +73,25 @@ const ACCESOS = [
 
 export default async function Dashboard() {
   const supabase = await createClient();
-  const perfil = await obtenerPerfilActual();
-  const verDinero = perfil?.rol !== "operadora";
-
-  const [
-    { data: movimientosStock },
-    { data: configuracion },
-    piezasPorCajaPorSku,
-    { data: cuentas },
-    { data: movimientosFinancieros },
-  ] = await Promise.all([
-    supabase.from("movimientos_stock").select("*").returns<MovimientoStock[]>(),
+  // Velocidad: TODO se pide de una vez (perfil, stock, finanzas y la copia
+  // de Mercado Libre) en vez de en fila. Finanzas se pide siempre: a una
+  // operadora la base de datos se lo niega sola (RLS) y aquí no se muestra.
+  const [perfil, { data: movimientosStock }, { data: configuracion }, piezasPorCajaPorSku, { data: cuentas }, { data: movimientosFinancieros }, datosFull] = await Promise.all([
+    obtenerPerfilActual(),
+    todosLosMovimientosStock(supabase),
     supabase.from("configuracion_stock").select("*").single<ConfiguracionStock>(),
     obtenerPiezasPorCajaPorSku(supabase),
-    verDinero
-      ? supabase.from("cuentas_financieras").select("*").is("eliminado_en", null).returns<CuentaFinanciera[]>()
-      : Promise.resolve({ data: [] as CuentaFinanciera[] }),
-    verDinero
-      ? supabase.from("movimientos_financieros").select("*").returns<MovimientoFinanciero[]>()
-      : Promise.resolve({ data: [] as MovimientoFinanciero[] }),
+    supabase.from("cuentas_financieras").select("*").is("eliminado_en", null).returns<CuentaFinanciera[]>(),
+    todosLosMovimientosFinancieros(supabase),
+    cargarDatosFull(),
   ]);
+  const verDinero = perfil?.rol !== "operadora";
 
   const resumenes = resumenPorSku(movimientosStock ?? [], configuracion?.dias_espera ?? 60, piezasPorCajaPorSku);
-  const productosPorReordenar = resumenes.filter((r) => r.necesitaReorden).length;
+  const productosPorReordenar = sugeridosReorden(resumenes).length;
   const valorInventario = resumenes.reduce((s, r) => s + r.valorInventario, 0);
   const piezasBodega = resumenes.reduce((s, r) => s + r.stockActual, 0);
-  const full = verDinero ? await obtenerResumenFull(resumenes) : null;
+  const full = verDinero ? resumenFullDesde(datosFull, resumenes) : null;
 
   const saldos = verDinero ? saldosPorCuenta(cuentas ?? [], movimientosFinancieros ?? []) : [];
   const saldosReales = saldos.filter((s) => !s.cuenta.cuenta_transito);
@@ -115,8 +110,14 @@ export default async function Dashboard() {
       </header>
 
       <main className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
-        {verDinero && <AvisoDirector />}
-        <AvisoLlegadas />
+        {verDinero && (
+          <Suspense fallback={null}>
+            <AvisoDirector />
+          </Suspense>
+        )}
+        <Suspense fallback={null}>
+          <AvisoLlegadas />
+        </Suspense>
         <div className="mb-10">
           <p className="text-sm font-medium text-zinc-400">Bienvenido a</p>
           <div className="mt-1">
@@ -140,14 +141,19 @@ export default async function Dashboard() {
                   </p>
                 )}
                 <p className="mt-1 text-xs text-zinc-400">
-                  {productosPorReordenar} {productosPorReordenar === 1 ? "producto sugerido" : "productos sugeridos"}{" "}
-                  para reordenar
+                  <Link href="/stock/restock" className="hover:underline">
+                    {productosPorReordenar} {productosPorReordenar === 1 ? "producto sugerido" : "productos sugeridos"} para reordenar →
+                  </Link>
                 </p>
               </>
             ) : (
               <>
                 <p className="mt-2 text-3xl font-semibold text-zinc-900">{productosPorReordenar}</p>
-                <p className="mt-1 text-xs text-zinc-400">Revisa Stock para ver el detalle.</p>
+                <p className="mt-1 text-xs text-zinc-400">
+                  <Link href="/stock/restock" className="hover:underline">
+                    Ver el detalle en Stock → Restock →
+                  </Link>
+                </p>
               </>
             )}
           </div>
