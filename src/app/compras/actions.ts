@@ -24,9 +24,9 @@ function fechaDesdeFormulario(valor: FormDataEntryValue | null, siVacio: string 
   return typeof valor === "string" && valor ? new Date(`${valor}T12:00:00`).toISOString() : siVacio;
 }
 
-/** Sin el SQL 0055 las tablas no existen: se dice claro en vez de un error críptico. */
+/** Sin el SQL 0056 las tablas no existen: se dice claro en vez de un error críptico. */
 function mensajeError(mensaje: string) {
-  return /does not exist|schema cache|relation .* ordenes_compra|proveedores_mx/i.test(mensaje) ? `Falta correr el SQL 0055 en Supabase para activar Compras (${mensaje}).` : mensaje;
+  return /does not exist|schema cache|relation .* ordenes_compra|proveedores_mx/i.test(mensaje) ? `Falta correr el SQL 0056 en Supabase para activar Compras (${mensaje}).` : mensaje;
 }
 
 function refrescarCompras(ordenId?: string) {

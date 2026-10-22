@@ -33,7 +33,7 @@ export async function cargarOrdenes(supabase: SupabaseClient): Promise<{ ordenes
   ]);
   if (error) {
     const falta = /does not exist|schema cache/i.test(error.message);
-    return { ordenes: [], proveedores: [], error: falta ? "Falta correr el SQL 0055 en Supabase para activar Compras." : error.message };
+    return { ordenes: [], proveedores: [], error: falta ? "Falta correr el SQL 0056 en Supabase para activar Compras." : error.message };
   }
   const idsFacturas = (facturas ?? []).map((f) => f.id);
   const { data: pagos } = idsFacturas.length ? await supabase.from("pagos_factura").select("*").in("factura_id", idsFacturas).returns<PagoFactura[]>() : { data: [] as PagoFactura[] };

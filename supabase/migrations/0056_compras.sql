@@ -1,4 +1,4 @@
--- 0055 — Compras a proveedores mexicanos (22 oct 2026).
+-- 0056 — Compras a proveedores mexicanos (22 oct 2026).
 --
 -- Isaac: "voy a empezar a comprar de un proveedor mexicano ciertas cosas…
 -- no se necesita el CBM; le pongo el costo por pieza y la foto del producto
