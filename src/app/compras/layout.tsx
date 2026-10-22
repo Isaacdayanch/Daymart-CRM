@@ -1,14 +1,12 @@
 import { Suspense } from "react";
 import { NavCompras } from "./nav-compras";
 import { Logo } from "@/components/logo";
-import { obtenerPerfilActual } from "@/lib/perfil";
-import { MenuMas } from "../menu-mas";
+import { MenuSesion } from "../menu-sesion";
 import { AvisosCompras } from "./avisos-compras";
 
 /** Compras a proveedores mexicanos (22 oct): sección propia, aparte de
  * Contenedores (sin CBM ni aduana) y de Finanzas (ahí solo vive el dinero). */
-export default async function ComprasLayout({ children }: { children: React.ReactNode }) {
-  const perfil = await obtenerPerfilActual();
+export default function ComprasLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-zinc-50 to-white">
@@ -19,7 +17,7 @@ export default async function ComprasLayout({ children }: { children: React.Reac
               <Logo />
               <h1 className="mt-1 text-xl font-semibold tracking-tight text-zinc-900">Compras</h1>
             </div>
-            <MenuMas rol={perfil?.rol} />
+            <MenuSesion />
           </div>
           <div className="mt-4">
             <NavCompras />

@@ -54,10 +54,11 @@ function valorPublicacion(p: PublicacionMl) {
 export default async function StockMercadoLibre({
   searchParams,
 }: {
-  searchParams: Promise<{ filtro?: string; q?: string; separadas?: string }>;
+  searchParams: Promise<{ filtro?: string; q?: string; separadas?: string; todas?: string }>;
 }) {
-  const { filtro = "todas", q = "", separadas = "" } = await searchParams;
+  const { filtro = "todas", q = "", separadas = "", todas = "" } = await searchParams;
   const verSeparadas = separadas === "1";
+  const verTodas = todas === "1";
   const supabase = await createClient();
   // Velocidad (22 oct): la conexión, el estado de la sincronización, las
   // publicaciones y sus ligas se piden junto con lo demás (antes iban en fila).
@@ -146,6 +147,14 @@ export default async function StockMercadoLibre({
   // buscando algo: entonces se muestra todo lo que coincida, en una sola lista.
   const activas = texto ? coincide : coincide.filter((g) => g.activo);
   const inactivas = texto ? [] : coincide.filter((g) => !g.activo);
+  // Velocidad (22 oct; Isaac: "está muy lento"): con más de mil publicaciones
+  // la pantalla dibujaba TODAS las tarjetas (y las pausadas escondidas) de
+  // un jalón. Ahora, sin buscar, se dibujan las 50 más valiosas; "Ver todas"
+  // (?todas=1) trae el resto. El buscador sigue buscando en todas.
+  const LIMITE = 50;
+  const recortar = !texto && !verTodas;
+  const activasVisibles = recortar ? activas.slice(0, LIMITE) : activas;
+  const urlTodas = `/mercadolibre/stock?filtro=${filtro}${verSeparadas ? "&separadas=1" : ""}&todas=1`;
 
   const opcionesProducto = resumenes.map((r) => ({ sku: r.sku, nombre: r.nombre, stockActual: r.stockActual, imagenUrl: r.imagenUrl }));
 
@@ -373,16 +382,29 @@ export default async function StockMercadoLibre({
         </div>
       ) : (
         <>
-          {tabla(activas)}
-          {inactivas.length > 0 && (
-            <details className="group rounded-2xl border border-zinc-200 bg-zinc-50/60">
-              <summary className="cursor-pointer select-none px-5 py-3 text-sm text-zinc-500 hover:text-zinc-800">
-                <span className="mr-1 inline-block transition-transform group-open:rotate-90">▸</span>
-                Pausadas y finalizadas ({inactivas.length.toLocaleString("es-MX")}) — escondidas para no estorbar; si buscas arriba, sí aparecen
-              </summary>
-              <div className="px-2 pb-2">{tabla(inactivas)}</div>
-            </details>
+          {tabla(activasVisibles)}
+          {recortar && activas.length > LIMITE && (
+            <div className="text-center">
+              <Link href={urlTodas} className="inline-block rounded-xl border border-zinc-300 bg-white px-5 py-2.5 text-sm font-medium text-zinc-700 shadow-sm hover:border-zinc-400 hover:text-zinc-900">
+                Ver las {activas.length.toLocaleString("es-MX")} activas →
+              </Link>
+              <p className="mt-1 text-[11px] text-zinc-400">Se muestran las {LIMITE} más valiosas. El buscador de arriba busca en todas.</p>
+            </div>
           )}
+          {inactivas.length > 0 &&
+            (recortar ? (
+              <Link href={urlTodas} className="block rounded-2xl border border-zinc-200 bg-zinc-50/60 px-5 py-3 text-sm text-zinc-500 hover:text-zinc-800">
+                ▸ Pausadas y finalizadas ({inactivas.length.toLocaleString("es-MX")}) — ver todas
+              </Link>
+            ) : (
+              <details className="group rounded-2xl border border-zinc-200 bg-zinc-50/60">
+                <summary className="cursor-pointer select-none px-5 py-3 text-sm text-zinc-500 hover:text-zinc-800">
+                  <span className="mr-1 inline-block transition-transform group-open:rotate-90">▸</span>
+                  Pausadas y finalizadas ({inactivas.length.toLocaleString("es-MX")}) — escondidas para no estorbar; si buscas arriba, sí aparecen
+                </summary>
+                <div className="px-2 pb-2">{tabla(inactivas)}</div>
+              </details>
+            ))}
         </>
       )}
 
