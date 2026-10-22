@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
   const resultado: Record<string, unknown> = {};
 
   // Preguntas de compradores primero (son lo más urgente): traerlas,
-  // redactar borradores con la IA (máx. ~20 s) y avisar por Telegram.
+  // redactar borradores con la IA (máx. ~20 s) y avisar por WhatsApp.
   try {
     const { atenderPreguntas } = await import("@/lib/mercadolibre-preguntas");
     resultado.preguntas = await atenderPreguntas(20000);

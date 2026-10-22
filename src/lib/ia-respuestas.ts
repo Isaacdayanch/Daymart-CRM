@@ -50,6 +50,41 @@ export interface ContextoPregunta {
   indicacion: string | null;
 }
 
+/** Precio de Claude Opus 5.5 en dólares por millón de tokens. Escribir en
+ * caché cuesta 1.25× la entrada; leer de caché, 0.1×. */
+const PRECIO = { entrada: 4, salida: 20, cacheEscritura: 5, cacheLectura: 0.4 };
+
+/** Lo más que puede costar UNA respuesta (contexto grande + salida al tope):
+ * se aparta antes de llamar para que el tope diario nunca se pase. */
+export const COSTO_MAXIMO_RESPUESTA = 0.15;
+
+interface UsoTokens {
+  input_tokens?: number | null;
+  output_tokens?: number | null;
+  cache_creation_input_tokens?: number | null;
+  cache_read_input_tokens?: number | null;
+}
+
+export function costoDeUso(u: UsoTokens) {
+  return (
+    ((u.input_tokens ?? 0) * PRECIO.entrada +
+      (u.output_tokens ?? 0) * PRECIO.salida +
+      (u.cache_creation_input_tokens ?? 0) * PRECIO.cacheEscritura +
+      (u.cache_read_input_tokens ?? 0) * PRECIO.cacheLectura) /
+    1_000_000
+  );
+}
+
+/** Error de la IA que ya costó algo (se cobró aunque no sirviera). */
+export class ErrorIa extends Error {
+  constructor(
+    mensaje: string,
+    public costoUsd = 0,
+  ) {
+    super(mensaje);
+  }
+}
+
 export function iaConfigurada() {
   return Boolean(process.env.ANTHROPIC_API_KEY);
 }
@@ -137,35 +172,42 @@ function textoContexto(c: ContextoPregunta) {
 
 /** Pide el borrador a Claude. Lanza un Error con un mensaje en español si
  * algo falla (sin llave, cuota, se negó…). */
-export async function redactarConIa(contexto: ContextoPregunta): Promise<BorradorIa> {
+export async function redactarConIa(contexto: ContextoPregunta): Promise<BorradorIa & { costoUsd: number }> {
   if (!iaConfigurada()) throw new Error("Falta la llave ANTHROPIC_API_KEY en Vercel.");
   const client = new Anthropic();
   const sistema = contexto.reglas?.trim() ? `${SISTEMA}\n\nReglas de la casa (escritas por Isaac, siempre se respetan):\n${contexto.reglas.trim()}` : SISTEMA;
   try {
     const respuesta = await client.beta.messages.create({
       model: MODELO_IA,
-      max_tokens: 4000,
+      max_tokens: 2500,
       betas: ["server-side-fallback-2026-07-01"],
       fallbacks: "default",
       output_config: { effort: "medium", format: { type: "json_schema", schema: ESQUEMA } },
       system: [{ type: "text", text: sistema, cache_control: { type: "ephemeral" } }],
       messages: [{ role: "user", content: textoContexto(contexto) }],
     });
-    if (respuesta.stop_reason === "refusal") throw new Error("La IA no quiso redactar esta respuesta: contéstala tú.");
-    if (respuesta.stop_reason === "max_tokens") throw new Error("La IA se quedó sin espacio al redactar: vuelve a intentarlo.");
+    const costoUsd = costoDeUso(respuesta.usage);
+    if (respuesta.stop_reason === "refusal") throw new ErrorIa("La IA no quiso redactar esta respuesta: contéstala tú.", costoUsd);
+    if (respuesta.stop_reason === "max_tokens") throw new ErrorIa("La IA se quedó sin espacio al redactar: vuelve a intentarlo.", costoUsd);
     const texto = respuesta.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("");
-    const datos = JSON.parse(texto) as BorradorIa;
+    let datos: BorradorIa;
+    try {
+      datos = JSON.parse(texto) as BorradorIa;
+    } catch {
+      throw new ErrorIa("La IA contestó en un formato raro: vuelve a intentarlo.", costoUsd);
+    }
     return {
       respuesta: String(datos.respuesta ?? "").trim().slice(0, 2000),
       confianza: (["alta", "media", "baja"] as const).includes(datos.confianza) ? datos.confianza : "baja",
       categoria: (CATEGORIAS_PREGUNTA as readonly string[]).includes(datos.categoria) ? datos.categoria : "otro",
       nota: String(datos.nota ?? "").trim(),
+      costoUsd,
     };
   } catch (e) {
+    if (e instanceof ErrorIa) throw e;
     if (e instanceof Anthropic.AuthenticationError) throw new Error("La llave ANTHROPIC_API_KEY no es válida: revísala en Vercel.");
     if (e instanceof Anthropic.RateLimitError) throw new Error("La IA está saturada en este momento: se reintenta en unos minutos.");
     if (e instanceof Anthropic.APIError) throw new Error(`La IA respondió con error ${e.status ?? ""}: ${e.message}`.trim());
-    if (e instanceof SyntaxError) throw new Error("La IA contestó en un formato raro: vuelve a intentarlo.");
     throw e;
   }
 }

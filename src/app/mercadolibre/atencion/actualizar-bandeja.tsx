@@ -27,6 +27,7 @@ export function ActualizarBandeja() {
       if (r.nuevas) partes.push(`${r.nuevas} nuevas`);
       if (r.redactadas) partes.push(`${r.redactadas} borradores listos`);
       if (r.errores) partes.push(`${r.errores} no se pudieron redactar`);
+      if (r.topeAlcanzado) partes.push("se llegó al tope de hoy");
       setTexto(partes.join(" · "));
     }
     router.refresh();

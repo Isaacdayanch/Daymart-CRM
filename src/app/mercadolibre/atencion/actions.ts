@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { obtenerPerfilActual } from "@/lib/perfil";
-import { atenderPreguntas, conectarTelegram, descartarPregunta, desconectarTelegram, guardarReglasAtencion, redactarBorrador, responderPregunta } from "@/lib/mercadolibre-preguntas";
+import { atenderPreguntas, conectarWhatsapp, descartarPregunta, desconectarWhatsapp, guardarLimiteDiario, guardarReglasAtencion, redactarBorrador, responderPregunta } from "@/lib/mercadolibre-preguntas";
 
 async function soloDueno() {
   const perfil = await obtenerPerfilActual();
@@ -69,20 +69,31 @@ export async function guardarReglas(formData: FormData) {
   }
 }
 
-export async function conectarTelegramAccion() {
+export async function guardarTope(limite: number) {
   if (!(await soloDueno())) return { error: "Solo el dueño puede hacer esto." };
   try {
-    const nombre = await conectarTelegram();
+    await guardarLimiteDiario(limite);
     revalidatePath("/mercadolibre/atencion");
-    return { ok: true, nombre };
+    return { ok: true };
   } catch (e) {
-    return { error: mensaje(e, "No se pudo conectar Telegram.") };
+    return { error: mensaje(e, "No se pudo guardar el tope.") };
   }
 }
 
-export async function desconectarTelegramAccion() {
+export async function conectarWhatsappAccion(formData: FormData) {
   if (!(await soloDueno())) return { error: "Solo el dueño puede hacer esto." };
-  await desconectarTelegram();
+  try {
+    const telefono = await conectarWhatsapp(String(formData.get("telefono") ?? ""), String(formData.get("apikey") ?? ""));
+    revalidatePath("/mercadolibre/atencion");
+    return { ok: true, telefono };
+  } catch (e) {
+    return { error: mensaje(e, "No se pudo conectar WhatsApp.") };
+  }
+}
+
+export async function desconectarWhatsappAccion() {
+  if (!(await soloDueno())) return { error: "Solo el dueño puede hacer esto." };
+  await desconectarWhatsapp();
   revalidatePath("/mercadolibre/atencion");
   return { ok: true };
 }

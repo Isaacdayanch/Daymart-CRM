@@ -41,15 +41,31 @@ create index if not exists mercadolibre_preguntas_item_idx on mercadolibre_pregu
 alter table mercadolibre_preguntas enable row level security;
 
 -- Configuración de atención (una sola fila, id = 1): reglas de la casa que
--- la IA siempre respeta (envíos, factura, garantía…) y el chat de Telegram
--- donde le llegan los avisos a Isaac.
+-- la IA siempre respeta (envíos, factura, garantía…), el tope diario de gasto
+-- en la IA (máx. $2 USD, Isaac 22 oct) y el WhatsApp donde le llegan los
+-- avisos (CallMeBot: su celular + la apikey que le manda CallMeBot).
 create table if not exists mercadolibre_atencion_config (
   id integer primary key default 1 check (id = 1),
   reglas text,
-  telegram_chat_id text,
   actualizado_en timestamptz not null default now()
 );
+
+alter table mercadolibre_atencion_config add column if not exists limite_diario_usd numeric not null default 1 check (limite_diario_usd > 0 and limite_diario_usd <= 2);
+alter table mercadolibre_atencion_config add column if not exists whatsapp_telefono text;
+alter table mercadolibre_atencion_config add column if not exists whatsapp_apikey text;
 
 insert into mercadolibre_atencion_config (id) values (1) on conflict (id) do nothing;
 
 alter table mercadolibre_atencion_config enable row level security;
+
+-- Lo que costó cada llamada a la IA (dólares), para el tope diario.
+create table if not exists mercadolibre_ia_gastos (
+  id bigint generated always as identity primary key,
+  pregunta_id bigint,
+  costo_usd numeric not null,
+  creado_en timestamptz not null default now()
+);
+
+create index if not exists mercadolibre_ia_gastos_fecha_idx on mercadolibre_ia_gastos (creado_en);
+
+alter table mercadolibre_ia_gastos enable row level security;

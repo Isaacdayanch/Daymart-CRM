@@ -2,12 +2,14 @@ import Link from "next/link";
 import { createServiceClient } from "@/lib/supabase/servicio";
 import { obtenerConexion } from "@/lib/mercadolibre-auth";
 import { iaConfigurada } from "@/lib/ia-respuestas";
-import { faltaSqlAtencion, obtenerConfigAtencion, telegramConfigurado, type PreguntaMl } from "@/lib/mercadolibre-preguntas";
+import { faltaSqlAtencion, gastoIaHoy, LIMITE_DIARIO_DEFAULT, obtenerConfigAtencion, type ConfigAtencion, type PreguntaMl } from "@/lib/mercadolibre-preguntas";
+import { COSTO_MAXIMO_RESPUESTA } from "@/lib/ia-respuestas";
 import { formatoFechaHoraMx } from "@/lib/fechas-mx";
 import { ActualizarBandeja } from "./actualizar-bandeja";
 import { TarjetaPregunta, type ProductoDePregunta } from "./tarjeta-pregunta";
 import { ReglasCasa } from "./reglas-casa";
-import { PanelTelegram } from "./panel-telegram";
+import { PanelWhatsapp } from "./panel-whatsapp";
+import { TopeDiario } from "./tope-diario";
 import { VolverABandeja } from "./volver-a-bandeja";
 
 export const maxDuration = 60;
@@ -30,15 +32,13 @@ interface PubFila {
  * Nada se manda a Mercado Libre sin su clic. */
 export default async function AtencionClientes() {
   const supabase = createServiceClient();
-  const [conexion, pendientes, respondidas, descartadas, config] = await Promise.all([
+  const [conexion, pendientes, respondidas, descartadas, config, gastoHoy] = await Promise.all([
     obtenerConexion().catch(() => null),
     supabase.from("mercadolibre_preguntas").select("*").eq("estado", "PENDIENTE").order("fecha_creacion", { ascending: true }).limit(200).returns<PreguntaMl[]>(),
     supabase.from("mercadolibre_preguntas").select("*").eq("estado", "RESPONDIDA").order("respondida_en", { ascending: false, nullsFirst: false }).limit(30).returns<PreguntaMl[]>(),
     supabase.from("mercadolibre_preguntas").select("*").eq("estado", "DESCARTADA").order("fecha_creacion", { ascending: false }).limit(20).returns<PreguntaMl[]>(),
-    obtenerConfigAtencion().catch(() => ({
-      reglas: null,
-      telegram_chat_id: null,
-    })),
+    obtenerConfigAtencion().catch((): ConfigAtencion => ({ reglas: null, whatsapp_telefono: null, whatsapp_apikey: null, limite_diario_usd: LIMITE_DIARIO_DEFAULT })),
+    gastoIaHoy().catch(() => 0),
   ]);
 
   const faltaSql = faltaSqlAtencion(pendientes.error?.message);
@@ -85,6 +85,8 @@ export default async function AtencionClientes() {
       }) === hoy,
   ).length;
   const ia = iaConfigurada();
+  // Si ya no alcanza para una respuesta más, hoy las contesta Isaac a mano.
+  const topeAlcanzado = gastoHoy + COSTO_MAXIMO_RESPUESTA > config.limite_diario_usd;
 
   return (
     <div className="space-y-8">
@@ -117,6 +119,12 @@ export default async function AtencionClientes() {
         </Aviso>
       )}
 
+      {ia && !faltaSql && topeAlcanzado && (
+        <Aviso>
+          Hoy ya se usó el tope de <b>${config.limite_diario_usd.toFixed(2)} USD</b> en la IA (llevas ${gastoHoy.toFixed(2)}). Las preguntas siguen llegando aquí: contéstalas tú, o mañana se redactan solas.
+        </Aviso>
+      )}
+
       {!faltaSql && conexion && <ActualizarBandeja />}
 
       {!faltaSql && (
@@ -128,7 +136,7 @@ export default async function AtencionClientes() {
               <p className="text-sm text-zinc-500">Cuando un comprador pregunte algo, aparece aquí con su respuesta lista.</p>
             </div>
           ) : (
-            listaPendientes.map((p) => <TarjetaPregunta key={p.id} pregunta={p} producto={productoDe.get(p.item_id)!} fecha={formatoFechaHoraMx(p.fecha_creacion)} iaLista={ia} />)
+            listaPendientes.map((p) => <TarjetaPregunta key={p.id} pregunta={p} producto={productoDe.get(p.item_id)!} fecha={formatoFechaHoraMx(p.fecha_creacion)} iaLista={ia && !topeAlcanzado} />)
           )}
         </section>
       )}
@@ -136,7 +144,8 @@ export default async function AtencionClientes() {
       {!faltaSql && (
         <section className="space-y-3">
           <ReglasCasa reglas={config.reglas} />
-          <PanelTelegram configurado={telegramConfigurado()} conectado={Boolean(config.telegram_chat_id)} />
+          {ia && <TopeDiario gastoHoy={gastoHoy} limite={config.limite_diario_usd} />}
+          <PanelWhatsapp telefono={config.whatsapp_telefono} />
         </section>
       )}
 

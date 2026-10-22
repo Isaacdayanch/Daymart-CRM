@@ -17,8 +17,8 @@ import { createServiceClient } from "./supabase/servicio";
 import { todasLasFilas } from "./cargar-todo";
 import { stockActual } from "./calculos-stock";
 import { claveVinculo, obtenerVinculos, skuCrmDe, type PublicacionMl } from "./mercadolibre-stock";
-import { formatoFechaHoraMx } from "./fechas-mx";
-import { iaConfigurada, redactarConIa, type ContextoPregunta } from "./ia-respuestas";
+import { formatoFechaHoraMx, inicioDelDiaMx } from "./fechas-mx";
+import { COSTO_MAXIMO_RESPUESTA, ErrorIa, iaConfigurada, redactarConIa, type ContextoPregunta } from "./ia-respuestas";
 import { problemaEnRespuesta } from "./respuestas-ml";
 import type { MovimientoStock } from "./tipos";
 
@@ -48,8 +48,14 @@ export interface PreguntaMl {
 
 export interface ConfigAtencion {
   reglas: string | null;
-  telegram_chat_id: string | null;
+  whatsapp_telefono: string | null;
+  whatsapp_apikey: string | null;
+  /** Lo más que se puede gastar en la IA por día (dólares). Máximo $2. */
+  limite_diario_usd: number;
 }
+
+export const LIMITE_DIARIO_DEFAULT = 1;
+export const LIMITE_DIARIO_MAXIMO = 2;
 
 interface PreguntaApi {
   id: number;
@@ -177,8 +183,13 @@ interface ItemApi {
 
 export async function obtenerConfigAtencion(): Promise<ConfigAtencion> {
   const supabase = createServiceClient();
-  const { data } = await supabase.from("mercadolibre_atencion_config").select("reglas, telegram_chat_id").eq("id", 1).maybeSingle<ConfigAtencion>();
-  return { reglas: data?.reglas ?? null, telegram_chat_id: data?.telegram_chat_id ?? null };
+  const { data } = await supabase.from("mercadolibre_atencion_config").select("reglas, whatsapp_telefono, whatsapp_apikey, limite_diario_usd").eq("id", 1).maybeSingle<ConfigAtencion>();
+  return {
+    reglas: data?.reglas ?? null,
+    whatsapp_telefono: data?.whatsapp_telefono ?? null,
+    whatsapp_apikey: data?.whatsapp_apikey ?? null,
+    limite_diario_usd: Math.min(LIMITE_DIARIO_MAXIMO, Number(data?.limite_diario_usd ?? LIMITE_DIARIO_DEFAULT) || LIMITE_DIARIO_DEFAULT),
+  };
 }
 
 async function armarContexto(p: PreguntaMl, indicacion: string | null, comun: { vinculos: Map<string, string>; reglas: string | null }): Promise<ContextoPregunta> {
@@ -262,7 +273,37 @@ async function armarContexto(p: PreguntaMl, indicacion: string | null, comun: { 
 
 async function datosComunes() {
   const [vinculosLista, config] = await Promise.all([obtenerVinculos(), obtenerConfigAtencion()]);
-  return { vinculos: new Map(vinculosLista.map((v) => [claveVinculo(v.item_id, v.variation_id), v.sku_crm])), reglas: config.reglas };
+  return { vinculos: new Map(vinculosLista.map((v) => [claveVinculo(v.item_id, v.variation_id), v.sku_crm])), reglas: config.reglas, limite: config.limite_diario_usd };
+}
+
+// ---------------------------------------------------------------------------
+// Tope diario de gasto en la IA (Isaac, 22 oct: "limitado a $1 o $2 diarios,
+// no más, para que no se me acaben mis $100"). Cada llamada anota lo que
+// costó en `mercadolibre_ia_gastos`; antes de cada llamada se aparta el costo
+// máximo posible de una respuesta, así el total del día nunca pasa del tope.
+// El día se cuenta en horario de la Ciudad de México.
+
+export async function gastoIaHoy() {
+  const supabase = createServiceClient();
+  const { data, error } = await supabase
+    .from("mercadolibre_ia_gastos")
+    .select("costo_usd")
+    .gte("creado_en", inicioDelDiaMx(new Date()).toISOString())
+    .returns<{ costo_usd: number }[]>();
+  if (error) throw new Error(`No pude revisar cuánto se ha gastado hoy en la IA (¿falta el SQL 0056?): ${error.message}`);
+  return (data ?? []).reduce((s, g) => s + Number(g.costo_usd || 0), 0);
+}
+
+async function registrarGastoIa(preguntaId: number, costoUsd: number) {
+  if (!costoUsd) return;
+  const supabase = createServiceClient();
+  await supabase.from("mercadolibre_ia_gastos").insert({ pregunta_id: preguntaId, costo_usd: costoUsd });
+}
+
+export class TopeDiario extends Error {}
+
+function mensajeTope(limite: number) {
+  return `Ya se usó el tope de $${limite.toFixed(2)} USD de hoy en la IA: esta pregunta la contestas tú, o mañana se redacta sola.`;
 }
 
 /** Redacta (o vuelve a redactar) el borrador de una pregunta y lo guarda. */
@@ -271,9 +312,12 @@ export async function redactarBorrador(id: number, indicacion: string | null = n
   const { data: p, error } = await supabase.from("mercadolibre_preguntas").select("*").eq("id", id).maybeSingle<PreguntaMl>();
   if (error) throw new Error(error.message);
   if (!p) throw new Error("No encontré esa pregunta.");
+  const datos = comun ?? (await datosComunes());
+  if ((await gastoIaHoy()) + COSTO_MAXIMO_RESPUESTA > datos.limite) throw new TopeDiario(mensajeTope(datos.limite));
   try {
-    const contexto = await armarContexto(p, indicacion?.trim() || null, comun ?? (await datosComunes()));
+    const contexto = await armarContexto(p, indicacion?.trim() || null, datos);
     const b = await redactarConIa(contexto);
+    await registrarGastoIa(id, b.costoUsd);
     await supabase
       .from("mercadolibre_preguntas")
       .update({
@@ -287,6 +331,7 @@ export async function redactarBorrador(id: number, indicacion: string | null = n
       })
       .eq("id", id);
   } catch (e) {
+    if (e instanceof ErrorIa) await registrarGastoIa(id, e.costoUsd);
     const mensaje = e instanceof Error ? e.message : "No se pudo redactar.";
     await supabase.from("mercadolibre_preguntas").update({ borrador_error: mensaje, borrador_generado_en: new Date().toISOString() }).eq("id", id);
     throw new Error(mensaje);
@@ -297,7 +342,7 @@ export async function redactarBorrador(id: number, indicacion: string | null = n
  * de 3 en 3, mientras quede tiempo. Una pregunta que falló se reintenta
  * después de 15 minutos. */
 export async function generarBorradoresPendientes(presupuestoMs = 30000) {
-  if (!iaConfigurada()) return { redactadas: 0, errores: 0, sinLlave: true };
+  if (!iaConfigurada()) return { redactadas: 0, errores: 0, sinLlave: true, topeAlcanzado: false };
   const inicio = Date.now();
   const supabase = createServiceClient();
   const reintento = new Date(Date.now() - 15 * 60000).toISOString();
@@ -311,18 +356,27 @@ export async function generarBorradoresPendientes(presupuestoMs = 30000) {
     .limit(30)
     .returns<{ id: number }[]>();
   const ids = (data ?? []).map((d) => Number(d.id));
-  if (!ids.length) return { redactadas: 0, errores: 0, sinLlave: false };
+  if (!ids.length) return { redactadas: 0, errores: 0, sinLlave: false, topeAlcanzado: false };
   const comun = await datosComunes();
   let redactadas = 0;
   let errores = 0;
-  for (let i = 0; i < ids.length; i += 3) {
+  let topeAlcanzado = false;
+  for (let i = 0; i < ids.length; ) {
     // Cada borrador tarda ~10–20 s: no se empieza una tanda que no alcance.
     if (Date.now() - inicio > presupuestoMs - 20000) break;
-    const r = await Promise.allSettled(ids.slice(i, i + 3).map((id) => redactarBorrador(id, null, comun)));
+    // De 3 en 3 mientras sobre dinero para las 3; cerca del tope, de una en una.
+    const disponible = comun.limite - (await gastoIaHoy());
+    const cuantas = Math.min(3, Math.floor(disponible / COSTO_MAXIMO_RESPUESTA));
+    if (cuantas < 1) {
+      topeAlcanzado = true;
+      break;
+    }
+    const r = await Promise.allSettled(ids.slice(i, i + cuantas).map((id) => redactarBorrador(id, null, comun)));
+    i += cuantas;
     redactadas += r.filter((x) => x.status === "fulfilled").length;
-    errores += r.filter((x) => x.status === "rejected").length;
+    errores += r.filter((x) => x.status === "rejected" && !(x.reason instanceof TopeDiario)).length;
   }
-  return { redactadas, errores, sinLlave: false };
+  return { redactadas, errores, sinLlave: false, topeAlcanzado };
 }
 
 // ---------------------------------------------------------------------------
@@ -366,6 +420,14 @@ export async function descartarPregunta(id: number, volver = false) {
   if (error) throw new Error(error.message);
 }
 
+export async function guardarLimiteDiario(limite: number) {
+  if (!(limite > 0)) throw new Error("Pon un tope mayor a $0.");
+  if (limite > LIMITE_DIARIO_MAXIMO) throw new Error(`El tope máximo es de $${LIMITE_DIARIO_MAXIMO} USD al día.`);
+  const supabase = createServiceClient();
+  const { error } = await supabase.from("mercadolibre_atencion_config").upsert({ id: 1, limite_diario_usd: limite, actualizado_en: new Date().toISOString() });
+  if (error) throw new Error(error.message);
+}
+
 export async function guardarReglasAtencion(reglas: string) {
   const supabase = createServiceClient();
   const { error } = await supabase.from("mercadolibre_atencion_config").upsert({ id: 1, reglas: reglas.trim() || null, actualizado_en: new Date().toISOString() });
@@ -373,56 +435,53 @@ export async function guardarReglasAtencion(reglas: string) {
 }
 
 // ---------------------------------------------------------------------------
-// Avisos al celular por Telegram (opcional)
+// Avisos al celular por WhatsApp (opcional) — vía CallMeBot
 //
-// Isaac crea un bot con @BotFather y pone su llave en Vercel
-// (TELEGRAM_BOT_TOKEN). Le escribe cualquier cosa al bot y en la pantalla le
-// da "Conectar": `conectarTelegram` lee el último mensaje que recibió el bot
-// y guarda ese chat. Desde ahí, cada pregunta nueva con borrador le llega al
-// celular con el link para aprobarla.
-
-export function telegramConfigurado() {
-  return Boolean(process.env.TELEGRAM_BOT_TOKEN);
-}
+// Isaac (22 oct) prefirió WhatsApp a Telegram. La API oficial de WhatsApp
+// (Meta) pide cuenta de empresa verificada, número propio y plantillas
+// aprobadas; para avisarse a sí mismo basta CallMeBot (gratis): Isaac le
+// manda un mensaje a su número, recibe una "apikey" y la pega en la pantalla
+// junto con su celular. Sus mensajes solo le llegan a ÉL.
 
 const URL_ATENCION = `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL || "daymart-crm.vercel.app"}/mercadolibre/atencion`;
 
-async function telegram<T>(metodo: string, cuerpo: Record<string, unknown> = {}): Promise<T> {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  if (!token) throw new Error("Falta la llave TELEGRAM_BOT_TOKEN en Vercel.");
-  const r = await fetch(`https://api.telegram.org/bot${token}/${metodo}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(cuerpo),
-    cache: "no-store",
-  });
-  const j = (await r.json().catch(() => ({}))) as { ok?: boolean; result?: T; description?: string };
-  if (!j.ok) throw new Error(`Telegram respondió: ${j.description ?? r.status}`);
-  return j.result as T;
+/** Celular de México → "+52XXXXXXXXXX" (acepta espacios, guiones, +52, 521…). */
+export function normalizarCelular(texto: string) {
+  let d = texto.replace(/\D/g, "");
+  if (d.length === 13 && d.startsWith("521")) d = "52" + d.slice(3);
+  if (d.length === 10) d = "52" + d;
+  return d.length >= 11 ? `+${d}` : null;
 }
 
-export async function conectarTelegram() {
-  const updates = await telegram<{ message?: { chat?: { id?: number; first_name?: string } } }[]>("getUpdates", { limit: 20 });
-  const chat = [...updates].reverse().find((u) => u.message?.chat?.id)?.message?.chat;
-  if (!chat?.id) throw new Error("Tu bot todavía no recibe ningún mensaje: ábrelo en Telegram, mándale \"hola\" y vuelve a intentar.");
+async function mandarWhatsapp(telefono: string, apikey: string, texto: string) {
+  const url = `https://api.callmebot.com/whatsapp.php?phone=${encodeURIComponent(telefono)}&text=${encodeURIComponent(texto)}&apikey=${encodeURIComponent(apikey)}`;
+  const r = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(15000) });
+  const cuerpo = (await r.text().catch(() => "")).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  if (!r.ok || /error|invalid|not allowed/i.test(cuerpo)) throw new Error(`WhatsApp (CallMeBot) no lo mandó: ${cuerpo.slice(0, 200) || r.status}`);
+}
+
+/** Guarda el celular y la apikey SOLO si el mensaje de prueba sí sale. */
+export async function conectarWhatsapp(telefonoTexto: string, apikey: string) {
+  const telefono = normalizarCelular(telefonoTexto);
+  if (!telefono) throw new Error("Escribe tu celular a 10 dígitos (ej. 55 1234 5678).");
+  if (!apikey.trim()) throw new Error("Falta la apikey que te mandó CallMeBot por WhatsApp.");
+  await mandarWhatsapp(telefono, apikey.trim(), "✅ Listo: aquí te van a llegar las preguntas de Mercado Libre de Daymart.");
   const supabase = createServiceClient();
-  const { error } = await supabase.from("mercadolibre_atencion_config").upsert({ id: 1, telegram_chat_id: String(chat.id), actualizado_en: new Date().toISOString() });
+  const { error } = await supabase.from("mercadolibre_atencion_config").upsert({ id: 1, whatsapp_telefono: telefono, whatsapp_apikey: apikey.trim(), actualizado_en: new Date().toISOString() });
   if (error) throw new Error(error.message);
-  await telegram("sendMessage", { chat_id: chat.id, text: "✅ Listo: aquí te van a llegar las preguntas de Mercado Libre de Daymart." });
-  return chat.first_name ?? String(chat.id);
+  return telefono;
 }
 
-export async function desconectarTelegram() {
+export async function desconectarWhatsapp() {
   const supabase = createServiceClient();
-  await supabase.from("mercadolibre_atencion_config").upsert({ id: 1, telegram_chat_id: null, actualizado_en: new Date().toISOString() });
+  await supabase.from("mercadolibre_atencion_config").upsert({ id: 1, whatsapp_telefono: null, whatsapp_apikey: null, actualizado_en: new Date().toISOString() });
 }
 
 /** Avisa al celular las preguntas pendientes que todavía no se avisaron
  * (con su borrador si ya lo hay; si la IA no está, igual avisa). */
 export async function avisarPreguntasNuevas() {
-  if (!telegramConfigurado()) return 0;
   const config = await obtenerConfigAtencion();
-  if (!config.telegram_chat_id) return 0;
+  if (!config.whatsapp_telefono || !config.whatsapp_apikey) return 0;
   const supabase = createServiceClient();
   const hace10 = new Date(Date.now() - 10 * 60000).toISOString();
   const { data } = await supabase
@@ -431,7 +490,7 @@ export async function avisarPreguntasNuevas() {
     .eq("estado", "PENDIENTE")
     .is("avisado_en", null)
     .order("fecha_creacion", { ascending: true })
-    .limit(10)
+    .limit(5)
     .returns<Pick<PreguntaMl, "id" | "item_id" | "texto" | "borrador" | "confianza" | "fecha_creacion" | "borrador_generado_en">[]>();
   // Espera el borrador hasta 10 minutos; después avisa aunque no haya.
   const listas = (data ?? []).filter((p) => p.borrador || p.borrador_generado_en || !iaConfigurada() || p.fecha_creacion < hace10);
@@ -441,10 +500,10 @@ export async function avisarPreguntasNuevas() {
   let avisadas = 0;
   for (const p of listas) {
     const lineas = [`❓ Pregunta en Mercado Libre`, `📦 ${titulo.get(p.item_id) ?? p.item_id}`, ``, `“${p.texto}”`];
-    if (p.borrador) lineas.push(``, `✍️ Borrador (${p.confianza ?? "?"}):`, p.borrador);
+    if (p.borrador) lineas.push(``, `✍️ Respuesta lista (${p.confianza ?? "?"}):`, p.borrador);
     lineas.push(``, `Aprobar o corregir: ${URL_ATENCION}`);
     try {
-      await telegram("sendMessage", { chat_id: config.telegram_chat_id, text: lineas.join("\n"), disable_web_page_preview: true });
+      await mandarWhatsapp(config.whatsapp_telefono, config.whatsapp_apikey, lineas.join("\n"));
       await supabase.from("mercadolibre_preguntas").update({ avisado_en: new Date().toISOString() }).eq("id", p.id);
       avisadas++;
     } catch {
