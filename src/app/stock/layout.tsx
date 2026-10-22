@@ -3,6 +3,7 @@ import { Logo } from "@/components/logo";
 import { MenuSesion } from "../menu-sesion";
 import { Suspense } from "react";
 import { AvisoEnviosFull } from "./aviso-envios-full";
+import { OcultarEnFull } from "./ocultar-en-full";
 
 export default function StockLayout({ children }: { children: React.ReactNode }) {
 
@@ -24,9 +25,11 @@ export default function StockLayout({ children }: { children: React.ReactNode })
       </header>
       <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6 print:px-0 print:py-0">
         {/* Velocidad: el aviso consulta Mercado Libre; va en Suspense para que la pantalla no lo espere. */}
-        <Suspense fallback={null}>
-          <AvisoEnviosFull />
-        </Suspense>
+        <OcultarEnFull>
+          <Suspense fallback={null}>
+            <AvisoEnviosFull />
+          </Suspense>
+        </OcultarEnFull>
         {children}
       </main>
     </div>

@@ -12,6 +12,7 @@ import { MenuMas } from "./menu-mas";
 import { cargarDatosFull, resumenFullDesde } from "@/lib/mercadolibre-stock";
 import { Logo } from "@/components/logo";
 import { AvisoLlegadas } from "@/app/contenedores/aviso-llegadas";
+import { AvisoDirector } from "@/app/director/aviso-director";
 
 const ACCESOS = [
   {
@@ -109,6 +110,11 @@ export default async function Dashboard() {
       </header>
 
       <main className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
+        {verDinero && (
+          <Suspense fallback={null}>
+            <AvisoDirector />
+          </Suspense>
+        )}
         <Suspense fallback={null}>
           <AvisoLlegadas />
         </Suspense>

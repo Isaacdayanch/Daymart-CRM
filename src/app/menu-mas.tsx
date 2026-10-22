@@ -73,6 +73,21 @@ const ITEMS = [
     ),
   },
   {
+    href: "/compras",
+    etiqueta: "Compras",
+    soloDueno: true,
+    // Bolsa de compras: pedidos a proveedores de México.
+    icono: (
+      <path
+        d="M4 6.5h10l-.8 8a1.5 1.5 0 0 1-1.5 1.35H6.3A1.5 1.5 0 0 1 4.8 14.5L4 6.5ZM6.5 6.5V5a2.5 2.5 0 0 1 5 0v1.5"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    ),
+  },
+  {
     href: "/stock",
     etiqueta: "Stock",
     // Caja isométrica (3D): una pila de mercancía, distinta al
@@ -95,6 +110,21 @@ const ITEMS = [
     icono: (
       <path
         d="M7 11.5 4.8 13.7a2.1 2.1 0 0 1-3-3L5.3 7.2a2.1 2.1 0 0 1 3 0M11 6.5l2.2-2.2a2.1 2.1 0 0 1 3 3l-3.5 3.5a2.1 2.1 0 0 1-3 0M7.5 10.5l3-3"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    ),
+  },
+  {
+    href: "/director",
+    etiqueta: "Director Meli",
+    soloDueno: true,
+    // Estrella con palomita: el que decide y aprueba.
+    icono: (
+      <path
+        d="M9 2.5l1.9 3.9 4.3.6-3.1 3 .7 4.3L9 12.3l-3.8 2 .7-4.3-3.1-3 4.3-.6L9 2.5ZM7 9.2l1.4 1.4 2.6-2.8"
         stroke="currentColor"
         strokeWidth="1.5"
         strokeLinecap="round"

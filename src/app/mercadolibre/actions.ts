@@ -190,6 +190,10 @@ export async function ligarSkuMl(sellerSku: string, skuCrm: string, piezasPorUni
     .from("mercadolibre_sku_vinculos")
     .upsert({ seller_sku: clave, sku_crm: skuCrm, piezas_por_unidad: factor, actualizado_en: new Date().toISOString() }, { onConflict: "seller_sku" });
   if (error) return { error: /does not exist|schema cache/i.test(error.message) ? "Falta correr el SQL 0048 en Supabase para ligar por SKU." : error.message };
+  // La liga por Código ML manda: los códigos de Full de estas publicaciones
+  // se ligan igual, para que no quede una liga vieja ganándole a esta.
+  const r = await guardarLigasCodigo(await codigosDe({ sellerSku: clave }), skuCrm, factor);
+  if (r.error && !r.faltaSql) return { error: r.error };
   revalidarLigas();
   return { error: null };
 }
@@ -203,6 +207,7 @@ export async function quitarLigaSkuMl(sellerSku: string) {
   const supabase = createServiceClient();
   const { error } = await supabase.from("mercadolibre_sku_vinculos").delete().eq("seller_sku", clave);
   if (error) return { error: error.message };
+  await borrarLigasCodigo(await codigosDe({ sellerSku: clave }));
   revalidarLigas();
   return { error: null };
 }
@@ -236,6 +241,20 @@ export async function olvidarPublicacionMl(itemId: string, variationId: number |
   return { error: null };
 }
 
+/** "Olvidar" un Código ML de Full en Ligar (no tiene stock ni se va a
+ * restockear). No borra nada: se puede volver a mostrar. */
+export async function olvidarCodigoMl(inventoryId: string, titulo?: string | null) {
+  if (!(await soloDueno())) return { error: "Solo el dueño puede hacer esto." };
+  const { claveCodigoMl } = await import("@/lib/mercadolibre-stock");
+  if (!inventoryId?.trim()) return { error: "Falta el Código ML." };
+  const { createServiceClient } = await import("@/lib/supabase/servicio");
+  const supabase = createServiceClient();
+  const { error } = await supabase.from("mercadolibre_ligas_ignoradas").upsert({ clave: claveCodigoMl(inventoryId), titulo: titulo ?? null }, { onConflict: "clave" });
+  if (error) return { error: /does not exist|schema cache/i.test(error.message) ? "Falta correr el SQL 0050 en Supabase para poder olvidar productos." : error.message };
+  revalidarLigas();
+  return { error: null };
+}
+
 /** Volver a mostrar algo olvidado. */
 export async function recordarLigaMl(clave: string) {
   if (!(await soloDueno())) return { error: "Solo el dueño puede hacer esto." };
@@ -251,6 +270,69 @@ function revalidarLigas() {
   for (const ruta of ["/mercadolibre/skus", "/mercadolibre/stock", "/mercadolibre/analisis", "/mercadolibre/promociones", "/mercadolibre", "/stock", "/stock/full", "/"]) revalidatePath(ruta);
 }
 
+const FALTA_SQL_0055 = "Falta correr el SQL 0058 en Supabase para ligar por Código ML.";
+
+/** Códigos ML (inventory_id de Full) de una publicación/variante o de todas
+ * las publicaciones con un SKU de ML. */
+async function codigosDe(filtro: { itemId: string; variationId: number | null } | { sellerSku: string }): Promise<string[]> {
+  const { createServiceClient } = await import("@/lib/supabase/servicio");
+  const supabase = createServiceClient();
+  let consulta = supabase.from("mercadolibre_publicaciones").select("inventory_id, seller_sku").not("inventory_id", "is", null);
+  if ("itemId" in filtro) {
+    consulta = consulta.eq("item_id", filtro.itemId);
+    consulta = filtro.variationId === null ? consulta.is("variation_id", null) : consulta.eq("variation_id", filtro.variationId);
+  } else {
+    consulta = consulta.ilike("seller_sku", filtro.sellerSku.trim().replace(/[\\%_]/g, (c) => `\\${c}`));
+  }
+  const { data } = await consulta.returns<{ inventory_id: string | null }[]>();
+  return Array.from(new Set((data ?? []).map((f) => f.inventory_id?.trim().toUpperCase()).filter((x): x is string => Boolean(x))));
+}
+
+/** Escribe (o reemplaza) la liga de uno o varios Códigos ML. Devuelve
+ * `faltaSql` si la tabla 0055 todavía no existe. */
+async function guardarLigasCodigo(codigos: string[], skuCrm: string, factor: number): Promise<{ error: string | null; faltaSql?: boolean }> {
+  if (!codigos.length) return { error: null };
+  const { createServiceClient } = await import("@/lib/supabase/servicio");
+  const supabase = createServiceClient();
+  const ahora = new Date().toISOString();
+  const { error } = await supabase
+    .from("mercadolibre_codigo_vinculos")
+    .upsert(codigos.map((c) => ({ inventory_id: c, sku_crm: skuCrm, piezas_por_unidad: factor, actualizado_en: ahora })), { onConflict: "inventory_id" });
+  if (error) return /does not exist|schema cache/i.test(error.message) ? { error: FALTA_SQL_0055, faltaSql: true } : { error: error.message };
+  return { error: null };
+}
+
+async function borrarLigasCodigo(codigos: string[]) {
+  if (!codigos.length) return;
+  const { createServiceClient } = await import("@/lib/supabase/servicio");
+  await createServiceClient().from("mercadolibre_codigo_vinculos").delete().in("inventory_id", codigos);
+}
+
+/** Liga un Código ML de Full a un producto del CRM (21 oct): la liga que
+ * manda en todo el sistema (envíos a Full, ventas, valor en Full, análisis,
+ * etiquetas). Se usa desde la vista previa del envío y desde Ligar SKUs. */
+export async function ligarCodigoMl(inventoryId: string, skuCrm: string, piezasPorUnidad = 1) {
+  if (!(await soloDueno())) return { error: "Solo el dueño puede hacer esto." };
+  const codigo = inventoryId?.trim().toUpperCase();
+  if (!codigo) return { error: "Falta el Código ML." };
+  if (!skuCrm) return { error: "Elige el producto del CRM." };
+  const factor = Math.round(Number(piezasPorUnidad) || 1);
+  if (factor < 1) return { error: "Las piezas por unidad deben ser 1 o más." };
+  const r = await guardarLigasCodigo([codigo], skuCrm, factor);
+  if (r.error) return { error: r.error };
+  revalidarLigas();
+  return { error: null };
+}
+
+export async function quitarLigaCodigoMl(inventoryId: string) {
+  if (!(await soloDueno())) return { error: "Solo el dueño puede hacer esto." };
+  const codigo = inventoryId?.trim().toUpperCase();
+  if (!codigo) return { error: "Falta el Código ML." };
+  await borrarLigasCodigo([codigo]);
+  revalidarLigas();
+  return { error: null };
+}
+
 /** Liga UNA publicación/variante a un producto, sin pasar por el SKU de ML
  * (Isaac, 7 oct: "cuatro colores en una publicación, que pueda ligar la azul
  * a la azul y la rosa a la rosa"). Esta liga manda sobre la del SKU. */
@@ -259,6 +341,9 @@ export async function ligarVariante(itemId: string, variationId: number | null, 
   if (!skuCrm) return { error: "Elige el producto del CRM." };
   const factor = Math.round(Number(piezasPorUnidad) || 1);
   if (factor < 1) return { error: "Las piezas por unidad deben ser 1 o más." };
+  // Si la variante está en Full, la liga va a su Código ML (cada color tiene el suyo).
+  const r = await guardarLigasCodigo(await codigosDe({ itemId, variationId }), skuCrm, factor);
+  if (r.error && !r.faltaSql) return { error: r.error };
   return ligarPorPublicacion(itemId, variationId, skuCrm, factor);
 }
 
@@ -285,6 +370,9 @@ export async function vincularPublicacion(itemId: string, variationId: number | 
   if (factor < 1) return { error: "Las piezas por unidad deben ser 1 o más." };
   const { createServiceClient } = await import("@/lib/supabase/servicio");
   const supabase = createServiceClient();
+  // Primero su Código ML de Full (la liga que manda en todo el sistema).
+  const rc = await guardarLigasCodigo(await codigosDe({ itemId, variationId }), skuCrm, factor);
+  if (rc.error && !rc.faltaSql) return { error: rc.error };
   // Si la publicación trae SKU en ML, la liga se guarda POR SKU (aplica a
   // todas las publicaciones con ese SKU); solo las que no traen SKU se
   // ligan una por una.
@@ -308,10 +396,8 @@ export async function desvincularPublicacion(itemId: string, variationId: number
   consulta = variationId === null ? consulta.is("variation_id", null) : consulta.eq("variation_id", variationId);
   const { error } = await consulta;
   if (error) return { error: error.message };
-  revalidatePath("/mercadolibre/stock");
-  revalidatePath("/mercadolibre/skus");
-  revalidatePath("/stock");
-  revalidatePath("/");
+  await borrarLigasCodigo(await codigosDe({ itemId, variationId }));
+  revalidarLigas();
   return { error: null };
 }
 
@@ -477,6 +563,7 @@ export async function crearProductoDesdeMl(formData: FormData) {
     borrar = v.variationId === null ? borrar.is("variation_id", null) : borrar.eq("variation_id", v.variationId);
     await borrar;
     await servicio.from("mercadolibre_vinculos").insert({ item_id: v.itemId, variation_id: v.variationId, sku_crm: sku });
+    await guardarLigasCodigo(await codigosDe({ itemId: v.itemId, variationId: v.variationId }), sku, 1);
   }
   revalidatePath("/mercadolibre/stock");
   revalidatePath("/mercadolibre/promociones");

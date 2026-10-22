@@ -19,7 +19,8 @@ export function DesgloseStock({ movimientos, stockActual }: { movimientos: Movim
   suma("Histórico de antes del sistema (entradas)", entradas.filter((m) => m.historico));
   suma("Histórico de antes del sistema (salidas)", salidas.filter((m) => m.historico), -1);
   suma("Entradas de contenedores", entradas.filter((m) => !m.historico && m.contenedor_id));
-  suma("Entradas cargadas a mano", entradas.filter((m) => !m.historico && !m.contenedor_id && !m.venta_id));
+  suma("Compras a proveedores de México", entradas.filter((m) => !m.historico && !m.contenedor_id && m.orden_compra_id));
+  suma("Entradas cargadas a mano", entradas.filter((m) => !m.historico && !m.contenedor_id && !m.orden_compra_id && !m.venta_id));
   suma("Ajustes de recepción de contenedor", ajustes.filter((m) => m.contenedor_id));
   suma("Devoluciones de Mercado Libre (regresaron)", ajustes.filter((m) => esML(m)));
   suma("Ajustes y devoluciones a mano", ajustes.filter((m) => !m.contenedor_id && !esML(m)));

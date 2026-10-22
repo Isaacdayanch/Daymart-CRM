@@ -253,6 +253,8 @@ export interface MovimientoStock {
   producto_id: string | null;
   /** Venta directa que generó esta salida (Módulo Ventas). */
   venta_id: string | null;
+  /** Orden de compra a un proveedor mexicano que generó esta entrada (migración 0055). */
+  orden_compra_id?: string | null;
   /** Orden de Mercado Libre que generó esta salida (migración 0035). */
   orden_ml_id?: number | null;
   /** Envío a Full que generó esta salida (migración 0035). */
@@ -493,6 +495,8 @@ export interface FacturaPendiente {
   pagada: boolean;
   movimiento_financiero_id: string | null;
   notas: string | null;
+  /** Cuenta por pagar generada por una orden de compra (Compras, migración 0055). */
+  orden_compra_id?: string | null;
   creado_en: string;
 }
 
@@ -604,3 +608,114 @@ export interface CobroVenta {
   movimiento_financiero_id: string | null;
   creado_en: string;
 }
+
+// ---- Director de Mercado Libre (migración 0058) ----------------------------
+
+export type AreaDirector = "RELAMPAGO" | "PROMOCION" | "PUBLICIDAD" | "PUBLICACION" | "FULL" | "LIGA" | "AVISO" | "OTRO";
+export type EstadoPropuestaDirector = "PROPUESTA" | "APROBADA" | "RECHAZADA" | "EJECUTADA" | "FALLIDA" | "CADUCADA";
+
+export interface PropuestaDirector {
+  id: string;
+  creado_en: string;
+  fecha: string;
+  lote: string;
+  orden: number;
+  area: AreaDirector;
+  titulo: string;
+  detalle: string | null;
+  porque: string | null;
+  datos: Record<string, unknown>;
+  /** MANUAL = Isaac la hace a mano; los demás los ejecuta el CRM (fase 2). */
+  accion_tipo: string;
+  item_id: string | null;
+  sku_crm: string | null;
+  imagen_url: string | null;
+  precio_propuesto: number | null;
+  estado: EstadoPropuestaDirector;
+  precio_aprobado: number | null;
+  nota_isaac: string | null;
+  decidido_en: string | null;
+  decidido_desde: "CRM" | "CHAT" | null;
+  ejecutado_en: string | null;
+  resultado: string | null;
+  error: string | null;
+  reportada_en: string | null;
+}
+
+export interface BitacoraDirector {
+  id: string;
+  creado_en: string;
+  origen: "DIRECTOR" | "ISAAC" | "CRM";
+  accion: string;
+  propuesta_id: string | null;
+  detalle: Record<string, unknown>;
+  resultado: string | null;
+  error: string | null;
+}
+
+// ---------- Compras a proveedores mexicanos (migración 0055) ----------
+
+export type CondicionesPago = "ANTICIPADO" | "AL_RECIBIR" | "CREDITO";
+
+export const CONDICIONES_PAGO: { valor: CondicionesPago; etiqueta: string; descripcion: string }[] = [
+  { valor: "ANTICIPADO", etiqueta: "Pago por adelantado", descripcion: "Pagas al hacer el pedido, antes de que te entreguen." },
+  { valor: "AL_RECIBIR", etiqueta: "Pago al recibir", descripcion: "Pagas cuando te entregan la mercancía." },
+  { valor: "CREDITO", etiqueta: "A crédito", descripcion: "Te dan N días para pagar desde que recibes." },
+];
+
+export interface ProveedorMx {
+  id: string;
+  nombre: string;
+  contacto: string | null;
+  telefono: string | null;
+  correo: string | null;
+  rfc: string | null;
+  notas: string | null;
+  condiciones_pago: CondicionesPago;
+  dias_credito: number | null;
+  eliminado_en: string | null;
+  creado_en: string;
+}
+
+export type EstadoOrdenCompra = "PEDIDA" | "PARCIAL" | "RECIBIDA" | "CANCELADA";
+
+export const ESTADOS_ORDEN_COMPRA: { valor: EstadoOrdenCompra; etiqueta: string }[] = [
+  { valor: "PEDIDA", etiqueta: "Pedida" },
+  { valor: "PARCIAL", etiqueta: "Recibida en parte" },
+  { valor: "RECIBIDA", etiqueta: "Recibida" },
+  { valor: "CANCELADA", etiqueta: "Cancelada" },
+];
+
+export interface OrdenCompra {
+  id: string;
+  numero: number;
+  proveedor_id: string;
+  bodega_id: string | null;
+  fecha: string;
+  fecha_entrega: string | null;
+  estado: EstadoOrdenCompra;
+  condiciones_pago: CondicionesPago;
+  dias_credito: number | null;
+  /** Flete local u otros gastos (con IVA incluido), repartido entre las piezas. */
+  flete: number;
+  notas_proveedor: string | null;
+  notas: string | null;
+  recibida_en: string | null;
+  cancelada_en: string | null;
+  creado_en: string;
+}
+
+export interface OrdenCompraLinea {
+  id: string;
+  orden_id: string;
+  sku: string;
+  nombre: string;
+  imagen_url: string | null;
+  piezas_por_caja: number;
+  cantidad: number;
+  /** Precio por pieza como lo da el proveedor (con IVA incluido). */
+  precio_unitario: number;
+  cantidad_recibida: number;
+  orden: number;
+}
+

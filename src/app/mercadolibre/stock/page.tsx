@@ -263,7 +263,7 @@ export default async function StockMercadoLibre({
                     sku={liga.sku}
                     origen={liga.origen}
                     nombre={liga.sku ? (nombrePorSku.get(liga.sku) ?? null) : null}
-                    piezasPorUnidad={factorDePublicacion(liga.de.item_id, liga.de.variation_id, factores, liga.de.seller_sku)}
+                    piezasPorUnidad={factorDePublicacion(liga.de.item_id, liga.de.variation_id, factores, liga.de.seller_sku, liga.de.inventory_id)}
                     opciones={opcionesProducto}
                     datosMl={{
                       itemId: liga.de.item_id,

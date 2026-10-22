@@ -720,6 +720,10 @@ export async function eliminarFactura(facturaId: string) {
     .select("id", { count: "exact", head: true })
     .eq("factura_id", facturaId);
   if (count && count > 0) return;
+  // Una cuenta por pagar que viene de una orden de compra se cancela desde
+  // la orden (Compras), para que la orden no se quede sin su deuda.
+  const { data: factura } = await supabase.from("facturas_pendientes").select("orden_compra_id").eq("id", facturaId).maybeSingle<{ orden_compra_id: string | null }>();
+  if (factura?.orden_compra_id) return;
 
   await supabase.from("facturas_pendientes").delete().eq("id", facturaId);
   revalidatePath("/finanzas/facturas");

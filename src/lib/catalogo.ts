@@ -3,6 +3,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { sinColumnasFaltantes } from "./columnas-faltantes";
+import { todasLasFilas } from "./cargar-todo";
 import type { Marca, ProductoCatalogo } from "./tipos";
 
 export async function obtenerMarcas(supabase: SupabaseClient): Promise<Marca[]> {
@@ -11,7 +12,7 @@ export async function obtenerMarcas(supabase: SupabaseClient): Promise<Marca[]> 
 }
 
 export async function obtenerCatalogo(supabase: SupabaseClient): Promise<ProductoCatalogo[]> {
-  const { data } = await supabase.from("productos_catalogo").select("*").is("eliminado_en", null).order("nombre").returns<ProductoCatalogo[]>();
+  const { data } = await todasLasFilas<ProductoCatalogo>((d, h) => supabase.from("productos_catalogo").select("*", { count: "exact" }).is("eliminado_en", null).order("nombre").order("sku").range(d, h));
   return data ?? [];
 }
 
@@ -68,10 +69,12 @@ export async function guardarEnCatalogo(supabase: SupabaseClient, datos: DatosCa
 /** SKUs que ya existen en cualquier lado (catálogo, productos de
  * contenedor, movimientos) para no repetir uno nuevo. */
 export async function skusExistentes(supabase: SupabaseClient): Promise<Set<string>> {
+  // Paginado: con más de 1,000 movimientos Supabase cortaba en silencio y
+  // SKUs viejos "no existían" (y la liga "mismo SKU" no los encontraba).
   const [{ data: cat }, { data: prods }, { data: movs }] = await Promise.all([
-    supabase.from("productos_catalogo").select("sku").is("eliminado_en", null),
-    supabase.from("productos").select("sku"),
-    supabase.from("movimientos_stock").select("sku"),
+    todasLasFilas<{ sku: string }>((d, h) => supabase.from("productos_catalogo").select("sku", { count: "exact" }).is("eliminado_en", null).order("sku").range(d, h)),
+    todasLasFilas<{ sku: string }>((d, h) => supabase.from("productos").select("sku", { count: "exact" }).order("id").range(d, h)),
+    todasLasFilas<{ sku: string }>((d, h) => supabase.from("movimientos_stock").select("sku", { count: "exact" }).order("id").range(d, h)),
   ]);
   const set = new Set<string>();
   for (const lista of [cat, prods, movs]) for (const r of (lista ?? []) as { sku: string }[]) set.add(r.sku);

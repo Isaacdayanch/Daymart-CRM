@@ -12,6 +12,8 @@ import { CampoFecha } from "@/components/campo-fecha";
 import { capturarEnvioMl, cerrarEnvioMl, deshacerEnvioMl, ignorarEnvioMl, ignorarRecepcionMl, llegadaCompletaMl, llegadaDesdePanelMl, previsualizarEnvioMl, registrarSalidaEnvioMl } from "./actions";
 
 import { BotonGuardar } from "@/components/boton-guardar";
+import { FormLigarCodigo, type OpcionProducto } from "@/app/mercadolibre/skus/ligar-codigo";
+import { sugerirProducto } from "@/lib/sugerir-producto";
 export interface LineaParaPantalla extends LineaAgrupada {
   /** Producto del CRM resuelto por la liga (null = sin ligar). */
   sku: string | null;
@@ -19,8 +21,6 @@ export interface LineaParaPantalla extends LineaAgrupada {
   stockBodega: number | null;
   /** Piezas del CRM por unidad de ML (2 = un par de mancuernas). */
   factor: number;
-  /** Piezas (CRM) que ML ya subió en Full de este producto desde que salió el envío. */
-  subioEnFull: number;
 }
 
 export interface EnvioParaPantalla {
@@ -35,7 +35,8 @@ export interface BodegaOpcion {
 
 const btnSec = "rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50";
 const btnPri = "rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50";
-const PLACEHOLDER_PANEL = "Código ML: IBHA96856 +2\n2 Piezas - Bloques De Yoga Cómodos Y Fuertes Daymart Color Azul Claro\n5,619.74 cm3\n150 u.\n149 u.\n1 u.\n(de menos)\n149 u.\n…";
+const btnGrande = "rounded-2xl bg-zinc-900 px-6 py-3 text-base font-semibold text-white shadow-sm transition hover:bg-zinc-800 disabled:opacity-40";
+const PLACEHOLDER_PANEL = "Pega aquí toda la página del envío (Ctrl+A y Ctrl+C dentro del envío en Mercado Libre).\n\nEnvío N.º 77396370 - Daymart - Amarillo\nProcesamiento finalizado\n…\nCódigo ML: IPYX23014\n50 u.  49 u.  1 u.  49 u.\n…";
 
 const ETIQUETA_FASE: Record<FaseEnvio, { texto: string; clase: string }> = {
   EN_CAMINO: { texto: "En camino a Full", clase: "bg-[#2D3277]/5 text-[#2D3277] ring-[#2D3277]/20" },
@@ -46,18 +47,31 @@ const ETIQUETA_FASE: Record<FaseEnvio, { texto: string; clase: string }> = {
   CANCELADO: { texto: "Cancelado", clase: "bg-red-50 text-red-700 ring-red-600/20" },
 };
 
-function TextareaPanel({ value, onChange, rows = 6 }: { value: string; onChange: (v: string) => void; rows?: number }) {
-  return <textarea value={value} onChange={(e) => onChange(e.target.value)} required rows={rows} placeholder={PLACEHOLDER_PANEL} className="mt-2 block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 font-mono text-xs" />;
+function TextareaPanel({ value, onChange, rows = 6, grande = false }: { value: string; onChange: (v: string) => void; rows?: number; grande?: boolean }) {
+  return (
+    <textarea
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      required
+      rows={rows}
+      placeholder={PLACEHOLDER_PANEL}
+      className={
+        grande
+          ? "mt-4 block w-full resize-y rounded-2xl border border-zinc-200 bg-zinc-50/70 px-4 py-3 font-mono text-xs leading-relaxed text-zinc-700 outline-none transition placeholder:text-zinc-400 focus:border-zinc-400 focus:bg-white focus:ring-4 focus:ring-zinc-100"
+          : "mt-2 block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 font-mono text-xs"
+      }
+    />
+  );
 }
 
-const ETIQUETA_ORIGEN: Record<NonNullable<OrigenLiga>, string> = { manual: "ligado por publicación", sku: "ligado por SKU de ML", auto: "mismo SKU en los dos lados" };
+const ETIQUETA_ORIGEN: Record<NonNullable<OrigenLiga>, string> = { codigo: "ligado por Código ML", manual: "ligado por publicación", sku: "ligado por SKU de ML", auto: "mismo SKU en los dos lados" };
 
 /** Registrar un envío a Full pegando la tabla del panel de ML, en dos pasos:
  * primero una VISTA PREVIA (qué leyó el sistema y a qué producto del CRM cae
  * cada renglón) y, solo si Isaac dice que sí, se registra. Dos momentos:
  * "acaba de salir" (la bodega se descuenta con las declaradas) o "ya llegó"
  * (se descuenta y de una vez se concilia con las Aptas para Full). */
-export function CapturarEnvioMl({ bodegas }: { bodegas: BodegaOpcion[] }) {
+export function CapturarEnvioMl({ bodegas, productos }: { bodegas: BodegaOpcion[]; productos: OpcionProducto[] }) {
   const router = useRouter();
   const hoy = fechaTextoMx(new Date());
   const [numero, setNumero] = useState("");
@@ -66,6 +80,9 @@ export function CapturarEnvioMl({ bodegas }: { bodegas: BodegaOpcion[] }) {
   const [bodegaId, setBodegaId] = useState(bodegas[0]?.id ?? "");
   const [textoPanel, setTextoPanel] = useState("");
   const [previa, setPrevia] = useState<PreviaEnvio | null>(null);
+  const [faltaNumero, setFaltaNumero] = useState(false);
+  /** Códigos ML que Isaac abrió para cambiar su liga en la vista previa. */
+  const [cambiando, setCambiando] = useState<Set<string>>(new Set());
   const [cargando, setCargando] = useState(false);
   const [mensaje, setMensaje] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -81,22 +98,27 @@ export function CapturarEnvioMl({ bodegas }: { bodegas: BodegaOpcion[] }) {
     setMensaje(null);
     const r = await previsualizarEnvioMl(numero, textoPanel);
     setCargando(false);
+    if (r.faltaNumero) setFaltaNumero(true);
     if (r.error) setError(r.error);
-    else setPrevia(r);
+    else {
+      // Lo que dice la página manda: si ML ya lo procesó, llegó; si no, va en camino.
+      if (!previa || previa.inboundId !== r.inboundId) setMomento(r.momentoDetectado);
+      setPrevia(r);
+    }
   }
 
   async function registrar() {
     setCargando(true);
     setError(null);
     setMensaje(null);
-    const r = await capturarEnvioMl(numero, textoPanel, momento, fecha || null, bodegaId || null);
+    const n = previa?.inboundId ?? numero.trim();
+    const r = await capturarEnvioMl(n, textoPanel, momento, fecha || null, bodegaId || null);
     setCargando(false);
     if (r.error) setError(r.error);
     else {
-      const n = numero.trim();
       const partes = [
         momento === "EN_CAMINO"
-          ? `Listo: el envío ${n} quedó en camino con ${r.productos} producto(s) y ${r.piezas.toLocaleString("es-MX")} piezas declaradas, ya descontadas de tu bodega. Cuando ML lo reciba, dale "ML lo recibió completo" o pega la tabla si hubo diferencias.`
+          ? `Listo: el envío ${n} quedó en camino con ${r.productos} producto(s) y ${r.piezas.toLocaleString("es-MX")} piezas declaradas, ya descontadas de tu bodega. Cuando ML lo reciba, dale "ML lo recibió completo" o pega la página del envío si hubo diferencias.`
           : r.cerrado
             ? `Listo: el envío ${n} se descontó de tu bodega (${r.productos} producto(s), ${r.piezas.toLocaleString("es-MX")} piezas) y ML lo recibió completo: quedó cerrado.`
             : `Listo: el envío ${n} se descontó de tu bodega (${r.productos} producto(s), ${r.piezas.toLocaleString("es-MX")} piezas). ML recibió ${r.diferencias} producto(s) con diferencia: abajo decide si se quedaron en bodega o fueron merma y ciérralo.`,
@@ -105,6 +127,7 @@ export function CapturarEnvioMl({ bodegas }: { bodegas: BodegaOpcion[] }) {
       ].filter(Boolean);
       setMensaje(partes.join(" "));
       setNumero("");
+      setFaltaNumero(false);
       setTextoPanel("");
       setPrevia(null);
     }
@@ -114,33 +137,35 @@ export function CapturarEnvioMl({ bodegas }: { bodegas: BodegaOpcion[] }) {
   return (
     <form
       id="capturar"
+      onKeyDown={(e) => {
+        // Un Enter en el buscador de productos (al ligar) NO debe registrar el envío.
+        if (e.key === "Enter" && e.target instanceof HTMLInputElement) e.preventDefault();
+      }}
       onSubmit={(e) => {
         e.preventDefault();
         if (previa) void registrar();
         else void revisar();
       }}
-      className="rounded-2xl border border-emerald-300 bg-emerald-50/60 p-4 sm:p-5"
+      className="rounded-3xl border border-zinc-200/80 bg-white p-6 shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_24px_-12px_rgba(0,0,0,0.12)] sm:p-8"
     >
-      <p className="text-sm font-semibold text-zinc-900">Registrar un envío a Full</p>
+      <p className="text-xl font-semibold tracking-tight text-zinc-900">Registrar un envío</p>
       {!previa && (
         <>
-          <ol className="mt-1 list-decimal space-y-0.5 pl-4 text-xs text-zinc-600">
-            <li>En Mercado Libre abre el envío (Gestión de envíos Full → el número).</li>
-            <li>Selecciona con el mouse toda la tabla de productos (desde el primer “Código ML:” hasta la fila “Total”) y cópiala (Ctrl+C / Cmd+C).</li>
-            <li>Pégala aquí, pon el número y dale “Revisar”: te muestro qué leí y a qué producto cae cada renglón ANTES de registrar nada.</li>
-          </ol>
-          <div className="mt-3 flex flex-wrap items-end gap-3">
-            <div>
-              <label className="block text-[11px] font-medium text-zinc-500">Número de envío</label>
-              <input type="text" value={numero} onChange={(e) => setNumero(e.target.value)} placeholder="77396369" required className="mt-1 w-44 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm" />
+          <p className="mt-1 text-sm text-zinc-500">
+            Abre el envío en Mercado Libre, presiona <kbd className="rounded-md border border-zinc-200 bg-zinc-50 px-1.5 py-0.5 font-sans text-xs text-zinc-600">Ctrl A</kbd> y <kbd className="rounded-md border border-zinc-200 bg-zinc-50 px-1.5 py-0.5 font-sans text-xs text-zinc-600">Ctrl C</kbd>, y pégalo aquí. Del resto me encargo yo.
+          </p>
+          <TextareaPanel value={textoPanel} onChange={setTextoPanel} rows={6} grande />
+          {faltaNumero && (
+            <div className="mt-2">
+              <label className="block text-[11px] font-medium text-zinc-500">Número de envío (no venía en lo que pegaste)</label>
+              <input type="text" value={numero} onChange={(e) => setNumero(e.target.value)} placeholder="77396369" className="mt-1 w-44 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm" />
             </div>
-          </div>
-          <TextareaPanel value={textoPanel} onChange={setTextoPanel} />
-          <div className="mt-2 flex flex-wrap items-center gap-3">
-            <BotonGuardar cargando={cargando} disabled={!numero.trim() || !textoPanel.trim()} textoCargando="Leyendo…" className={btnPri}>
+          )}
+          <div className="mt-4 flex flex-wrap items-center gap-4">
+            <BotonGuardar cargando={cargando} disabled={!textoPanel.trim() || (faltaNumero && !numero.trim())} textoCargando="Leyendo…" className={btnGrande}>
               Revisar envío
             </BotonGuardar>
-            <span className="text-[11px] text-zinc-500">Todavía no se registra nada: primero ves lo que leí.</span>
+            <span className="text-sm text-zinc-400">Todavía no se guarda nada: primero ves lo que leí.</span>
           </div>
         </>
       )}
@@ -148,18 +173,20 @@ export function CapturarEnvioMl({ bodegas }: { bodegas: BodegaOpcion[] }) {
       {previa && (
         <div className="mt-2 space-y-3">
           <p className="text-xs text-zinc-600">
-            Envío <span className="font-mono font-medium text-zinc-900">{previa.inboundId}</span> · {previa.lineas.length} producto(s) · {previa.totalDeclaradas.toLocaleString("es-MX")} piezas declaradas según ML. Revisa que cada renglón caiga en el producto correcto del CRM.
+            Envío <span className="font-mono font-medium text-zinc-900">{previa.inboundId}</span>
+            {previa.etiqueta && <span className="font-medium text-zinc-900"> · {previa.etiqueta}</span>} · {previa.lineas.length} producto(s) · {previa.totalDeclaradas.toLocaleString("es-MX")} piezas declaradas
+            {" · "}
+            <span className="font-medium text-zinc-900">{previa.momentoDetectado === "LLEGO" ? "ML ya lo procesó (ya llegó)" : "todavía no llega a Full (va en camino)"}</span>. Revisa que cada renglón caiga en el producto correcto del CRM.
           </p>
           {bloqueado && (
             <p className="rounded-lg border border-red-200 bg-red-50 p-2 text-xs text-red-700">
               Este número ya está registrado ({ETIQUETA_FASE[previa.faseExistente!].texto}). Si quieres cambiarlo, búscalo abajo, dale “deshacer” y vuelve a capturarlo.
             </p>
           )}
-          {esLlegadaDeExistente && <p className="rounded-lg border border-[#2D3277]/20 bg-[#2D3277]/5 p-2 text-xs text-[#2D3277]">Este envío ya va en camino: al registrarlo como “ya llegó” se toma como su llegada, con las “Aptas para Full” de esta tabla.</p>}
+          {esLlegadaDeExistente && <p className="rounded-lg border border-[#2D3277]/20 bg-[#2D3277]/5 p-2 text-xs text-[#2D3277]">Este envío ya va en camino: al registrarlo como “ya llegó” se toma como su llegada, con las “Aptas para Full” de esta página.</p>}
           <ul className="divide-y divide-emerald-100 rounded-xl border border-emerald-200 bg-white">
             {previa.lineas.map((l) => {
               const mal = !l.tituloMl || !l.skuCrm;
-              const qLiga = l.sellerSku ?? l.itemId ?? l.inventoryId;
               return (
                 <li key={l.inventoryId} className={`flex flex-wrap items-center justify-between gap-3 px-3 py-2 text-sm ${mal ? "bg-amber-50/60" : ""}`}>
                   <div className="flex min-w-0 items-center gap-3">
@@ -175,34 +202,49 @@ export function CapturarEnvioMl({ bodegas }: { bodegas: BodegaOpcion[] }) {
                         Código ML <span className="font-mono">{l.inventoryId}</span>
                         {l.sellerSku && <> · SKU ML {l.sellerSku}</>}
                         {!l.tituloMl && (
-                          <span className="text-amber-700">
-                            {" "}
-                            · no está en la copia de publicaciones del CRM:{" "}
-                            <Link href="/mercadolibre/skus#faltantes" target="_blank" className="underline">
-                              búscala por su número de publicación y tráela
-                            </Link>{" "}
-                            (en el panel de Full, &ldquo;Publicaciones con este producto&rdquo;)
-                          </span>
+                          <span className="text-zinc-500"> · no está en tu copia de publicaciones (no pasa nada: se liga por su Código ML)</span>
                         )}
                       </p>
-                      <p className="text-xs">
-                        {l.skuCrm ? (
-                          <>
-                            <span className="text-zinc-500">→ CRM: </span>
-                            <span className="font-medium text-zinc-800">{l.nombreCrm ?? l.skuCrm}</span> <span className="font-mono text-zinc-500">{l.skuCrm}</span>
-                            {l.stockBodega !== null && <span className="text-zinc-400"> · {l.stockBodega.toLocaleString("es-MX")} en bodega</span>}
-                            {l.origen && <span className="text-zinc-400"> · {ETIQUETA_ORIGEN[l.origen]}</span>}
-                            {" · "}
-                            <Link href={`/mercadolibre/skus?q=${encodeURIComponent(qLiga)}`} target="_blank" className="text-[#2D3277] underline-offset-2 hover:underline">
-                              ¿no es ese? cambiar liga
-                            </Link>
-                          </>
-                        ) : (
-                          <Link href={`/mercadolibre/skus?q=${encodeURIComponent(qLiga)}`} target="_blank" className="text-amber-700 underline-offset-2 hover:underline">
-                            → sin ligar a un producto del CRM: ligar primero (si lo registras así, sus piezas no se descuentan hasta ligarlo)
-                          </Link>
-                        )}
-                      </p>
+                      {l.skuCrm && !cambiando.has(l.inventoryId) ? (
+                        <p className="text-xs">
+                          <span className="text-zinc-500">→ CRM: </span>
+                          <span className="font-medium text-zinc-800">{l.nombreCrm ?? l.skuCrm}</span> <span className="font-mono text-zinc-500">{l.skuCrm}</span>
+                          {l.stockBodega !== null && <span className="text-zinc-400"> · {l.stockBodega.toLocaleString("es-MX")} en bodega</span>}
+                          {l.origen && <span className="text-zinc-400"> · {ETIQUETA_ORIGEN[l.origen]}</span>}
+                          {" · "}
+                          <button type="button" onClick={() => setCambiando((c) => new Set(c).add(l.inventoryId))} className="text-[#2D3277] underline-offset-2 hover:underline">
+                            ¿no es ese? cambiar
+                          </button>
+                        </p>
+                      ) : (
+                        <div className="mt-1 max-w-md">
+                          {!l.skuCrm && <p className="text-xs text-amber-700">Sin ligar: ¿qué producto de tu bodega es? Lígalo aquí y se queda para siempre.</p>}
+                          <FormLigarCodigo
+                            inventoryId={l.inventoryId}
+                            opciones={productos}
+                            inicial={l.skuCrm ?? sugerirProducto({ titulo: l.tituloMl ?? l.tituloPanel, variacion: null, sellerSku: l.sellerSku ?? "" }, productos)?.sku ?? null}
+                            factorInicial={l.factor}
+                            alLigar={async () => {
+                              setCambiando((c) => {
+                                const n = new Set(c);
+                                n.delete(l.inventoryId);
+                                return n;
+                              });
+                              await revisar();
+                            }}
+                            alCancelar={
+                              l.skuCrm
+                                ? () =>
+                                    setCambiando((c) => {
+                                      const n = new Set(c);
+                                      n.delete(l.inventoryId);
+                                      return n;
+                                    })
+                                : undefined
+                            }
+                          />
+                        </div>
+                      )}
                     </div>
                   </div>
                   <div className="shrink-0 text-right text-xs text-zinc-600">
@@ -248,7 +290,7 @@ export function CapturarEnvioMl({ bodegas }: { bodegas: BodegaOpcion[] }) {
           </div>
           <p className="text-[11px] text-zinc-500">
             {momento === "EN_CAMINO"
-              ? "Se descuentan de tu bodega las piezas declaradas, con la fecha en que salió. Cuando ML lo reciba, lo cierras con un clic (o pegas la tabla si hubo diferencias)."
+              ? "Se descuentan de tu bodega las piezas declaradas, con la fecha en que salió. Cuando ML lo reciba, lo cierras con un clic (o pegas la página del envío si hubo diferencias)."
               : "Se descuentan las declaradas y se toma la columna “Aptas para Full” como lo recibido; si hay diferencias, decides producto por producto."}
           </p>
           <div className="flex flex-wrap items-end gap-3">
@@ -298,38 +340,45 @@ export function CapturarEnvioMl({ bodegas }: { bodegas: BodegaOpcion[] }) {
   );
 }
 
-/** Subidas de stock en Full que ningún envío capturado explica. */
+/** Subidas de stock en Full que ningún envío capturado explica. Va escondido
+ * hasta abajo (Isaac, 21 oct: el cuadro ámbar arriba estorbaba): es solo
+ * para revisar si algún día no cuadra Full. */
 export function AvisoSinExplicar({ recepciones }: { recepciones: RecepcionFull[] }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   if (!recepciones.length) return null;
   return (
-    <div id="sin-explicar" className="rounded-2xl border border-amber-300 bg-amber-50 p-4">
-      <p className="text-sm font-medium text-amber-900">Subió el stock en Full de {recepciones.length} producto(s) y no hay ningún envío capturado que lo explique</p>
-      <p className="text-xs text-amber-800">Si fue un envío tuyo, captúralo arriba con su número (y esto se explica solo). Si no salió de tu bodega (ej. una devolución que llegó a Full), márcalo.</p>
-      <ul className="mt-2 divide-y divide-amber-200/60">
-        {recepciones.map((r) => (
-          <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 py-1.5 text-xs">
-            <span className="text-amber-900">
-              {formatoFechaMx(r.detectado_en)} · {r.titulo ?? r.inventory_id} · <strong>+{Number(r.cantidad).toLocaleString("es-MX")} pzas</strong>
-              {r.sku_crm && <span className="font-mono text-amber-700"> · {r.sku_crm}</span>}
-            </span>
-            <button
-              type="button"
-              onClick={async () => {
-                const x = await ignorarRecepcionMl(r.id);
-                if (x.error) setError(x.error);
-                router.refresh();
-              }}
-              className="text-amber-700 underline-offset-2 hover:underline"
-            >
-              no fue de mi bodega
-            </button>
-          </li>
-        ))}
-      </ul>
-      {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
-    </div>
+    <details id="sin-explicar" className="group rounded-2xl border border-zinc-200 bg-zinc-50/60">
+      <summary className="cursor-pointer select-none px-5 py-3 text-sm text-zinc-500 hover:text-zinc-800">
+        <span className="mr-1 inline-block transition-transform group-open:rotate-90">▸</span>
+        Subidas de stock en Full sin envío capturado ({recepciones.length}) · solo por si algo no cuadra
+      </summary>
+      <div className="px-5 pb-3">
+        <p className="text-xs text-zinc-500">Mercado Libre subió estas piezas en Full y no hay un envío capturado con ese producto. Puede ser un envío que no capturaste o una devolución de un comprador que llegó a Full. No hace falta hacer nada.</p>
+        <ul className="mt-2 divide-y divide-zinc-200/70">
+          {recepciones.map((r) => (
+            <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 py-1.5 text-xs">
+              <span className="text-zinc-600">
+                {formatoFechaMx(r.detectado_en)} · {r.titulo ?? r.inventory_id} · <strong className="text-zinc-800">+{Number(r.cantidad).toLocaleString("es-MX")} pzas</strong>
+                {r.sku_crm && <span className="font-mono text-zinc-400"> · {r.sku_crm}</span>}
+              </span>
+              <button
+                type="button"
+                onClick={async () => {
+                  const x = await ignorarRecepcionMl(r.id);
+                  if (x.error) setError(x.error);
+                  router.refresh();
+                }}
+                className="text-zinc-500 underline-offset-2 hover:text-zinc-900 hover:underline"
+              >
+                ocultar
+              </button>
+            </li>
+          ))}
+        </ul>
+        {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+      </div>
+    </details>
   );
 }
 
@@ -358,7 +407,7 @@ function LineaEnvio({ l, fase }: { l: LineaParaPantalla; fase: FaseEnvio }) {
                 {!l.salidaGenerada && fase !== "PENDIENTE_REGISTRAR" && <span className="text-amber-700"> · su salida se genera en la siguiente revisión</span>}
               </span>
             ) : (
-              <Link href="/mercadolibre/skus" className="text-amber-700 underline-offset-2 hover:underline">
+              <Link href={l.inventory_id ? `/mercadolibre/skus?q=${encodeURIComponent(l.inventory_id)}` : "/mercadolibre/skus"} className="text-amber-700 underline-offset-2 hover:underline">
                 sin ligar con un producto del CRM → ligar (sus piezas se descuentan solas al ligarlo)
               </Link>
             )}
@@ -372,7 +421,6 @@ function LineaEnvio({ l, fase }: { l: LineaParaPantalla; fase: FaseEnvio }) {
             {l.factor > 1 && <span className="text-violet-700"> × {l.factor} = {(declaradas * l.factor).toLocaleString("es-MX")} pzas</span>}
           </span>
         )}
-        {fase === "EN_CAMINO" && l.subioEnFull > 0 && <span className="rounded-full bg-[#2D3277]/5 px-2 py-0.5 text-[#2D3277]">ML ya subió {l.subioEnFull.toLocaleString("es-MX")} pzas</span>}
         {(fase === "POR_CERRAR" || fase === "CERRADO" || fase === "PENDIENTE_REGISTRAR") && (
           <span className="text-zinc-500">
             declaradas <strong className="text-zinc-900">{declaradas.toLocaleString("es-MX")}</strong> · recibidas <strong className="text-emerald-700">{l.recibidas.toLocaleString("es-MX")}</strong>
@@ -382,10 +430,15 @@ function LineaEnvio({ l, fase }: { l: LineaParaPantalla; fase: FaseEnvio }) {
         {diff > 0 && (
           <span className="rounded-full bg-amber-50 px-2 py-0.5 font-medium text-amber-700 ring-1 ring-inset ring-amber-600/20">
             faltaron {diff.toLocaleString("es-MX")}
-            {fase === "CERRADO" && l.decision && <> · {l.decision === "MERMA" ? "merma" : "se quedaron en bodega"}</>}
+            {fase === "CERRADO" && l.decision && <> · {l.decision === "MERMA" ? "merma" : "regresaron a tu bodega"}</>}
           </span>
         )}
-        {diff < 0 && <span className="rounded-full bg-[#2D3277]/5 px-2 py-0.5 font-medium text-[#2D3277]">{Math.abs(diff).toLocaleString("es-MX")} de más</span>}
+        {diff < 0 && (
+          <span className="rounded-full bg-[#2D3277]/5 px-2 py-0.5 font-medium text-[#2D3277]">
+            {Math.abs(diff).toLocaleString("es-MX")} de más
+            {fase === "CERRADO" && <> · {l.decision === "NO_SALIERON" ? "no salieron de tu bodega" : "salieron de tu bodega"}</>}
+          </span>
+        )}
       </div>
     </li>
   );
@@ -413,6 +466,7 @@ export function TarjetaEnvioMl({ datos, bodegas }: { datos: EnvioParaPantalla; b
   const sinLigar = lineas.filter((l) => !l.sku).length;
   const conDiferencia = lineas.filter((l) => diferenciaLinea({ cantidad_planeada: l.planeadas, cantidad_recibida: l.recibidas }) !== 0);
   const faltantes = conDiferencia.filter((l) => diferenciaLinea({ cantidad_planeada: l.planeadas, cantidad_recibida: l.recibidas }) > 0);
+  const sobrantes = conDiferencia.filter((l) => diferenciaLinea({ cantidad_planeada: l.planeadas, cantidad_recibida: l.recibidas }) < 0);
   const abierto = fase === "EN_CAMINO" || fase === "POR_CERRAR" || fase === "PENDIENTE_REGISTRAR";
   const etiqueta = ETIQUETA_FASE[fase];
 
@@ -428,13 +482,14 @@ export function TarjetaEnvioMl({ datos, bodegas }: { datos: EnvioParaPantalla; b
   }
 
   return (
-    <details open={abierto} className={`group rounded-2xl border bg-white shadow-sm ${fase === "POR_CERRAR" || fase === "PENDIENTE_REGISTRAR" ? "border-amber-300 ring-2 ring-amber-100" : fase === "EN_CAMINO" ? "border-[#2D3277]/30" : "border-zinc-200"}`}>
+    <details id={`envio-${envio.inbound_id}`} open={abierto} className={`group rounded-3xl border bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04)] ${fase === "POR_CERRAR" || fase === "PENDIENTE_REGISTRAR" ? "border-amber-300 ring-2 ring-amber-100" : fase === "EN_CAMINO" ? "border-[#2D3277]/20" : "border-zinc-200/80"}`}>
       <summary className="flex cursor-pointer select-none flex-wrap items-center justify-between gap-2 px-5 py-3">
         <div className="flex items-center gap-3">
           <span className="inline-block transition-transform group-open:rotate-90">▸</span>
           <div>
             <p className="text-sm font-medium text-zinc-900">
               Envío a Full <span className="font-mono">{envio.inbound_id}</span>
+              {typeof envio.crudo?.etiqueta === "string" && <span className="font-normal text-zinc-500"> · {envio.crudo.etiqueta}</span>}
             </p>
             <p className="text-xs text-zinc-400">
               {lineas.length} producto(s) · {totalDeclaradas.toLocaleString("es-MX")} piezas declaradas
@@ -491,13 +546,13 @@ export function TarjetaEnvioMl({ datos, bodegas }: { datos: EnvioParaPantalla; b
               ML lo recibió completo
             </button>
             <button type="button" disabled={enviando} onClick={() => setPegando(true)} className={btnSec}>
-              Llegó con diferencias: pegar la tabla
+              Llegó con diferencias: pegar la página del envío
             </button>
           </div>
         )}
         {(fase === "EN_CAMINO" || fase === "POR_CERRAR") && pegando && (
           <div className="mt-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3">
-            <p className="text-xs text-zinc-700">Abre el envío en Mercado Libre (ya recibido), copia la tabla de productos y pégala: se toma la columna “Aptas para Full” como lo recibido.</p>
+            <p className="text-xs text-zinc-700">Abre el envío en Mercado Libre (ya recibido), selecciona toda la página (Ctrl+A / Cmd+A), cópiala y pégala: se toma la columna “Aptas para Full” como lo recibido.</p>
             <TextareaPanel value={textoPanel} onChange={setTextoPanel} rows={5} />
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <button
@@ -528,8 +583,18 @@ export function TarjetaEnvioMl({ datos, bodegas }: { datos: EnvioParaPantalla; b
         {/* ---- Llegó con diferencias: decidir y cerrar ---- */}
         {fase === "POR_CERRAR" && !pegando && (
           <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50/60 p-3">
-            <p className="text-sm font-medium text-zinc-900">¿Qué pasó con lo que no llegó?</p>
-            <p className="text-xs text-zinc-600">Por cada producto que ML recibió de menos: si se quedó en tu bodega, esas piezas regresan a tu stock; si se perdió o llegó dañado, queda como merma (ya no están en tu bodega ni en Full).</p>
+            <p className="text-sm font-medium text-zinc-900">Llegó con diferencias: dime qué pasó</p>
+            {faltantes.length > 0 && sobrantes.length > 0 && (
+              <p className="mt-1 rounded-lg bg-white/70 p-2 text-xs text-zinc-700">
+                Faltaron piezas de un producto y sobraron de otro: casi siempre es un <strong>cambio</strong> (mandaste unas en lugar de otras). Lo normal es: lo que faltó <strong>regresa a tu bodega</strong> y lo que sobró <strong>sí salió de tu bodega</strong>. Así tu stock queda exacto.
+              </p>
+            )}
+            {faltantes.length > 0 && (
+              <>
+                <p className="mt-2 text-xs font-medium text-zinc-800">Lo que llegó de MENOS</p>
+                <p className="text-xs text-zinc-600">Si se quedó en tu bodega, regresa a tu stock. Si se perdió o llegó dañado, queda como merma.</p>
+              </>
+            )}
             <ul className="mt-2 space-y-2">
               {faltantes.map((l) => {
                 const diff = diferenciaLinea({ cantidad_planeada: l.planeadas, cantidad_recibida: l.recibidas });
@@ -540,7 +605,7 @@ export function TarjetaEnvioMl({ datos, bodegas }: { datos: EnvioParaPantalla; b
                       {l.titulo ?? l.inventory_id} · faltaron <strong>{piezas.toLocaleString("es-MX")} pzas</strong>
                       {!l.sku && <span className="text-amber-700"> (sin ligar: se aplica cuando lo ligues)</span>}
                     </span>
-                    <div className="w-64">
+                    <div className="w-72">
                       <Selector
                         defaultValue={decisiones[l.clave] ?? "QUEDO_EN_BODEGA"}
                         onChange={(v) => setDecisiones((d) => ({ ...d, [l.clave]: v as DecisionDiferencia }))}
@@ -553,23 +618,48 @@ export function TarjetaEnvioMl({ datos, bodegas }: { datos: EnvioParaPantalla; b
                   </li>
                 );
               })}
-              {conDiferencia
-                .filter((l) => diferenciaLinea({ cantidad_planeada: l.planeadas, cantidad_recibida: l.recibidas }) < 0)
-                .map((l) => (
-                  <li key={l.clave} className="text-xs text-zinc-700">
-                    {l.titulo ?? l.inventory_id}: ML recibió {Math.abs(diferenciaLinea({ cantidad_planeada: l.planeadas, cantidad_recibida: l.recibidas })).toLocaleString("es-MX")} de más de lo declarado; esas piezas también salen de tu bodega.
-                  </li>
-                ))}
             </ul>
+            {sobrantes.length > 0 && (
+              <>
+                <p className="mt-3 text-xs font-medium text-zinc-800">Lo que llegó de MÁS</p>
+                <p className="text-xs text-zinc-600">ML recibió más de lo que declaraste. Si esas piezas salieron de tu bodega, se descuentan; si no (por ejemplo, ML se equivocó al contar), no se tocan.</p>
+                <ul className="mt-2 space-y-2">
+                  {sobrantes.map((l) => {
+                    const piezas = -diferenciaLinea({ cantidad_planeada: l.planeadas, cantidad_recibida: l.recibidas }) * (l.factor || 1);
+                    return (
+                      <li key={l.clave} className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                        <span className="text-zinc-800">
+                          {l.titulo ?? l.inventory_id} · sobraron <strong>{piezas.toLocaleString("es-MX")} pzas</strong>
+                          {!l.sku && <span className="text-amber-700"> (sin ligar: se aplica cuando lo ligues)</span>}
+                        </span>
+                        <div className="w-72">
+                          <Selector
+                            defaultValue={decisiones[l.clave] ?? "SALIERON_DE_MAS"}
+                            onChange={(v) => setDecisiones((d) => ({ ...d, [l.clave]: v as DecisionDiferencia }))}
+                            opciones={[
+                              { value: "SALIERON_DE_MAS", label: "Sí salieron de mi bodega (se descuentan)" },
+                              { value: "NO_SALIERON", label: "No salieron de mi bodega (no se descuentan)" },
+                            ]}
+                          />
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </>
+            )}
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 disabled={enviando}
                 onClick={() => {
-                  const decis = faltantes.flatMap((l) => l.lineaIds.map((lineaId) => ({ lineaId, decision: decisiones[l.clave] ?? ("QUEDO_EN_BODEGA" as DecisionDiferencia) })));
+                  const decis = [
+                    ...faltantes.flatMap((l) => l.lineaIds.map((lineaId) => ({ lineaId, decision: decisiones[l.clave] ?? ("QUEDO_EN_BODEGA" as DecisionDiferencia) }))),
+                    ...sobrantes.flatMap((l) => l.lineaIds.map((lineaId) => ({ lineaId, decision: decisiones[l.clave] ?? ("SALIERON_DE_MAS" as DecisionDiferencia) }))),
+                  ];
                   void correr(async () => {
                     const r = await cerrarEnvioMl(envio.inbound_id, decis);
-                    if (!r.error) setMensaje(`Listo: envío cerrado.${r.regresaron ? ` ${r.regresaron.toLocaleString("es-MX")} pzas regresaron a tu bodega.` : ""}${r.mermas ? ` ${r.mermas.toLocaleString("es-MX")} pzas quedaron como merma.` : ""}`);
+                    if (!r.error) setMensaje(`Listo: envío cerrado.${r.regresaron ? ` ${r.regresaron.toLocaleString("es-MX")} pzas regresaron a tu bodega.` : ""}${r.mermas ? ` ${r.mermas.toLocaleString("es-MX")} pzas quedaron como merma.` : ""}${r.deMas ? ` ${r.deMas.toLocaleString("es-MX")} pzas de más se descontaron de tu bodega.` : ""}`);
                     return r;
                   });
                 }}
@@ -578,7 +668,7 @@ export function TarjetaEnvioMl({ datos, bodegas }: { datos: EnvioParaPantalla; b
                 {enviando ? "Cerrando…" : "Cerrar envío"}
               </button>
               <button type="button" disabled={enviando} onClick={() => setPegando(true)} className={btnSec}>
-                Volver a pegar la tabla
+                Volver a pegar la página
               </button>
             </div>
           </div>

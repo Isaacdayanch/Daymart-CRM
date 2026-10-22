@@ -44,6 +44,18 @@ export interface VinculoMl {
   piezas_por_unidad?: number | null;
   /** true = es una liga por SKU de ML (item_id = "sku:XXX"), no por publicación. */
   por_sku?: boolean;
+  /** true = es una liga por Código ML de Full (item_id = "inv:XXX"). */
+  por_codigo?: boolean;
+}
+
+/** Liga por Código ML (migración 0055, 21 oct): el Código ML de Full
+ * (inventory_id, tipo IPYX23014) → producto del CRM. Es la liga que manda:
+ * un código es un producto físico (la publicación normal y la de catálogo lo
+ * comparten; cada color tiene el suyo). */
+export interface LigaCodigoMl {
+  inventory_id: string;
+  sku_crm: string;
+  piezas_por_unidad: number | null;
 }
 
 /** Liga por SKU de Mercado Libre (migración 0048): el SKU que Isaac pone en
@@ -67,6 +79,32 @@ export function normalizarSellerSku(sellerSku: string | null | undefined) {
 const PREFIJO_SKU = "sku:";
 export function claveLigaSku(sellerSku: string) {
   return claveVinculo(`${PREFIJO_SKU}${sellerSku}`, null);
+}
+
+const PREFIJO_CODIGO = "inv:";
+export function normalizarCodigoMl(codigo: string | null | undefined) {
+  const c = (codigo ?? "").trim().toUpperCase();
+  return c || null;
+}
+export function claveCodigoMl(inventoryId: string) {
+  return claveVinculo(`${PREFIJO_CODIGO}${normalizarCodigoMl(inventoryId) ?? inventoryId}`, null);
+}
+
+export async function obtenerLigasCodigo(): Promise<LigaCodigoMl[]> {
+  const supabase = createServiceClient();
+  const { data, error } = await todasLasFilas<LigaCodigoMl>((desde, hasta) =>
+    supabase.from("mercadolibre_codigo_vinculos").select("inventory_id, sku_crm, piezas_por_unidad", { count: "exact" }).order("inventory_id").range(desde, hasta),
+  );
+  if (error) return []; // sin el SQL 0058 simplemente no hay ligas por Código ML
+  return data ?? [];
+}
+
+/** Las ligas por Código ML convertidas a "vínculos" sintéticos (item_id = "inv:XXX"). */
+export function vinculosDesdeLigasCodigo(ligas: LigaCodigoMl[]): VinculoMl[] {
+  return ligas
+    .map((l) => ({ l, k: normalizarCodigoMl(l.inventory_id) }))
+    .filter((x): x is { l: LigaCodigoMl; k: string } => Boolean(x.k))
+    .map(({ l, k }) => ({ id: `inv:${k}`, item_id: `${PREFIJO_CODIGO}${k}`, variation_id: null, sku_crm: l.sku_crm, piezas_por_unidad: l.piezas_por_unidad, por_codigo: true }));
 }
 
 export async function obtenerLigasSku(): Promise<LigaSkuMl[]> {
@@ -109,10 +147,14 @@ export function factoresVinculos(vinculos: VinculoMl[]): Map<string, number> {
   return new Map(vinculos.map((v) => [claveVinculo(v.item_id, v.variation_id), Math.max(1, Math.round(Number(v.piezas_por_unidad) || 1))]));
 }
 
-/** Factor de una publicación, en el mismo orden que la liga: por
- * publicación/variante → por SKU de ML → item sin variación → 1. */
-export function factorDePublicacion(itemId: string, variationId: number | null, factores: Map<string, number> | undefined, sellerSku?: string | null) {
+/** Factor de una publicación, en el mismo orden que la liga: Código ML →
+ * publicación/variante → SKU de ML → item sin variación → 1. */
+export function factorDePublicacion(itemId: string, variationId: number | null, factores: Map<string, number> | undefined, sellerSku?: string | null, inventoryId?: string | null) {
   if (!factores) return 1;
+  if (inventoryId) {
+    const f = factores.get(claveCodigoMl(inventoryId));
+    if (f !== undefined) return f;
+  }
   const propio = factores.get(claveVinculo(itemId, variationId));
   if (propio !== undefined) return propio;
   const porSku = normalizarSellerSku(sellerSku);
@@ -737,10 +779,10 @@ export async function buscarPublicacionesEnMl(texto: string, skusCrm: Set<string
   //    con otro nombre, aquí se ve bajo qué título.
   const normalizar = (t: string | null | undefined) => (t ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
   const q2 = normalizar(q);
-  type Local = Pick<PublicacionMl, "item_id" | "variation_id" | "titulo" | "variacion" | "estado" | "precio" | "imagen_url" | "seller_sku">;
+  type Local = Pick<PublicacionMl, "item_id" | "variation_id" | "titulo" | "variacion" | "estado" | "precio" | "imagen_url" | "seller_sku" | "inventory_id">;
   const [{ data: locales }, vinculosLista] = await Promise.all([
     todasLasFilas<Local>((desde, hasta) =>
-      supabase.from("mercadolibre_publicaciones").select("item_id, variation_id, titulo, variacion, estado, precio, imagen_url, seller_sku", { count: "exact" }).order("id").range(desde, hasta),
+      supabase.from("mercadolibre_publicaciones").select("item_id, variation_id, titulo, variacion, estado, precio, imagen_url, seller_sku, inventory_id", { count: "exact" }).order("id").range(desde, hasta),
     ),
     obtenerVinculos().catch(() => [] as VinculoMl[]),
   ]);
@@ -767,7 +809,7 @@ export async function buscarPublicacionesEnMl(texto: string, skusCrm: Set<string
       traible: e.traible ?? true,
       variantes: variantes?.map((v) => {
         const liga = skuCrmDe(v, vinculos, skusCrm);
-        return { variation_id: v.variation_id, variacion: v.variacion, seller_sku: v.seller_sku, skuCrm: liga.sku, origen: liga.origen, factor: factorDePublicacion(v.item_id, v.variation_id, factores, v.seller_sku) };
+        return { variation_id: v.variation_id, variacion: v.variacion, seller_sku: v.seller_sku, skuCrm: liga.sku, origen: liga.origen, factor: factorDePublicacion(v.item_id, v.variation_id, factores, v.seller_sku, v.inventory_id) };
       }),
     };
   });
@@ -789,11 +831,12 @@ export async function obtenerPublicaciones(): Promise<PublicacionMl[]> {
  * para que todas las pantallas resuelvan igual con `skuCrmDe`. */
 export async function obtenerVinculos(): Promise<VinculoMl[]> {
   const supabase = createServiceClient();
-  const [{ data }, ligas] = await Promise.all([
+  const [{ data }, ligas, ligasCodigo] = await Promise.all([
     todasLasFilas<VinculoMl>((desde, hasta) => supabase.from("mercadolibre_vinculos").select("*", { count: "exact" }).order("id").range(desde, hasta)),
     obtenerLigasSku(),
+    obtenerLigasCodigo(),
   ]);
-  return [...(data ?? []), ...vinculosDesdeLigasSku(ligas)];
+  return [...(data ?? []), ...vinculosDesdeLigasSku(ligas), ...vinculosDesdeLigasCodigo(ligasCodigo)];
 }
 
 export function claveVinculo(itemId: string, variationId: number | null) {
@@ -802,12 +845,17 @@ export function claveVinculo(itemId: string, variationId: number | null) {
 
 /** SKU del CRM de cada publicación: la liga manual manda; si no hay,
  * coincidencia automática cuando el SKU de ML es igual a un SKU del CRM. */
-/** Orden de resolución (Isaac, 7 oct: "todo sobre ese SKU", y luego "cada
- * color de una misma publicación es un producto distinto"): 1) liga de ESA
- * publicación/variante (lo más específico gana: así cuatro colores con el
- * mismo SKU en ML pueden ir a cuatro productos), 2) liga por SKU de ML,
- * 3) el SKU de ML es igual a uno del CRM. */
-export function skuCrmDe(pub: Pick<PublicacionMl, "item_id" | "variation_id" | "seller_sku">, vinculos: Map<string, string>, skusCrm: Set<string>) {
+/** Orden de resolución ÚNICO (21 oct; Isaac: "no es constante ni
+ * consistente"): 0) liga por Código ML de Full — un código es un producto
+ * físico, así la publicación normal, la de catálogo y el envío a Full caen
+ * siempre en el mismo lado; 1) liga de ESA publicación/variante (para lo que
+ * no está en Full); 2) liga por SKU de ML; 3) el SKU de ML es igual a uno del
+ * CRM. */
+export function skuCrmDe(pub: Pick<PublicacionMl, "item_id" | "variation_id" | "seller_sku"> & { inventory_id?: string | null }, vinculos: Map<string, string>, skusCrm: Set<string>) {
+  if (pub.inventory_id) {
+    const porCodigo = vinculos.get(claveCodigoMl(pub.inventory_id));
+    if (porCodigo) return { sku: porCodigo, origen: "codigo" as const };
+  }
   const manual = vinculos.get(claveVinculo(pub.item_id, pub.variation_id));
   if (manual) return { sku: manual, origen: "manual" as const };
   const sellerSku = normalizarSellerSku(pub.seller_sku);
@@ -820,7 +868,7 @@ export function skuCrmDe(pub: Pick<PublicacionMl, "item_id" | "variation_id" | "
   return { sku: null, origen: null };
 }
 
-export type OrigenLiga = "sku" | "auto" | "manual" | null;
+export type OrigenLiga = "codigo" | "sku" | "auto" | "manual" | null;
 
 export interface ResumenFull {
   /** Piezas disponibles en Full, contando cada inventario UNA vez. */
@@ -856,7 +904,7 @@ export function resumenFull(
     const { sku } = skuCrmDe(p, vinculos, skusCrm);
     if (sku) {
       // En piezas del CRM: un "par" en Full son 2 piezas en bodega.
-      const piezasCrm = p.full_disponible * factorDePublicacion(p.item_id, p.variation_id, factores, p.seller_sku);
+      const piezasCrm = p.full_disponible * factorDePublicacion(p.item_id, p.variation_id, factores, p.seller_sku, p.inventory_id);
       r.valor += piezasCrm * (costoPorSku.get(sku) ?? 0);
       r.porSku.set(sku, (r.porSku.get(sku) ?? 0) + piezasCrm);
     } else if (p.full_disponible > 0) {

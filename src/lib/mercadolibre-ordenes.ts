@@ -561,6 +561,12 @@ export async function procesarNotificacionesPendientes(limite = 30) {
             .update({ logistica: envio.logistica, envio_estado: envio.estado, costo_envio_vendedor: envio.costoVendedor })
             .eq("envio_id", envioId);
         }
+      } else if (conexion && n.topic === "questions" && n.resource?.startsWith("/questions/")) {
+        const preguntaId = Number(n.resource.split("/")[2]);
+        if (preguntaId) {
+          const { sincronizarPregunta } = await import("./mercadolibre-preguntas");
+          await sincronizarPregunta(preguntaId);
+        }
       }
       // items y otros tópicos: por ahora solo se marcan como vistos.
       await supabase.from("mercadolibre_notificaciones").update({ procesado_en: new Date().toISOString() }).eq("id", n.id);
