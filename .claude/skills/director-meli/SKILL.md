@@ -79,6 +79,22 @@ Desde el 20 oct (Isaac: "que el agente altere el CRM y el CRM altere Mercado Lib
 
 La bitácora del día va en el CRM (esa puerta), **no en `bitacora.md`**; en el repositorio solo editas `reglas-de-isaac.md` y `calendario.md` cuando Isaac te dé una regla nueva.
 
+### Fase 2 (22 oct): promociones y relámpago las EJECUTA el CRM, sin Chrome
+
+En cuanto Isaac aprueba (en la pantalla o en el chat vía `decisiones`), el CRM aplica en Mercado Libre las propuestas con `accion_tipo` automático y las deja en EJECUTADA (con `resultado`) o FALLIDA (con `error`; Isaac puede "reintentar" o "regresar y cambiar precio"). Para que el CRM pueda ejecutarlas, manda los `datos` exactos:
+
+| `accion_tipo` | `datos` obligatorios | `datos` opcionales |
+|---|---|---|
+| `PROMOCION_DESCUENTO` (descuento del vendedor, PRICE_DISCOUNT) | `item_id` (MLM…), `precio` (o `precio_propuesto`), `precio_base` (el precio base actual: el CRM se niega si el precio no es MENOR) | `fin` ("AAAA-MM-DD", sin fin = hasta que se quite), `precio_minimo` (precio por debajo del cual ya no se cumple el margen mínimo: **candado**, si Isaac baja más, no se aplica), `margen_pct`, `titulo` |
+| `PARTICIPAR_PROMOCION` (relámpago, DEAL, campañas que ML ofrece) | `item_id`, `promotion_type` (LIGHTNING, DEAL, DOD, MARKETPLACE_CAMPAIGN, SELLER_CAMPAIGN, SMART, PRE_NEGOTIATED…), `promotion_id` | `precio` (= `deal_price`; usa el `precio_sugerido` de ML o uno dentro de `precio_min`–`precio_max`), `precio_minimo`, `precio_base`, `margen_pct` |
+| `QUITAR_PROMOCION` | `item_id`, `promotion_type` | `promotion_id`, `precio_base` |
+
+**Las candidatas de ML** (relámpago y campañas que ML le ofrece a cada publicación, con su `promotion_id`, precio sugerido, mín/máx y vigencia) se leen con `GET /api/director/promociones?items=MLM1,MLM2` (máx. 15 publicaciones por llamada; es una consulta a ML por cada una, así que pídelas solo para las que vas a proponer: las de `publicaciones.lista` con margen y ventas). Una relámpago propuesta así se activa por API al aprobar: **ya no hace falta Chrome para relámpago ni promociones**. Lo que el skill `ofertas-relampago-daymart` dice de leer/activar con Chrome aplica solo si esta API no devuelve la relámpago (p. ej. las "Exclusivas para Mi página" que Isaac crea a mano): en ese caso propón como `MANUAL` y dilo.
+
+`POST /api/director/ejecutar` (cuerpo opcional `{"ids": […]}`) ejecuta lo APROBADO que siga sin ejecutar (red de seguridad; el reloj del CRM también lo hace). En el mensaje de la mañana, lo que el CRM ya ejecutó ayer sale de `propuestas.decididas_sin_reportar` con `estado` EJECUTADA/FALLIDA, `resultado` y `error`: repórtalo en una línea por renglón.
+
+Publicidad (ADS), publicaciones (PUBLICACION) y preguntas (RESPONDER_PREGUNTA) todavía NO las ejecuta el CRM (fases 3 y 4): propónlas como `MANUAL`.
+
 ## La rutina de la mañana (tarea programada, 8:25 am CDMX)
 
 **Paso 0 — pedir permiso antes de gastar** (Isaac, 22 oct: "quiero que antes de que el agente consuma tokens me pregunte"). La sesión programada NO lee el CRM ni el manual completo ni analiza nada hasta que Isaac diga que sí. Lo primero y único que haces al despertar es mandar UNA línea y terminar el turno:
@@ -142,7 +158,7 @@ Reglas del formato: montos con separador de miles y sin centavos; máximo ~25 re
 
 - **Si contesta en el chat** ("va", "va menos el 4", "la olla a 1,990"): primero regístralo en el CRM con `POST /api/director/decisiones` (APROBAR todo menos los números que dijo; precio nuevo donde lo cambió). Si ya decidió en la pantalla, la puerta te dirá que no hay pendientes con ese número: no pasa nada, confírmale lo que ya quedó.
 - **Si decidió en la pantalla**, te enteras por `GET /api/director` → `propuestas.decididas_sin_reportar` (en esta sesión si te escribe, o mañana en la rutina).
-- **Qué se ejecuta y cómo**: lo que tenga `accion_tipo` automático lo ejecuta el CRM (fase 2; hoy ninguno). Lo `MANUAL` lo hace Isaac en el panel de ML y lo marca "Ya la hice" en la pantalla; o, si Isaac tiene su compu ligada a esta sesión (herramientas `mcp__remote-devices__*` o `mcp__claude-in-chrome__*`; carga el skill `chrome-browser` o `computer-use` antes), puedes hacerlo tú con el skill del área y luego lo marcas hecho con `POST /api/director/bitacora` (`accion: "EJECUTADA_CON_CHROME"`, `propuesta_id`) y le pides a Isaac que le dé "Ya la hice" (la pantalla es de él). No intentes entrar a Mercado Libre por otro camino ni pidas contraseñas.
+- **Qué se ejecuta y cómo**: lo que tenga `accion_tipo` automático (promociones, relámpago, quitar promoción) lo ejecuta el CRM en Mercado Libre en cuanto se aprueba; la respuesta de `decisiones` trae `ejecucion[]` con ok/resultado/error por propuesta: repórtalo tal cual. Lo `MANUAL` lo hace Isaac en el panel de ML y lo marca "Ya la hice" en la pantalla; o, si Isaac tiene su compu ligada a esta sesión (herramientas `mcp__remote-devices__*` o `mcp__claude-in-chrome__*`; carga el skill `chrome-browser` o `computer-use` antes), puedes hacerlo tú con el skill del área y luego lo marcas hecho con `POST /api/director/bitacora` (`accion: "EJECUTADA_CON_CHROME"`, `propuesta_id`) y le pides a Isaac que le dé "Ya la hice" (la pantalla es de él). No intentes entrar a Mercado Libre por otro camino ni pidas contraseñas.
 - Al terminar, reporta en una lista corta: qué quedó, qué no y por qué, y marca `reportadas` en la puerta de decisiones.
 - Si Isaac dice una regla nueva ("ese producto nunca a relámpago", "la olla siempre a 1,990", "los lunes no me mandes publicidad"), **anótala en `reglas-de-isaac.md` en ese momento** (sección que corresponda, con la fecha), súbela al repositorio (abajo) y confírmale en una línea que ya quedó. Si la regla cambia el calendario, edita `calendario.md`.
 

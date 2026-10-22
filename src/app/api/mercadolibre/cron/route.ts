@@ -115,5 +115,20 @@ export async function GET(request: NextRequest) {
     resultado.enviosFull = { error: e instanceof Error ? e.message : "Fallaron las salidas de envíos a Full." };
   }
 
+  // Director (fase 2): si alguna propuesta aprobada con acción automática se
+  // quedó sin ejecutar (ej. se cortó el tiempo al aprobar), se ejecuta aquí.
+  if (Date.now() - inicio < 50000) {
+    try {
+      const { ejecutarAprobadas } = await import("@/lib/director-ejecutar");
+      const r = await ejecutarAprobadas({ limite: 5 });
+      if (r.length) {
+        resultado.director = { ejecutadas: r.filter((x) => x.ok).length, fallidas: r.filter((x) => !x.ok).length };
+        revalidatePath("/director");
+      }
+    } catch (e) {
+      resultado.director = { error: e instanceof Error ? e.message : "Falló el Director." };
+    }
+  }
+
   return NextResponse.json({ ok: true, segundos: Math.round((Date.now() - inicio) / 1000), ...resultado });
 }

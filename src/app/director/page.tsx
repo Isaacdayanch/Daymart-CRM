@@ -5,7 +5,7 @@ import { ACCIONES_DIRECTOR, ETIQUETA_AREA, ETIQUETA_ESTADO, ordenarPropuestas } 
 import type { BitacoraDirector, PropuestaDirector } from "@/lib/tipos";
 import { BotonGuardar } from "@/components/boton-guardar";
 import { PropuestasPendientes } from "./propuestas-pendientes";
-import { deshacerDecisionForm, marcarHechaForm } from "./actions";
+import { deshacerDecisionForm, marcarHechaForm, reintentarEjecucionForm } from "./actions";
 
 const DIA_MS = 86400000;
 
@@ -91,8 +91,8 @@ export default async function DirectorPage() {
               Aprobadas, falta hacerlas <span className="font-normal text-zinc-400">· {listaAprobadas.length}</span>
             </h2>
             <p className="mt-0.5 text-xs text-zinc-500">
-              Por ahora las haces tú en Mercado Libre (o el Director con tu Chrome) y aquí las marcas como hechas. Cuando el CRM pueda ejecutarlas solo, aquí mismo verás “hecha por el
-              CRM”.
+              Las promociones y relámpago las aplica el CRM en Mercado Libre en cuanto las apruebas (si una falla, abajo en el historial dice por qué y puedes reintentar). Las que
+              dicen “la haces tú a mano” (Full, publicidad, publicaciones) las haces en el panel y aquí las marcas como hechas.
             </p>
           </div>
           <ul className="divide-y divide-zinc-100">
@@ -155,6 +155,20 @@ export default async function DirectorPage() {
                       regresar
                     </button>
                   </form>
+                )}
+                {p.estado === "FALLIDA" && (
+                  <div className="flex items-center gap-2">
+                    <form action={reintentarEjecucionForm.bind(null, p.id)}>
+                      <button type="submit" className="text-[11px] text-[#2D3277] underline-offset-2 hover:underline">
+                        reintentar
+                      </button>
+                    </form>
+                    <form action={deshacerDecisionForm.bind(null, p.id)}>
+                      <button type="submit" className="text-[11px] text-zinc-400 underline-offset-2 hover:text-zinc-700 hover:underline">
+                        regresar y cambiar precio
+                      </button>
+                    </form>
+                  </div>
                 )}
               </li>
             ))}

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { createServiceClient } from "@/lib/supabase/servicio";
-import { mensajeErrorDirector, resumenPropuesta } from "@/lib/director";
+import { ACCIONES_DIRECTOR, mensajeErrorDirector, resumenPropuesta } from "@/lib/director";
+import { ejecutarAprobadas, type ResultadoEjecucion } from "@/lib/director-ejecutar";
 import type { PropuestaDirector } from "@/lib/tipos";
 import { anotarBitacora, autorizadoDirector, leerJson, noAutorizado } from "../_comun";
 
@@ -21,7 +22,8 @@ export async function POST(request: NextRequest) {
   if (!cuerpo) return NextResponse.json({ error: "El cuerpo debe ser JSON." }, { status: 400 });
   const supabase = createServiceClient();
   const ahora = new Date().toISOString();
-  const resultado: { decididas: string[]; ignoradas: string[]; reportadas: number } = { decididas: [], ignoradas: [], reportadas: 0 };
+  const resultado: { decididas: string[]; ignoradas: string[]; reportadas: number; ejecucion: ResultadoEjecucion[]; error_ejecucion?: string } = { decididas: [], ignoradas: [], reportadas: 0, ejecucion: [] };
+  const aEjecutar: string[] = [];
 
   try {
     const decisiones = Array.isArray(cuerpo.decisiones) ? (cuerpo.decisiones as Record<string, unknown>[]) : [];
@@ -54,6 +56,15 @@ export async function POST(request: NextRequest) {
         if (errorUpd) throw new Error(mensajeErrorDirector(errorUpd));
         await anotarBitacora({ origen: "ISAAC", accion: decision === "APROBADA" ? "APROBAR" : "RECHAZAR", propuesta_id: p.id, detalle: { desde: "CHAT", precio, nota }, resultado: resumenPropuesta({ ...p, precio_aprobado: precio }) });
         resultado.decididas.push(p.id);
+        if (decision === "APROBADA" && ACCIONES_DIRECTOR[p.accion_tipo]?.automatica) aEjecutar.push(p.id);
+      }
+      // Fase 2: lo aprobado con acción automática se ejecuta en ML de inmediato.
+      if (aEjecutar.length) {
+        try {
+          resultado.ejecucion = await ejecutarAprobadas({ ids: aEjecutar });
+        } catch (e) {
+          resultado.error_ejecucion = e instanceof Error ? e.message : "No se pudieron ejecutar en Mercado Libre.";
+        }
       }
     }
 
@@ -65,6 +76,7 @@ export async function POST(request: NextRequest) {
     }
 
     revalidatePath("/director");
+    revalidatePath("/mercadolibre/promociones");
     return NextResponse.json({ ok: true, ...resultado });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "No se pudieron registrar las decisiones." }, { status: 500 });
