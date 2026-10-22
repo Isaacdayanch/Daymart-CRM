@@ -9,7 +9,7 @@
 // 3) Isaac aprueba (o corrige) → `responderPregunta` lo manda a ML
 //    (POST /answers). Nada se manda sin su clic.
 //
-// Tablas en la migración 0056 (RLS sin políticas: solo service role).
+// Tablas en la migración 0057 (RLS sin políticas: solo service role).
 
 import { mercadolibreGet, obtenerConexion } from "./mercadolibre-auth";
 import { mercadolibrePost } from "./mercadolibre-post";
@@ -67,7 +67,7 @@ interface PreguntaApi {
   answer?: { text?: string; status?: string; date_created?: string } | null;
 }
 
-/** "Falta el SQL 0056" se detecta por el mensaje de PostgREST. */
+/** "Falta el SQL 0057" se detecta por el mensaje de PostgREST. */
 export function faltaSqlAtencion(mensaje: string | undefined | null) {
   return Boolean(mensaje && /mercadolibre_(preguntas|atencion_config)/.test(mensaje) && /(does not exist|schema cache|Could not find)/i.test(mensaje));
 }
@@ -290,7 +290,7 @@ export async function gastoIaHoy() {
     .select("costo_usd")
     .gte("creado_en", inicioDelDiaMx(new Date()).toISOString())
     .returns<{ costo_usd: number }[]>();
-  if (error) throw new Error(`No pude revisar cuánto se ha gastado hoy en la IA (¿falta el SQL 0056?): ${error.message}`);
+  if (error) throw new Error(`No pude revisar cuánto se ha gastado hoy en la IA (¿falta el SQL 0057?): ${error.message}`);
   return (data ?? []).reduce((s, g) => s + Number(g.costo_usd || 0), 0);
 }
 

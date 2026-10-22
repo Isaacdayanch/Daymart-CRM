@@ -102,7 +102,7 @@ export default async function AtencionClientes() {
 
       {faltaSql && (
         <Aviso>
-          Falta correr el SQL <b>0056</b> en Supabase para que funcione esta pestaña.
+          Falta correr el SQL <b>0057</b> en Supabase para que funcione esta pestaña.
         </Aviso>
       )}
       {!conexion && (
