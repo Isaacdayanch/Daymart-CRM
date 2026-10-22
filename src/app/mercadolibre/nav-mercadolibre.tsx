@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 
 const PESTANAS = [
   { href: "/mercadolibre", etiqueta: "Ventas" },
+  { href: "/mercadolibre/atencion", etiqueta: "Atención a clientes" },
   { href: "/mercadolibre/stock", etiqueta: "Publicaciones" },
   { href: "/mercadolibre/skus", etiqueta: "Ligar productos" },
   { href: "/mercadolibre/promociones", etiqueta: "Promociones" },
