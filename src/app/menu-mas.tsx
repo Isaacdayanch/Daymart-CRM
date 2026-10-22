@@ -73,6 +73,21 @@ const ITEMS = [
     ),
   },
   {
+    href: "/compras",
+    etiqueta: "Compras",
+    soloDueno: true,
+    // Bolsa de compras: pedidos a proveedores de México.
+    icono: (
+      <path
+        d="M4 6.5h10l-.8 8a1.5 1.5 0 0 1-1.5 1.35H6.3A1.5 1.5 0 0 1 4.8 14.5L4 6.5ZM6.5 6.5V5a2.5 2.5 0 0 1 5 0v1.5"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    ),
+  },
+  {
     href: "/stock",
     etiqueta: "Stock",
     // Caja isométrica (3D): una pila de mercancía, distinta al

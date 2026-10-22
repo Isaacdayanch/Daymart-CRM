@@ -122,9 +122,9 @@ export async function eliminarProductoStock(sku: string, formData: FormData) {
   const [{ data: movimientos }, { data: enContenedores }, { data: pendientes }, { data: lineasFull }] = await Promise.all([
     supabase
       .from("movimientos_stock")
-      .select("id, contenedor_id, venta_id, orden_ml_id, envio_full_id, recepcion_full_id, inbound_ml_id")
+      .select("id, contenedor_id, venta_id, orden_ml_id, envio_full_id, recepcion_full_id, inbound_ml_id, orden_compra_id")
       .eq("sku", sku)
-      .returns<{ id: string; contenedor_id: string | null; venta_id: string | null; orden_ml_id: number | null; envio_full_id: string | null; recepcion_full_id: string | null; inbound_ml_id: string | null }[]>(),
+      .returns<{ id: string; contenedor_id: string | null; venta_id: string | null; orden_ml_id: number | null; envio_full_id: string | null; recepcion_full_id: string | null; inbound_ml_id: string | null; orden_compra_id?: string | null }[]>(),
     supabase
       .from("productos")
       .select("contenedor:contenedores(numero, eliminado_en)")
@@ -150,6 +150,7 @@ export async function eliminarProductoStock(sku: string, formData: FormData) {
   const movs = movimientos ?? [];
   if (movs.some((m) => m.contenedor_id)) ataduras.push("tiene entradas que vienen de un contenedor recibido");
   if (movs.some((m) => m.venta_id)) ataduras.push("tiene salidas por ventas directas (cancélalas desde Ventas)");
+  if (movs.some((m) => m.orden_compra_id)) ataduras.push("tiene entradas de órdenes de compra a proveedores (cancélalas desde Compras)");
   if (movs.some((m) => m.orden_ml_id || m.envio_full_id || m.recepcion_full_id || m.inbound_ml_id)) {
     ataduras.push("tiene salidas generadas por Mercado Libre (ventas o envíos a Full)");
   }
