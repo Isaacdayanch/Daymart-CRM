@@ -5,6 +5,7 @@ import Link from "next/link";
 import { esSugeridoReorden, type ResumenSku } from "@/lib/calculos-stock";
 import { formatoCajas, formatoPesos } from "@/lib/formato";
 import { Selector } from "@/components/selector";
+import { Miniatura } from "@/components/miniatura";
 
 function normaliza(texto: string) {
   return texto
@@ -121,12 +122,7 @@ export function TablaStock({
                       className="flex items-center gap-3 hover:underline"
                     >
                       {r.imagenUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element -- miniatura en tabla, tamaño fijo
-                        <img
-                          src={r.imagenUrl}
-                          alt={r.nombre}
-                          className="h-10 w-10 shrink-0 rounded-lg object-cover"
-                        />
+                        <Miniatura src={r.imagenUrl} alt={r.nombre} tamano={40} className="h-10 w-10 shrink-0 rounded-lg object-cover" />
                       ) : (
                         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-100 text-[9px] text-zinc-400">
                           Sin foto

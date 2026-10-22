@@ -130,7 +130,7 @@ export function TablaAnalisis({ filas, diasEspera, contenedor }: { filas: FilaAn
                       <summary className="flex cursor-pointer list-none items-start gap-3">
                         {f.imagenUrl ? (
                           // eslint-disable-next-line @next/next/no-img-element -- miniatura de ML
-                          <img src={f.imagenUrl} alt="" className="h-10 w-10 shrink-0 rounded-lg object-cover" />
+                          <img loading="lazy" decoding="async" src={f.imagenUrl} alt="" className="h-10 w-10 shrink-0 rounded-lg object-cover" />
                         ) : (
                           <div className="h-10 w-10 shrink-0 rounded-lg bg-zinc-100" />
                         )}

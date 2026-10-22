@@ -36,7 +36,7 @@ function Renglon({ p, derecha }: { p: PublicacionMl; derecha: React.ReactNode })
     <div className="flex items-center gap-2 text-xs">
       {p.imagen_url ? (
         // eslint-disable-next-line @next/next/no-img-element -- miniatura de Mercado Libre
-        <img src={p.imagen_url} alt="" className="h-7 w-7 shrink-0 rounded-md object-cover" />
+        <img loading="lazy" decoding="async" src={p.imagen_url} alt="" className="h-7 w-7 shrink-0 rounded-md object-cover" />
       ) : (
         <div className="h-7 w-7 shrink-0 rounded-md bg-white/60" />
       )}
@@ -211,7 +211,7 @@ export async function ResumenDia() {
               <div key={f.clave} className="flex items-center gap-2 text-xs">
                 {f.imagenUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element -- miniatura de Mercado Libre
-                  <img src={f.imagenUrl} alt="" className="h-7 w-7 shrink-0 rounded-md object-cover" />
+                  <img loading="lazy" decoding="async" src={f.imagenUrl} alt="" className="h-7 w-7 shrink-0 rounded-md object-cover" />
                 ) : (
                   <div className="h-7 w-7 shrink-0 rounded-md bg-white/60" />
                 )}

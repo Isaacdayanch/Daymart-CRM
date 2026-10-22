@@ -14,7 +14,7 @@ type Opcion = { sku: string; nombre: string; stockActual: number; imagenUrl: str
 function Foto({ p }: { p: PublicacionResumen }) {
   return p.imagen_url ? (
     // eslint-disable-next-line @next/next/no-img-element -- miniatura
-    <img src={p.imagen_url} alt="" className="h-9 w-9 shrink-0 rounded-md object-cover" />
+    <img loading="lazy" decoding="async" src={p.imagen_url} alt="" className="h-9 w-9 shrink-0 rounded-md object-cover" />
   ) : (
     <span className="h-9 w-9 shrink-0 rounded-md bg-zinc-100" />
   );

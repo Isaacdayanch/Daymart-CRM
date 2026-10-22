@@ -78,38 +78,45 @@ export default async function VentasMercadoLibre({
   const desdeTexto = fechaTextoMx(desde);
   const hastaTexto = fechaTextoMx(new Date(hasta.getTime() - 1));
 
-  const conexion = await obtenerConexion().catch(() => null);
-  let ordenes: OrdenMl[] = [];
-  let items: OrdenItemMl[] = [];
-  let sync = null;
-  let errorLectura: string | null = null;
-  try {
-    sync = await obtenerEstadoSync();
-    // La pantalla se muestra PRIMERO con lo que ya hay guardado; el refresco
-    // contra Mercado Libre (avisos del webhook, ventas de 2 días, montos
-    // pendientes) corre DESPUÉS de responder, con `after()`. Antes se hacía
-    // antes de pintar y la pantalla tardaba 20–40 s en abrir (Isaac, 5 oct).
-    if (conexion) {
-      const vieja = !sync?.ultima_sync || ahora.getTime() - new Date(sync.ultima_sync).getTime() > AUTO_SYNC_MS;
-      if (sync?.ultima_sync && vieja) {
-        after(async () => {
-          await procesarNotificacionesPendientes(20).catch(() => 0);
-          await sincronizarOrdenes({ diasAtras: 2 }).catch(() => 0);
-          await completarMontosGuardados(200).catch(() => 0);
-        });
-      }
-    }
-    const supabase = createServiceClient();
-    const { data, error } = await supabase
+  // Velocidad (22 oct): conexión, estado de la sincronización y ventas del
+  // periodo se piden a la vez (antes iban una tras otra).
+  const supabase = createServiceClient();
+  const [conexion, syncLeido, ordenesLeidas] = await Promise.all([
+    obtenerConexion().catch(() => null),
+    obtenerEstadoSync().then(
+      (s) => ({ s, error: null as string | null }),
+      (e: unknown) => ({ s: null, error: e instanceof Error ? e.message : "No se pudo leer la sincronización." }),
+    ),
+    supabase
       .from("mercadolibre_ordenes")
       .select("*")
       .gte("fecha_creacion", desde.toISOString())
       .lt("fecha_creacion", hasta.toISOString())
       .order("fecha_creacion", { ascending: false })
       .limit(1000)
-      .returns<OrdenMl[]>();
-    if (error) throw new Error(error.message);
-    ordenes = data ?? [];
+      .returns<OrdenMl[]>(),
+  ]);
+  const sync = syncLeido.s;
+  let ordenes: OrdenMl[] = [];
+  let items: OrdenItemMl[] = [];
+  let errorLectura: string | null = syncLeido.error;
+  // La pantalla se muestra PRIMERO con lo que ya hay guardado; el refresco
+  // contra Mercado Libre (avisos del webhook, ventas de 2 días, montos
+  // pendientes) corre DESPUÉS de responder, con `after()`. Antes se hacía
+  // antes de pintar y la pantalla tardaba 20–40 s en abrir (Isaac, 5 oct).
+  if (conexion && sync?.ultima_sync) {
+    const vieja = ahora.getTime() - new Date(sync.ultima_sync).getTime() > AUTO_SYNC_MS;
+    if (vieja) {
+      after(async () => {
+        await procesarNotificacionesPendientes(20).catch(() => 0);
+        await sincronizarOrdenes({ diasAtras: 2 }).catch(() => 0);
+        await completarMontosGuardados(200).catch(() => 0);
+      });
+    }
+  }
+  try {
+    if (ordenesLeidas.error) throw new Error(ordenesLeidas.error.message);
+    ordenes = ordenesLeidas.data ?? [];
     if (ordenes.length) items = await itemsDeOrdenes(ordenes.map((o) => o.id));
   } catch (e) {
     errorLectura = e instanceof Error ? e.message : "No se pudieron leer las ventas.";
@@ -299,7 +306,7 @@ export default async function VentasMercadoLibre({
                     <div className="flex items-center gap-3">
                       {p.imagenUrl ? (
                         // eslint-disable-next-line @next/next/no-img-element -- miniatura de Mercado Libre
-                        <img src={p.imagenUrl} alt="" className="h-10 w-10 shrink-0 rounded-lg object-cover" />
+                        <img src={p.imagenUrl} alt="" loading="lazy" decoding="async" className="h-10 w-10 shrink-0 rounded-lg object-cover" />
                       ) : (
                         <div className="h-10 w-10 shrink-0 rounded-lg bg-zinc-100" />
                       )}
@@ -384,7 +391,7 @@ export default async function VentasMercadoLibre({
                         <li key={i.id} className="flex items-center gap-2">
                           {i.imagen_url ? (
                             // eslint-disable-next-line @next/next/no-img-element -- miniatura de Mercado Libre
-                            <img src={i.imagen_url} alt="" className="h-8 w-8 shrink-0 rounded-md object-cover" />
+                            <img src={i.imagen_url} alt="" loading="lazy" decoding="async" className="h-8 w-8 shrink-0 rounded-md object-cover" />
                           ) : (
                             <div className="h-8 w-8 shrink-0 rounded-md bg-zinc-100" />
                           )}

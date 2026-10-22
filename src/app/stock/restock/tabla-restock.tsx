@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { diasQueAlcanza, piezasParaCubrirEspera } from "@/lib/calculos-stock";
 import { formatoCajas } from "@/lib/formato";
 import { agregarRestockDesdeAnalisis } from "@/app/mercadolibre/actions";
+import { Miniatura } from "@/components/miniatura";
 
 export interface FilaRestock {
   sku: string;
@@ -97,8 +98,7 @@ export function TablaRestock({
                   <td className="px-4 py-3">
                     <Link href={`/stock/producto/${encodeURIComponent(f.sku)}`} className="flex items-center gap-3 hover:underline">
                       {f.imagenUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element -- miniatura en tabla, tamaño fijo
-                        <img src={f.imagenUrl} alt={f.nombre} className="h-10 w-10 shrink-0 rounded-lg object-cover" />
+                        <Miniatura src={f.imagenUrl} alt={f.nombre} tamano={40} className="h-10 w-10 shrink-0 rounded-lg object-cover" />
                       ) : (
                         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-100 text-[9px] text-zinc-400">Sin foto</div>
                       )}

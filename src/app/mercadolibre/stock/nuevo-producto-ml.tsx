@@ -94,7 +94,7 @@ export function NuevoProductoMl({ datos, catalogo, alCerrar }: { datos: DatosMlP
       <div className="flex items-center gap-3">
         {datos.imagenUrl ? (
           // eslint-disable-next-line @next/next/no-img-element -- foto de ML que se copiará al catálogo
-          <img src={datos.imagenUrl} alt="" className="h-14 w-14 rounded-lg border border-zinc-200 object-cover" />
+          <img loading="lazy" decoding="async" src={datos.imagenUrl} alt="" className="h-14 w-14 rounded-lg border border-zinc-200 object-cover" />
         ) : (
           <div className="h-14 w-14 rounded-lg bg-zinc-100" />
         )}

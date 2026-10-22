@@ -7,6 +7,7 @@ import type { ResumenSku } from "@/lib/calculos-stock";
 import { formatoCajas } from "@/lib/formato";
 import type { Bodega } from "@/lib/tipos";
 import { registrarConteoFisico } from "../actions";
+import { Miniatura } from "@/components/miniatura";
 
 function normaliza(texto: string) {
   return texto
@@ -136,8 +137,7 @@ export function FormularioConteo({ resumenes, bodegas }: { resumenes: ResumenSku
                     <td className="px-6 py-3">
                       <div className="flex items-center gap-3">
                         {r.imagenUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element -- miniatura en tabla, tamaño fijo
-                          <img src={r.imagenUrl} alt={r.nombre} className="h-10 w-10 shrink-0 rounded-lg object-cover" />
+                          <Miniatura src={r.imagenUrl} alt={r.nombre} tamano={40} className="h-10 w-10 shrink-0 rounded-lg object-cover" />
                         ) : (
                           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-100 text-[9px] text-zinc-400">
                             Sin foto

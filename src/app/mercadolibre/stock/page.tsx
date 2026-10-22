@@ -14,6 +14,7 @@ import {
   skuCrmDe,
   type OrigenLiga,
   type PublicacionMl,
+  type VinculoMl,
 } from "@/lib/mercadolibre-stock";
 import { resumenPorSku, valorTotalInventario } from "@/lib/calculos-stock";
 import { obtenerPiezasPorCajaPorSku } from "@/lib/productos-stock";
@@ -58,9 +59,15 @@ export default async function StockMercadoLibre({
   const { filtro = "todas", q = "", separadas = "" } = await searchParams;
   const verSeparadas = separadas === "1";
   const supabase = await createClient();
-  const conexion = await obtenerConexion().catch(() => null);
-
-  const [{ data: movimientos }, { data: configuracion }, piezasPorCajaPorSku, marcas, sugerencias, { data: bodegas }, skusTodos] = await Promise.all([
+  // Velocidad (22 oct): la conexión, el estado de la sincronización, las
+  // publicaciones y sus ligas se piden junto con lo demás (antes iban en fila).
+  const [conexion, syncLeido, publicacionesLeidas, { data: movimientos }, { data: configuracion }, piezasPorCajaPorSku, marcas, sugerencias, { data: bodegas }, skusTodos] = await Promise.all([
+    obtenerConexion().catch(() => null),
+    obtenerEstadoSync().catch(() => null),
+    Promise.all([obtenerPublicaciones(), obtenerVinculos()]).then(
+      ([pubs, vins]) => ({ pubs, vins, error: null as string | null }),
+      (e: unknown) => ({ pubs: [] as PublicacionMl[], vins: [] as VinculoMl[], error: e instanceof Error ? e.message : "No se pudieron leer las publicaciones." }),
+    ),
     todosLosMovimientosStock(supabase),
     supabase.from("configuracion_stock").select("*").single<ConfiguracionStock>(),
     obtenerPiezasPorCajaPorSku(supabase),
@@ -83,20 +90,11 @@ export default async function StockMercadoLibre({
   const piezasBodega = resumenes.reduce((s, r) => s + r.stockActual, 0);
   const valorBodega = valorTotalInventario(resumenes);
 
-  let publicaciones: PublicacionMl[] = [];
-  let vinculos = new Map<string, string>();
-  let factores = new Map<string, number>();
-  let sync = null;
-  let errorLectura: string | null = null;
-  try {
-    const [pubs, vins] = await Promise.all([obtenerPublicaciones(), obtenerVinculos()]);
-    publicaciones = pubs;
-    vinculos = new Map(vins.map((v) => [claveVinculo(v.item_id, v.variation_id), v.sku_crm]));
-    factores = factoresVinculos(vins);
-    sync = await obtenerEstadoSync();
-  } catch (e) {
-    errorLectura = e instanceof Error ? e.message : "No se pudieron leer las publicaciones.";
-  }
+  const publicaciones: PublicacionMl[] = publicacionesLeidas.pubs;
+  const vinculos = new Map(publicacionesLeidas.vins.map((v) => [claveVinculo(v.item_id, v.variation_id), v.sku_crm]));
+  const factores = factoresVinculos(publicacionesLeidas.vins);
+  const sync = publicacionesLeidas.error ? null : syncLeido;
+  const errorLectura = publicacionesLeidas.error;
 
   const full = resumenFull(publicaciones, vinculos, skusCrm, costoPorSku, factores);
 
@@ -179,7 +177,7 @@ export default async function StockMercadoLibre({
                 <div className="flex min-w-0 flex-1 gap-4">
                   {p.imagen_url ? (
                     // eslint-disable-next-line @next/next/no-img-element -- miniatura de Mercado Libre
-                    <img src={p.imagen_url} alt="" className="h-20 w-20 shrink-0 rounded-xl border border-zinc-100 object-cover sm:h-24 sm:w-24" />
+                    <img src={p.imagen_url} alt="" loading="lazy" decoding="async" className="h-20 w-20 shrink-0 rounded-xl border border-zinc-100 object-cover sm:h-24 sm:w-24" />
                   ) : (
                     <div className="h-20 w-20 shrink-0 rounded-xl bg-zinc-100 sm:h-24 sm:w-24" />
                   )}

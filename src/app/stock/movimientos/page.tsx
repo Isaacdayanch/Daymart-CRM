@@ -4,6 +4,7 @@ import { formatoPesos } from "@/lib/formato";
 import { obtenerPerfilActual } from "@/lib/perfil";
 import type { Bodega, Contenedor, MovimientoStock } from "@/lib/tipos";
 import { AccionesMovimiento } from "./acciones-movimiento";
+import { Miniatura } from "@/components/miniatura";
 
 export default async function MovimientosStock() {
   const supabase = await createClient();
@@ -84,12 +85,7 @@ export default async function MovimientosStock() {
                     <td className="px-6 py-3">
                       <div className="flex items-center gap-2.5">
                         {m.imagen_url ? (
-                          // eslint-disable-next-line @next/next/no-img-element -- miniatura en tabla, tamaño fijo
-                          <img
-                            src={m.imagen_url}
-                            alt={m.nombre}
-                            className="h-8 w-8 shrink-0 rounded-md object-cover"
-                          />
+                          <Miniatura src={m.imagen_url} alt={m.nombre} tamano={32} className="h-8 w-8 shrink-0 rounded-md object-cover" />
                         ) : (
                           <div className="h-8 w-8 shrink-0 rounded-md bg-zinc-100" />
                         )}

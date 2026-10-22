@@ -1,12 +1,10 @@
 import { Suspense } from "react";
 import { NavVentas } from "./nav-ventas";
 import { Logo } from "@/components/logo";
-import { obtenerPerfilActual } from "@/lib/perfil";
-import { MenuMas } from "../menu-mas";
+import { MenuSesion } from "../menu-sesion";
 import { AvisosVentas } from "./avisos-ventas";
 
-export default async function VentasLayout({ children }: { children: React.ReactNode }) {
-  const perfil = await obtenerPerfilActual();
+export default function VentasLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-zinc-50 to-white">
@@ -17,7 +15,7 @@ export default async function VentasLayout({ children }: { children: React.React
               <Logo />
               <h1 className="mt-1 text-xl font-semibold tracking-tight text-zinc-900">Ventas</h1>
             </div>
-            <MenuMas rol={perfil?.rol} />
+            <MenuSesion />
           </div>
           <div className="mt-4">
             <NavVentas />
