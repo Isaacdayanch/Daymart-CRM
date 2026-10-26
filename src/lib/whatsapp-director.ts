@@ -150,8 +150,13 @@ interface RespuestaGraph {
   error?: { message?: string; code?: number; error_subcode?: number; error_data?: { details?: string } };
 }
 
+// Versión de la API de Meta (Graph). Meta retira cada versión ~2 años después
+// de salir; v26.0 salió en julio de 2026. Si Meta contesta "version
+// deprecated", subir este número (o poner WHATSAPP_GRAPH_VERSION en Vercel).
+const VERSION_GRAPH = process.env.WHATSAPP_GRAPH_VERSION || "v26.0";
+
 async function postGraph(cuerpo: Record<string, unknown>): Promise<RespuestaGraph> {
-  const r = await fetch(`https://graph.facebook.com/v21.0/${process.env.WHATSAPP_PHONE_ID}/messages`, {
+  const r = await fetch(`https://graph.facebook.com/${VERSION_GRAPH}/${process.env.WHATSAPP_PHONE_ID}/messages`, {
     method: "POST",
     headers: { Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`, "Content-Type": "application/json" },
     body: JSON.stringify(cuerpo),
