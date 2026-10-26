@@ -719,3 +719,17 @@ export interface OrdenCompraLinea {
   orden: number;
 }
 
+
+export interface MensajeDirector {
+  id: string;
+  creado_en: string;
+  wa_id: string | null;
+  direccion: "ENTRADA" | "SALIDA";
+  de: string | null;
+  texto: string;
+  tipo: "DECISION" | "ORDEN" | "CONSULTA" | "IGNORADO" | "AVISO";
+  interpretacion: Record<string, unknown>;
+  respuesta: string | null;
+  error: string | null;
+  atendido_en: string | null;
+}

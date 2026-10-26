@@ -73,7 +73,9 @@ Desde el 20 oct (Isaac: "que el agente altere el CRM y el CRM altere Mercado Lib
 | Puerta | Para qué |
 |---|---|
 | `POST /api/director/propuestas` | Meter el lote del día: `{"lote":"2026-10-21-manana","propuestas":[{"area":"RELAMPAGO","titulo":"Olla bruja 10 L — relámpago jue 23, 0–12 h","detalle":"Precio $1,990 · recibes $1,702 · ganas $412 (31 %)","porque":"Cumple 30 % y es precio fijado por Isaac","datos":{"item_id":"MLM123","precio":1990,"fecha":"2026-10-23","horario":"0-12"},"accion_tipo":"MANUAL","item_id":"MLM123","sku_crm":"IND-OLLA-BRUJ-10L","imagen_url":"https://…","precio_propuesto":1990}]}`. Áreas: RELAMPAGO, FULL, PROMOCION, PUBLICIDAD, PUBLICACION, LIGA, AVISO, OTRO. `accion_tipo`: MANUAL (Isaac la hace a mano) o lo que el CRM pueda ejecutar solo (PROMOCION_DESCUENTO, PARTICIPAR_PROMOCION, QUITAR_PROMOCION, ADS, PUBLICACION, RESPONDER_PREGUNTA; hoy úsalo solo si esa pieza ya existe en el CRM, si no MANUAL). Devuelve cada propuesta con su `id` y su **número del día** (`orden`, corrido aunque mandes dos lotes). Las propuestas de días anteriores sin decidir caducan solas. Máx. 60 por lote; los **avisos** (contenedores, ligas, preguntas, vencimientos) van como `area: "AVISO"` y `accion_tipo: "MANUAL"` solo si requieren una acción de Isaac; si son pura información, van en el mensaje, no como propuesta. |
-| `POST /api/director/decisiones` | (a) Isaac te contestó en el chat → regístralo: `{"decisiones":[{"orden":4,"decision":"RECHAZAR"},{"orden":1,"decision":"APROBAR","precio":1990,"nota":"la olla a 1,990"}]}` (o por `id`). (b) Ya le reportaste una decisión/ejecución → `{"reportadas":["<id>","<id>"]}` para que mañana no la repitas. |
+| `POST /api/director/decisiones` | (a) Isaac te contestó en el chat → regístralo: `{"decisiones":[{"orden":4,"decision":"RECHAZAR"},{"orden":1,"decision":"APROBAR","precio":1990,"nota":"la olla a 1,990"}]}` (o por `id`). (b) Ya le reportaste una decisión/ejecución → `{"reportadas":["<id>","<id>"]}` para que mañana no la repitas. (c) Ya atendiste una orden que Isaac mandó por WhatsApp → `{"mensajes_atendidos":["<id>"]}`. |
+| `POST /api/director/whatsapp` | Mandarle un WhatsApp a Isaac: `{"texto":"…"}` (el mensaje de la mañana, un aviso). Solo funciona si WhatsApp está configurado en Vercel (`GET /api/director` → `mensajes_de_isaac.whatsapp_configurado`); si contesta 400/502, no pasa nada: el mensaje del chat es el que manda. |
+| `GET /api/director` → `mensajes_de_isaac` | `ordenes_sin_atender`: lo que Isaac escribió por WhatsApp que NO era una decisión ni una consulta (ej. "revisa la publicidad de los espejos", "mañana no propongas relámpago"). Son órdenes para ti: atiéndelas en la rutina (o en cuanto te escriba) y márcalas con `mensajes_atendidos`. |
 | `POST /api/director/bitacora` | Anotar: `{"accion":"CORRIDA_MANANA","detalle":{…},"resultado":"6 relámpago, 3 Full, 2 promociones"}`; también errores (`"error":"…"`) y "PEDIR_AL_PROGRAMADOR". |
 | `GET /api/director` → `propuestas` | `pendientes` (sin decidir), `decididas_sin_reportar` (lo que Isaac aprobó/rechazó/ejecutó y aún no le has reportado o ejecutado), `decididas_7_dias` (para NO volver a proponer lo que rechazó esta semana). |
 
@@ -95,6 +97,14 @@ En cuanto Isaac aprueba (en la pantalla o en el chat vía `decisiones`), el CRM 
 
 Publicidad (ADS), publicaciones (PUBLICACION) y preguntas (RESPONDER_PREGUNTA) todavía NO las ejecuta el CRM (fases 3 y 4): propónlas como `MANUAL`.
 
+### Fase 2b (26 oct): Isaac te contesta por WhatsApp (API oficial de Meta)
+
+El CRM tiene un webhook de WhatsApp (`/api/whatsapp`). Cuando Isaac le escribe al número del negocio, **el CRM lo interpreta solo, sin ti**: "va" / "ok" aprueba todo lo pendiente; "menos 4 9", "sin el 4" o solo números rechaza esos y aprueba el resto; "4 a 1990" cambia el precio; "no" / "nada" rechaza todo; "hoy no" lo ignora; "estado" / "?" le manda la lista pendiente; **todo lo demás queda como ORDEN para ti** en `mensajes_de_isaac.ordenes_sin_atender`. Las decisiones por WhatsApp ejecutan en ML igual que las de la pantalla y el CRM le contesta el resultado por WhatsApp. Reglas para ti:
+
+- Al terminar el mensaje de la mañana, **mándalo también por WhatsApp** con `POST /api/director/whatsapp` (mismo texto, puede ir completo). Si contesta que no está configurado, sigue normal.
+- En cada corrida lee `ordenes_sin_atender`: atiende cada orden (es un pedido de Isaac igual que si te lo escribiera en el chat), inclúyela en tu respuesta ("Me pediste por WhatsApp: …") y márcala con `mensajes_atendidos`. Si una orden es una regla nueva, anótala en `reglas-de-isaac.md`.
+- No vuelvas a registrar en `decisiones` algo que Isaac ya decidió por WhatsApp: `propuestas.decididas_sin_reportar` ya lo trae con `decidido_desde: WHATSAPP`.
+
 ## La rutina de la mañana (tarea programada, 8:25 am CDMX)
 
 **Paso 0 — pedir permiso antes de gastar** (Isaac, 22 oct: "quiero que antes de que el agente consuma tokens me pregunte"). La sesión programada NO lee el CRM ni el manual completo ni analiza nada hasta que Isaac diga que sí. Lo primero y único que haces al despertar es mandar UNA línea y terminar el turno:
@@ -108,7 +118,7 @@ Solo cuando conteste "va" (o cualquier sí) sigues con los pasos 1–7. Si dice 
 3. Con el calendario, decide **qué áreas tocan hoy**. Las diarias siempre; las semanales solo su día; las "cuando pase algo" solo si el dato lo dispara (ej. llegó un contenedor → promociones y publicaciones de lo que llegó).
 4. Analiza cada área que toca (abajo dice cómo) y arma la lista. **Mándala al CRM** con `POST /api/director/propuestas` (un solo lote). Usa los números (`orden`) que te devuelve: son los que Isaac ve en la pantalla y los que te contestará en el chat.
 5. Anota la corrida con `POST /api/director/bitacora` (`CORRIDA_MANANA`: cuántas por área, errores del JSON, qué faltó).
-6. Escribe el mensaje de la mañana (formato abajo, con el link `https://daymart-crm.vercel.app/director`) y **termina tu turno**. No te quedes esperando ni programes recordatorios: la tarea programada te vuelve a despertar mañana. Isaac decide en la pantalla o te contesta aquí.
+6. Escribe el mensaje de la mañana (formato abajo, con el link `https://daymart-crm.vercel.app/director`), mándalo también por WhatsApp (`POST /api/director/whatsapp`, si está configurado) y **termina tu turno**. No te quedes esperando ni programes recordatorios: la tarea programada te vuelve a despertar mañana. Isaac decide en la pantalla o te contesta aquí.
 7. Si el CRM no acepta las propuestas (falta el SQL 0058, 401, error), manda el mensaje igual con la lista completa en el chat y di en una línea por qué no quedó en la pantalla.
 
 ### Formato del mensaje de la mañana

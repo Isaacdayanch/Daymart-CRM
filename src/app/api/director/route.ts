@@ -409,6 +409,15 @@ export async function GET(request: NextRequest) {
     errores.propuestas = e instanceof Error ? e.message : "No se pudieron leer las propuestas.";
   }
 
+  // ---- Órdenes de Isaac por WhatsApp (migración 0059) --------------------
+  try {
+    const { data, error } = await supabase.from("director_mensajes").select("id, creado_en, texto, tipo, atendido_en").eq("direccion", "ENTRADA").eq("tipo", "ORDEN").is("atendido_en", null).order("creado_en").limit(50);
+    if (error) throw new Error(mensajeErrorDirector(error));
+    salida.mensajes_de_isaac = { ordenes_sin_atender: data ?? [], whatsapp_configurado: Boolean(process.env.WHATSAPP_TOKEN && process.env.WHATSAPP_PHONE_ID && process.env.WHATSAPP_ISAAC) };
+  } catch (e) {
+    errores.mensajes = e instanceof Error ? e.message : "No se pudieron leer los mensajes de WhatsApp.";
+  }
+
   salida.errores = errores;
   return NextResponse.json(salida);
 }

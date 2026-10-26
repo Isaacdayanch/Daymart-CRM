@@ -111,6 +111,9 @@ export function resumenPropuesta(p: Pick<PropuestaDirector, "orden" | "titulo" |
 }
 
 export function mensajeErrorDirector(e: { message: string }) {
+  if (/director_mensajes/.test(e.message) && /does not exist|schema cache/i.test(e.message)) {
+    return "Falta correr el SQL 0059 en Supabase (mensajes de WhatsApp del Director).";
+  }
   if (/director_propuestas|director_bitacora/.test(e.message) && /does not exist|schema cache/i.test(e.message)) {
     return "Falta correr el SQL 0058 en Supabase (tablas del Director).";
   }
