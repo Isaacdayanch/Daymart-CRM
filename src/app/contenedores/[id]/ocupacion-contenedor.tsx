@@ -1,6 +1,7 @@
 import type { OcupacionContenedor } from "@/lib/calculos";
 
-function Barra({ etiqueta, usado, limite, pct, unidad }: { etiqueta: string; usado: string; limite: string; pct: number; unidad: string }) {
+/** Barra de ocupación (verde / ámbar desde 90 % / rojo pasado de 100 %). La usa también el planeador. */
+export function Barra({ etiqueta, usado, limite, pct, unidad }: { etiqueta: string; usado: string; limite: string; pct: number; unidad: string }) {
   const color = pct > 100 ? "bg-red-500" : pct >= 90 ? "bg-amber-500" : "bg-emerald-500";
   const texto = pct > 100 ? "text-red-700" : pct >= 90 ? "text-amber-700" : "text-zinc-900";
   return (

@@ -62,7 +62,7 @@ export default async function ProductosEnCamino({
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-4">
             <h1 className="text-xl font-semibold tracking-tight text-zinc-900">Contenedores</h1>
-            <SelectorVistaContenedores actual="productos" />
+            <SelectorVistaContenedores actual="productos" conPlaneador={verDinero} />
           </div>
           <Link
             href={soloEnCamino ? "/contenedores/productos" : "/contenedores/productos?encamino=1"}
