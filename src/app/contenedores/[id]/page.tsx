@@ -6,6 +6,7 @@ import {
   cbmTotalContenedor,
   costoTotalContenedor,
   ocupacionContenedor,
+  totalUsdProducto,
 } from "@/lib/calculos";
 import { ConfiguracionCosto } from "./configuracion-costo";
 import { reconciliacionContenedor } from "@/lib/calculos-stock";
@@ -198,6 +199,14 @@ export default async function DetalleContenedor({
         </div>
 
         <TarjetaOcupacion ocupacion={ocupacion} />
+        {verDinero && contenedor.estado === "CONFIGURANDOSE" && (
+          <p className="-mt-3 text-xs text-zinc-500">
+            {ocupacion.nivel === "excedido" ? "¿Se pasa? " : ""}
+            <Link href="/contenedores/planeador" className="font-medium text-zinc-700 underline hover:text-zinc-900">
+              Reparte productos entre contenedores en el Planeador →
+            </Link>
+          </p>
+        )}
 
         {verDinero && <ConfiguracionCosto contenedorId={contenedor.id} base={base} estado={contenedor.estado} terminadaEn={contenedor.configuracion_terminada_en ?? null} />}
 
@@ -302,7 +311,7 @@ export default async function DetalleContenedor({
         {verDinero ? (
           <>
             <FormularioContenedor contenedor={contenedor} fabricas={fabricas} proveedores={proveedores} />
-            <Abonos contenedorId={contenedor.id} abonos={listaAbonos} />
+            <Abonos contenedorId={contenedor.id} abonos={listaAbonos} totalUsdMercancia={listaProductos.reduce((s, p) => s + totalUsdProducto(p), 0)} />
           </>
         ) : (
           <div className="rounded-xl border border-zinc-200 bg-white p-4 text-sm">

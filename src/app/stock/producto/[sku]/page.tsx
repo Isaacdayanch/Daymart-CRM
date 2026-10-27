@@ -18,6 +18,7 @@ import { DesgloseStock } from "./desglose-stock";
 import { PastillaMancuerna } from "@/components/pastilla-mancuerna";
 import { esMancuerna } from "@/lib/mancuernas";
 import { cargarCodigosMl, codigosMlDesde, resolverCodigoMl, textoOrigenCodigo } from "@/lib/etiquetas";
+import { Miniatura } from "@/components/miniatura";
 
 export default async function DetalleProducto({ params }: { params: Promise<{ sku: string }> }) {
   const { sku: skuCrudo } = await params;
@@ -169,12 +170,7 @@ export default async function DetalleProducto({ params }: { params: Promise<{ sk
       <main className="mx-auto max-w-3xl space-y-6 px-4 py-8 sm:px-6">
         <div className="flex flex-wrap items-start gap-4 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
           {masReciente.imagen_url ? (
-            // eslint-disable-next-line @next/next/no-img-element -- foto grande de encabezado
-            <img
-              src={masReciente.imagen_url}
-              alt={masReciente.nombre}
-              className="h-20 w-20 shrink-0 rounded-xl object-cover"
-            />
+            <Miniatura src={masReciente.imagen_url} alt={masReciente.nombre} tamano={80} className="h-20 w-20 shrink-0 rounded-xl object-cover" />
           ) : (
             <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-xl bg-zinc-100 text-xs text-zinc-400">
               Sin foto

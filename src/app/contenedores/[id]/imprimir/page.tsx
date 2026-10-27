@@ -30,7 +30,9 @@ export default async function ImprimirContenedor({
   if (!contenedor) notFound();
 
   const [{ data: productos }, { data: abonos }] = await Promise.all([
-    supabase.from("productos").select("*").eq("contenedor_id", id).returns<Producto[]>(),
+    // Mismo orden que la pantalla del contenedor (columna `orden`): sin esto la
+    // base los regresaba en cualquier orden y el último editado se colaba arriba.
+    supabase.from("productos").select("*").eq("contenedor_id", id).order("orden", { ascending: true }).returns<Producto[]>(),
   supabase.from("pagos_mercancia").select("*").eq("contenedor_id", id).returns<PagoMercancia[]>(),
   ]);
 

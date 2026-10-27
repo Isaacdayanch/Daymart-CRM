@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { Miniatura } from "@/components/miniatura";
 
 interface Opcion {
   sku: string;
@@ -66,8 +67,7 @@ export function SelectorProducto({
         className="mt-1 flex w-full items-center gap-2.5 rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-left text-sm focus:border-zinc-500 focus:ring-2 focus:ring-zinc-200 focus:outline-none"
       >
         {seleccionado?.imagenUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element -- miniatura chica en un botón
-          <img src={seleccionado.imagenUrl} alt={seleccionado.nombre} className="h-8 w-8 shrink-0 rounded-md object-cover" />
+          <Miniatura src={seleccionado.imagenUrl} alt={seleccionado.nombre} tamano={32} className="h-8 w-8 shrink-0 rounded-md object-cover" />
         ) : (
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-zinc-100 text-[8px] text-zinc-400">
             {seleccionado ? "Sin foto" : ""}
@@ -110,8 +110,7 @@ export function SelectorProducto({
                   }`}
                 >
                   {o.imagenUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element -- miniatura en lista desplegable
-                    <img src={o.imagenUrl} alt={o.nombre} className="h-11 w-11 shrink-0 rounded-lg object-cover" />
+                    <Miniatura src={o.imagenUrl} alt={o.nombre} tamano={44} className="h-11 w-11 shrink-0 rounded-lg object-cover" />
                   ) : (
                     <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-zinc-100 text-[9px] text-zinc-400">
                       Sin foto

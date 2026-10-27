@@ -16,6 +16,12 @@ const nextConfig: NextConfig = {
       // defecto (1 MB) las rechazaba con un error genérico.
       bodySizeLimit: "10mb",
     },
+    // Velocidad (22 oct): al regresar a una pantalla visitada hace menos de
+    // 30 s se muestra al instante lo que ya se tenía, sin pedirlo otra vez.
+    // Guardar algo (acciones con revalidatePath) siempre la refresca.
+    staleTimes: {
+      dynamic: 30,
+    },
   },
 };
 

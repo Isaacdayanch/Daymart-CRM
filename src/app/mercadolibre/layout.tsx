@@ -1,10 +1,8 @@
 import { Logo } from "@/components/logo";
-import { obtenerPerfilActual } from "@/lib/perfil";
-import { MenuMas } from "../menu-mas";
+import { MenuSesion } from "../menu-sesion";
 import { NavMercadoLibre } from "./nav-mercadolibre";
 
-export default async function MercadoLibreLayout({ children }: { children: React.ReactNode }) {
-  const perfil = await obtenerPerfilActual();
+export default function MercadoLibreLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-zinc-50 to-white">
@@ -15,7 +13,7 @@ export default async function MercadoLibreLayout({ children }: { children: React
               <Logo />
               <h1 className="mt-1 text-xl font-semibold tracking-tight text-zinc-900">Mercado Libre</h1>
             </div>
-            <MenuMas rol={perfil?.rol} />
+            <MenuSesion />
           </div>
           <div className="mt-4">
             <NavMercadoLibre />

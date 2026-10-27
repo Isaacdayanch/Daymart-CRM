@@ -135,7 +135,7 @@ export function RevisarFaltantes({ conectado, opciones = [] }: { conectado: bool
                 <span className="flex min-w-0 items-center gap-2">
                   {r.imagen_url ? (
                     // eslint-disable-next-line @next/next/no-img-element -- miniatura de ML
-                    <img src={r.imagen_url} alt="" className="h-8 w-8 shrink-0 rounded object-cover" />
+                    <img loading="lazy" decoding="async" src={r.imagen_url} alt="" className="h-8 w-8 shrink-0 rounded object-cover" />
                   ) : (
                     <span className="h-8 w-8 shrink-0 rounded bg-zinc-100" />
                   )}

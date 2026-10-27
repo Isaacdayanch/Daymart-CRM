@@ -192,7 +192,7 @@ export function CapturarEnvioMl({ bodegas, productos }: { bodegas: BodegaOpcion[
                   <div className="flex min-w-0 items-center gap-3">
                     {l.imagenUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element -- miniatura de ML
-                      <img src={l.imagenUrl} alt="" className="h-9 w-9 shrink-0 rounded-lg object-cover" />
+                      <img loading="lazy" decoding="async" src={l.imagenUrl} alt="" className="h-9 w-9 shrink-0 rounded-lg object-cover" />
                     ) : (
                       <div className="h-9 w-9 shrink-0 rounded-lg bg-zinc-100" />
                     )}
@@ -390,7 +390,7 @@ function LineaEnvio({ l, fase }: { l: LineaParaPantalla; fase: FaseEnvio }) {
       <div className="flex items-center gap-3">
         {l.imagen_url ? (
           // eslint-disable-next-line @next/next/no-img-element -- miniatura de ML
-          <img src={l.imagen_url} alt="" className="h-9 w-9 rounded-lg object-cover" />
+          <img loading="lazy" decoding="async" src={l.imagen_url} alt="" className="h-9 w-9 rounded-lg object-cover" />
         ) : (
           <div className="h-9 w-9 rounded-lg bg-zinc-100" />
         )}

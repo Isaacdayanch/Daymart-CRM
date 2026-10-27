@@ -54,7 +54,7 @@ export default async function ListaContenedores() {
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-4">
             <h1 className="text-xl font-semibold tracking-tight text-zinc-900">Contenedores</h1>
-            <SelectorVistaContenedores actual="general" />
+            <SelectorVistaContenedores actual="general" conPlaneador={verDinero} />
           </div>
           {verDinero && (
             <div className="flex items-center gap-4">

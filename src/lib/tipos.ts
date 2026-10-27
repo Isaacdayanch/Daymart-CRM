@@ -225,9 +225,35 @@ export interface Producto {
   precio_capturado?: number | null;
   /** Código ML de Full (inventory_id) capturado a mano para la etiqueta (migración 0054). */
   codigo_ml?: string | null;
+  /** Urgencia para el planeador de contenedores (migración 0059). null = NORMAL. */
+  prioridad?: PrioridadProducto | null;
   orden: number;
   creado_en: string;
   actualizado_en: string;
+}
+
+/** Urgencia de un producto dentro del planeador de contenedores (0059). */
+export type PrioridadProducto = "URGENTE" | "NORMAL" | "PUEDE_ESPERAR";
+
+export const PRIORIDADES_PRODUCTO: { valor: PrioridadProducto; etiqueta: string }[] = [
+  { valor: "URGENTE", etiqueta: "Urgente" },
+  { valor: "NORMAL", etiqueta: "Normal" },
+  { valor: "PUEDE_ESPERAR", etiqueta: "Puede esperar" },
+];
+
+/** Un traslado de piezas entre contenedores hecho desde el planeador (0059). */
+export interface TrasladoProducto {
+  id: string;
+  producto_id: string | null;
+  sku: string;
+  nombre: string;
+  cantidad: number;
+  parcial: boolean;
+  origen_contenedor_id: string | null;
+  destino_contenedor_id: string | null;
+  origen_numero: number | null;
+  destino_numero: number | null;
+  creado_en: string;
 }
 
 export interface Bodega {

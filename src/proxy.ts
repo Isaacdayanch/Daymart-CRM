@@ -17,7 +17,7 @@ const RUTAS_PUBLICAS = ["/login", "/sin-acceso", "/api/respaldo", "/api/director
 // dinero cuando el rol es operadora. Lo que NO puede tocar: crear
 // contenedores nuevos, usuarios, ni la papelera.
 const RUTAS_OPERADORA = ["/", "/stock", "/contenedores"];
-const RUTAS_BLOQUEADAS_OPERADORA = ["/contenedores/nuevo", "/usuarios", "/papelera"];
+const RUTAS_BLOQUEADAS_OPERADORA = ["/contenedores/nuevo", "/contenedores/planeador", "/usuarios", "/papelera"];
 
 // Velocidad (Isaac, 20 oct: "está muy lento"). Este "portero" corre en CADA
 // clic. Antes hacía dos viajes a Supabase por petición (verificar la sesión

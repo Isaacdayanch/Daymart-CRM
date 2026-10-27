@@ -246,7 +246,7 @@ export function TablaPromociones({ filas, margenMinimo }: { filas: FilaPrecio[];
                     <div className="flex gap-2.5">
                       {f.imagenUrl ? (
                         // eslint-disable-next-line @next/next/no-img-element -- miniatura de Mercado Libre
-                        <img src={f.imagenUrl} alt="" className="h-11 w-11 shrink-0 rounded-lg border border-zinc-100 object-cover" />
+                        <img loading="lazy" decoding="async" src={f.imagenUrl} alt="" className="h-11 w-11 shrink-0 rounded-lg border border-zinc-100 object-cover" />
                       ) : (
                         <div className="h-11 w-11 shrink-0 rounded-lg bg-zinc-100" />
                       )}

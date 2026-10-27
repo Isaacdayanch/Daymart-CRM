@@ -1,11 +1,9 @@
 import { Logo } from "@/components/logo";
-import { obtenerPerfilActual } from "@/lib/perfil";
-import { MenuMas } from "../menu-mas";
+import { MenuSesion } from "../menu-sesion";
 
 /** Director de Mercado Libre (solo dueño): las propuestas del agente diario,
  * la aprobación de Isaac y la bitácora. */
-export default async function DirectorLayout({ children }: { children: React.ReactNode }) {
-  const perfil = await obtenerPerfilActual();
+export default function DirectorLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-gradient-to-b from-zinc-50 to-white">
       <header className="sticky top-0 z-10 border-b border-zinc-200/70 bg-white/80 backdrop-blur-sm print:hidden">
@@ -15,7 +13,7 @@ export default async function DirectorLayout({ children }: { children: React.Rea
               <Logo />
               <h1 className="mt-1 text-xl font-semibold tracking-tight text-zinc-900">Director Meli</h1>
             </div>
-            <MenuMas rol={perfil?.rol} />
+            <MenuSesion />
           </div>
         </div>
       </header>

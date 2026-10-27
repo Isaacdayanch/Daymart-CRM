@@ -14,6 +14,7 @@ import { EliminarProducto } from "./eliminar-producto";
 import { FusionarProducto, type OpcionFusion } from "./fusionar-producto";
 
 import { BotonGuardar } from "@/components/boton-guardar";
+import { Miniatura } from "@/components/miniatura";
 const claseCampo = "mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500";
 
 export function FilaCatalogo({
@@ -137,8 +138,7 @@ export function FilaCatalogo({
   return (
     <li className="flex items-center gap-3 px-4 py-3 sm:px-5">
       {p.imagen_url ? (
-        // eslint-disable-next-line @next/next/no-img-element -- foto del producto
-        <img src={p.imagen_url} alt="" className="h-12 w-12 shrink-0 rounded-lg object-cover" />
+        <Miniatura src={p.imagen_url} alt="" tamano={48} className="h-12 w-12 shrink-0 rounded-lg object-cover" />
       ) : (
         <div className="h-12 w-12 shrink-0 rounded-lg bg-zinc-100" />
       )}

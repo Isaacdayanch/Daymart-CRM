@@ -88,7 +88,7 @@ export default async function DetalleOrdenMl({ params }: { params: Promise<{ id:
             <li key={i.id} className="flex items-center gap-3 px-5 py-3 text-sm">
               {i.imagen_url ? (
                 // eslint-disable-next-line @next/next/no-img-element -- miniatura de Mercado Libre
-                <img src={i.imagen_url} alt="" className="h-10 w-10 shrink-0 rounded-md object-cover" />
+                <img loading="lazy" decoding="async" src={i.imagen_url} alt="" className="h-10 w-10 shrink-0 rounded-md object-cover" />
               ) : (
                 <div className="h-10 w-10 shrink-0 rounded-md bg-zinc-100" />
               )}
