@@ -1,4 +1,4 @@
--- 0059 — Director Meli: mensajes de Isaac por WhatsApp (26 oct 2026).
+-- 0061 — Director Meli: mensajes de Isaac por WhatsApp (era 0059; main ya usa 0059 para el Planeador) (26 oct 2026).
 --
 -- Isaac: "explícame cómo le puedo dar órdenes al Director desde mi WhatsApp…
 -- Meta directo quiero". El CRM recibe los mensajes de WhatsApp de Isaac por

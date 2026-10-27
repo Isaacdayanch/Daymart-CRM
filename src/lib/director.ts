@@ -115,7 +115,7 @@ export function mensajeErrorDirector(e: { message: string }) {
     return "Falta correr el SQL 0060 en Supabase (chat del Director).";
   }
   if (/director_mensajes/.test(e.message) && /does not exist|schema cache/i.test(e.message)) {
-    return "Falta correr el SQL 0059 en Supabase (mensajes de WhatsApp del Director).";
+    return "Falta correr el SQL 0061 en Supabase (mensajes de WhatsApp del Director).";
   }
   if (/director_propuestas|director_bitacora/.test(e.message) && /does not exist|schema cache/i.test(e.message)) {
     return "Falta correr el SQL 0058 en Supabase (tablas del Director).";
