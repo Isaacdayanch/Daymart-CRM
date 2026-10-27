@@ -871,28 +871,57 @@ export async function eliminarProducto(contenedorId: string, productoId: string)
   revalidatePath("/stock/movimientos");
 }
 
+/** Reacomoda un producto dentro de su contenedor: un lugar arriba/abajo
+ * (flechitas) o de un jalón al inicio/al final (Isaac, 27 oct: "quiero
+ * bajar dos productos hasta abajo, pero es muchísimo clic"). Al inicio/al
+ * final se renumera toda la lista (1, 2, 3…) para que el orden quede limpio. */
 export async function moverProducto(
   contenedorId: string,
   productos: { id: string; orden: number }[],
   productoId: string,
-  direccion: "arriba" | "abajo",
+  direccion: "arriba" | "abajo" | "inicio" | "final",
 ) {
   const supabase = await createClient();
 
   const ordenados = [...productos].sort((a, b) => a.orden - b.orden);
   const indice = ordenados.findIndex((p) => p.id === productoId);
+  if (indice === -1) return;
+
+  if (direccion === "inicio" || direccion === "final") {
+    const [movido] = ordenados.splice(indice, 1);
+    if (direccion === "inicio") ordenados.unshift(movido);
+    else ordenados.push(movido);
+    await Promise.all(
+      ordenados
+        .map((p, i) => ({ id: p.id, orden: i + 1, cambio: p.orden !== i + 1 }))
+        .filter((p) => p.cambio)
+        .map((p) => supabase.from("productos").update({ orden: p.orden }).eq("id", p.id)),
+    );
+    revalidatePath(`/contenedores/${contenedorId}`);
+    revalidatePath(`/contenedores/${contenedorId}/imprimir`);
+    return;
+  }
+
   const indiceVecino = direccion === "arriba" ? indice - 1 : indice + 1;
-  if (indice === -1 || indiceVecino < 0 || indiceVecino >= ordenados.length) return;
+  if (indiceVecino < 0 || indiceVecino >= ordenados.length) return;
 
   const actual = ordenados[indice];
   const vecino = ordenados[indiceVecino];
-
-  await Promise.all([
-    supabase.from("productos").update({ orden: vecino.orden }).eq("id", actual.id),
-    supabase.from("productos").update({ orden: actual.orden }).eq("id", vecino.id),
-  ]);
+  // Si dos productos traían el mismo número de orden (pasa con los que se
+  // movieron desde el planeador o se crearon a la vez), intercambiarlos no
+  // cambiaba nada: en ese caso se renumera todo.
+  if (actual.orden === vecino.orden) {
+    [ordenados[indice], ordenados[indiceVecino]] = [ordenados[indiceVecino], ordenados[indice]];
+    await Promise.all(ordenados.map((p, i) => supabase.from("productos").update({ orden: i + 1 }).eq("id", p.id)));
+  } else {
+    await Promise.all([
+      supabase.from("productos").update({ orden: vecino.orden }).eq("id", actual.id),
+      supabase.from("productos").update({ orden: actual.orden }).eq("id", vecino.id),
+    ]);
+  }
 
   revalidatePath(`/contenedores/${contenedorId}`);
+  revalidatePath(`/contenedores/${contenedorId}/imprimir`);
 }
 
 export async function subirDocumento(contenedorId: string, tipo: TipoDocumento, formData: FormData) {

@@ -77,7 +77,7 @@ export function Productos({
     new Set(productos.map((p) => p.fabrica || p.proveedor).filter(Boolean)),
   );
 
-  function mover(productoId: string, direccion: "arriba" | "abajo") {
+  function mover(productoId: string, direccion: "arriba" | "abajo" | "inicio" | "final") {
     moverProducto(
       contenedorId,
       productos.map((p) => ({ id: p.id, orden: p.orden })),
@@ -169,24 +169,46 @@ export function Productos({
                 ) : (
                   <tr key={producto.id}>
                     <td className="py-2 pr-1">
-                      <div className="flex flex-col">
+                      <div className="grid grid-cols-2 gap-x-1 text-xs leading-none">
                         <button
                           type="button"
                           onClick={() => mover(producto.id, "arriba")}
                           disabled={i === 0}
                           className="text-zinc-400 hover:text-zinc-900 disabled:opacity-20"
-                          aria-label="Subir"
+                          aria-label="Subir un lugar"
+                          title="Subir un lugar"
                         >
                           ▲
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => mover(producto.id, "inicio")}
+                          disabled={i === 0}
+                          className="text-zinc-400 hover:text-zinc-900 disabled:opacity-20"
+                          aria-label="Mandar hasta arriba"
+                          title="Mandar hasta arriba"
+                        >
+                          ⤒
                         </button>
                         <button
                           type="button"
                           onClick={() => mover(producto.id, "abajo")}
                           disabled={i === productos.length - 1}
                           className="text-zinc-400 hover:text-zinc-900 disabled:opacity-20"
-                          aria-label="Bajar"
+                          aria-label="Bajar un lugar"
+                          title="Bajar un lugar"
                         >
                           ▼
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => mover(producto.id, "final")}
+                          disabled={i === productos.length - 1}
+                          className="text-zinc-400 hover:text-zinc-900 disabled:opacity-20"
+                          aria-label="Mandar hasta abajo"
+                          title="Mandar hasta abajo"
+                        >
+                          ⤓
                         </button>
                       </div>
                     </td>
