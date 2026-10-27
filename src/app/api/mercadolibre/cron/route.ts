@@ -30,11 +30,26 @@ export async function GET(request: NextRequest) {
   const inicio = Date.now();
   const resultado: Record<string, unknown> = {};
 
+  // Director Meli: si ya es la hora de la mañana (CDMX) y hoy no se ha hecho,
+  // arma la lista del día solo (chat + propuestas). Trabaja hasta ~45 s; las
+  // demás tareas de esta pasada usan lo que quede (o esperan 10 min).
+  try {
+    const { corridaManana } = await import("@/lib/director-chat");
+    const r = await corridaManana(45000);
+    if (r) {
+      resultado.directorManana = "omitida" in r ? { error: r.omitida } : { propuestas: r.acciones, costoUsd: r.costoUsd };
+      revalidatePath("/director");
+      revalidatePath("/");
+    }
+  } catch (e) {
+    resultado.directorManana = { error: e instanceof Error ? e.message : "Falló la revisión de la mañana." };
+  }
+
   // Preguntas de compradores primero (son lo más urgente): traerlas,
   // redactar borradores con la IA (máx. ~20 s) y avisar por WhatsApp.
   try {
     const { atenderPreguntas } = await import("@/lib/mercadolibre-preguntas");
-    resultado.preguntas = await atenderPreguntas(20000);
+    resultado.preguntas = await atenderPreguntas(Math.max(5000, Math.min(20000, 50000 - (Date.now() - inicio))));
     revalidatePath("/mercadolibre/atencion");
   } catch (e) {
     resultado.preguntas = { error: e instanceof Error ? e.message : "Falló atender preguntas." };

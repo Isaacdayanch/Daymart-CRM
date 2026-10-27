@@ -283,21 +283,30 @@ async function datosComunes() {
 // máximo posible de una respuesta, así el total del día nunca pasa del tope.
 // El día se cuenta en horario de la Ciudad de México.
 
-export async function gastoIaHoy() {
+/** Gasto del día en la IA por origen: ATENCION (preguntas) o DIRECTOR (el
+ * chat del Director, migración 0060). Cada uno tiene su propio tope. Si la
+ * columna `origen` todavía no existe (sin el SQL 0060), se suma todo. */
+export async function gastoIaHoy(origen: "ATENCION" | "DIRECTOR" = "ATENCION") {
   const supabase = createServiceClient();
-  const { data, error } = await supabase
-    .from("mercadolibre_ia_gastos")
-    .select("costo_usd")
-    .gte("creado_en", inicioDelDiaMx(new Date()).toISOString())
-    .returns<{ costo_usd: number }[]>();
+  const desde = inicioDelDiaMx(new Date()).toISOString();
+  let { data, error } = await supabase.from("mercadolibre_ia_gastos").select("costo_usd").eq("origen", origen).gte("creado_en", desde).returns<{ costo_usd: number }[]>();
+  if (error && /origen/.test(error.message)) {
+    ({ data, error } = await supabase.from("mercadolibre_ia_gastos").select("costo_usd").gte("creado_en", desde).returns<{ costo_usd: number }[]>());
+  }
   if (error) throw new Error(`No pude revisar cuánto se ha gastado hoy en la IA (¿falta el SQL 0057?): ${error.message}`);
   return (data ?? []).reduce((s, g) => s + Number(g.costo_usd || 0), 0);
 }
 
-async function registrarGastoIa(preguntaId: number, costoUsd: number) {
+/** Anota lo que costó una llamada a la IA (para el tope diario). */
+export async function anotarGastoIa(origen: "ATENCION" | "DIRECTOR", costoUsd: number, preguntaId: number | null = null) {
   if (!costoUsd) return;
   const supabase = createServiceClient();
-  await supabase.from("mercadolibre_ia_gastos").insert({ pregunta_id: preguntaId, costo_usd: costoUsd });
+  const { error } = await supabase.from("mercadolibre_ia_gastos").insert({ pregunta_id: preguntaId, costo_usd: costoUsd, origen });
+  if (error && /origen/.test(error.message)) await supabase.from("mercadolibre_ia_gastos").insert({ pregunta_id: preguntaId, costo_usd: costoUsd });
+}
+
+async function registrarGastoIa(preguntaId: number, costoUsd: number) {
+  await anotarGastoIa("ATENCION", costoUsd, preguntaId);
 }
 
 export class TopeDiario extends Error {}

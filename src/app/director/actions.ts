@@ -154,3 +154,61 @@ export async function reintentarEjecucionForm(id: string) {
   const r = await reintentarEjecucion(id);
   if ("error" in r && r.error) console.error("[director] reintentarEjecucion:", r.error);
 }
+
+// ---- Chat del Director dentro del CRM (migración 0060) ---------------------
+
+/** Isaac le escribe al Director; el CRM llama a Claude con el manual y las
+ * herramientas (leer el CRM, dejar propuestas, registrar decisiones, guardar
+ * reglas). Trabaja máximo ~45 s por turno. */
+export async function enviarMensajeDirector(texto: string) {
+  if (!(await esDueno())) return { error: "Solo el dueño puede hablar con el Director." };
+  const limpio = String(texto ?? "").trim().slice(0, 4000);
+  if (!limpio) return { error: "Escribe algo primero." };
+  try {
+    const { responderAlDirector } = await import("@/lib/director-chat");
+    const r = await responderAlDirector({ texto: limpio, origen: "CHAT", presupuestoMs: 45000 });
+    refrescar();
+    revalidatePath("/mercadolibre/promociones");
+    return { ok: true, respuesta: r.respuesta, acciones: r.acciones, costoUsd: r.costoUsd, mensajeId: r.mensajeId };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "No se pudo contestar." };
+  }
+}
+
+export async function guardarTopeDirector(limite: number) {
+  if (!(await esDueno())) return { error: "Solo el dueño puede hacer esto." };
+  try {
+    const { guardarConfigDirector } = await import("@/lib/director-chat");
+    await guardarConfigDirector({ limite_diario_usd: limite });
+    refrescar();
+    return { ok: true };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "No se pudo guardar el tope." };
+  }
+}
+
+export async function guardarAjustesDirector(formData: FormData) {
+  if (!(await esDueno())) return;
+  try {
+    const { guardarConfigDirector } = await import("@/lib/director-chat");
+    await guardarConfigDirector({
+      lista_manana: formData.get("lista_manana") === "on",
+      hora_manana: String(formData.get("hora_manana") ?? "08:25").trim() || "08:25",
+      reglas: String(formData.get("reglas") ?? "").trim() || null,
+    });
+    refrescar();
+  } catch (e) {
+    console.error("[director] guardarAjustes:", e instanceof Error ? e.message : e);
+  }
+}
+
+export async function borrarChatDirectorAccion() {
+  if (!(await esDueno())) return;
+  try {
+    const { borrarChatDirector } = await import("@/lib/director-chat");
+    await borrarChatDirector();
+    refrescar();
+  } catch (e) {
+    console.error("[director] borrarChat:", e instanceof Error ? e.message : e);
+  }
+}
