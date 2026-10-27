@@ -745,3 +745,39 @@ export interface OrdenCompraLinea {
   orden: number;
 }
 
+
+// ---- Chat del Director dentro del CRM (migración 0060) ----------------------
+
+export interface MensajeChatDirector {
+  id: string;
+  creado_en: string;
+  rol: "ISAAC" | "DIRECTOR" | "SISTEMA";
+  texto: string;
+  /** Qué hizo el Director en ese turno (texto corto por acción). */
+  acciones: string[];
+  costo_usd: number | null;
+  error: string | null;
+  origen: "CHAT" | "MANANA";
+}
+
+export interface ConfigDirector {
+  reglas: string | null;
+  limite_diario_usd: number;
+  lista_manana: boolean;
+  hora_manana: string;
+  ultima_manana: string | null;
+}
+
+export interface MensajeDirector {
+  id: string;
+  creado_en: string;
+  wa_id: string | null;
+  direccion: "ENTRADA" | "SALIDA";
+  de: string | null;
+  texto: string;
+  tipo: "DECISION" | "ORDEN" | "CONSULTA" | "IGNORADO" | "AVISO";
+  interpretacion: Record<string, unknown>;
+  respuesta: string | null;
+  error: string | null;
+  atendido_en: string | null;
+}

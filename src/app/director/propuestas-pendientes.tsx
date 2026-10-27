@@ -48,6 +48,16 @@ export function PropuestasPendientes({ propuestas }: { propuestas: PropuestaDire
       setError(r.error);
       return;
     }
+    const fallidas = "fallidas" in r ? (r.fallidas ?? 0) : 0;
+    const ejecutadas = "ejecutadas" in r ? (r.ejecutadas ?? 0) : 0;
+    const errorEjecucion = "errorEjecucion" in r ? r.errorEjecucion : null;
+    if (fallidas > 0 || errorEjecucion) {
+      setError(
+        errorEjecucion
+          ? `Se guardaron tus decisiones, pero no se pudieron aplicar en Mercado Libre: ${errorEjecucion}`
+          : `Se guardaron tus decisiones. ${ejecutadas} se aplicaron en Mercado Libre y ${fallidas} fallaron: abajo, en el historial, dice por qué y puedes reintentar.`,
+      );
+    }
     router.refresh();
   }
 

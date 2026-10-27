@@ -4,8 +4,16 @@ import { formatoFechaHoraMx } from "@/lib/fechas-mx";
 import { ACCIONES_DIRECTOR, ETIQUETA_AREA, ETIQUETA_ESTADO, ordenarPropuestas } from "@/lib/director";
 import type { BitacoraDirector, PropuestaDirector } from "@/lib/tipos";
 import { BotonGuardar } from "@/components/boton-guardar";
+import { iaConfigurada } from "@/lib/ia-respuestas";
+import { COSTO_MAXIMO_LLAMADA, gastoDirectorHoy, mensajesChatDirector, mensajeTopeDirector, obtenerConfigDirector } from "@/lib/director-chat";
 import { PropuestasPendientes } from "./propuestas-pendientes";
-import { deshacerDecisionForm, marcarHechaForm } from "./actions";
+import { ChatDirector } from "./chat-director";
+import { AjustesDirector } from "./ajustes-director";
+import { deshacerDecisionForm, marcarHechaForm, reintentarEjecucionForm } from "./actions";
+
+/** El chat del Director trabaja hasta ~45 s por turno (acciones del servidor
+ * de esta página). */
+export const maxDuration = 60;
 
 const DIA_MS = 86400000;
 
@@ -27,15 +35,15 @@ function estiloEstado(estado: PropuestaDirector["estado"]) {
   return "bg-amber-100 text-amber-800";
 }
 
-/** Pantalla del Director (solo dueño): lo que propuso hoy el agente, lo que
- * Isaac ya aprobó y falta ejecutar, el historial y la bitácora. Isaac decide
- * aquí desde el celular; el Director lee las decisiones por `/api/director`.
- * Fase 1: las aprobadas se marcan "hecha" a mano; en la fase 2 el CRM las
- * ejecuta en Mercado Libre. */
+/** Pantalla del Director (solo dueño): el chat con el Director (vive en el
+ * CRM: lee los datos, deja propuestas y respeta las reglas de Isaac), lo que
+ * propuso, lo que Isaac ya aprobó y falta ejecutar, el historial y la
+ * bitácora. Las promociones y relámpago aprobadas las ejecuta el CRM en
+ * Mercado Libre; lo manual lo hace Isaac y lo marca hecho. */
 export default async function DirectorPage() {
   const supabase = await createClient();
   const hace30 = haceDias(30);
-  const [{ data: pendientes, error }, { data: aprobadas }, { data: historial }, { data: bitacora }] = await Promise.all([
+  const [{ data: pendientes, error }, { data: aprobadas }, { data: historial }, { data: bitacora }, chat, config, gastoHoy] = await Promise.all([
     supabase.from("director_propuestas").select("*").eq("estado", "PROPUESTA").order("fecha", { ascending: false }).order("orden").returns<PropuestaDirector[]>(),
     supabase.from("director_propuestas").select("*").eq("estado", "APROBADA").order("fecha", { ascending: false }).order("orden").returns<PropuestaDirector[]>(),
     supabase
@@ -47,20 +55,27 @@ export default async function DirectorPage() {
       .limit(200)
       .returns<PropuestaDirector[]>(),
     supabase.from("director_bitacora").select("*").order("creado_en", { ascending: false }).limit(40).returns<BitacoraDirector[]>(),
+    mensajesChatDirector(80),
+    obtenerConfigDirector(),
+    gastoDirectorHoy().catch(() => 0),
   ]);
   const faltaSql = Boolean(error && /director_propuestas/.test(error.message) && /does not exist|schema cache/i.test(error.message));
   const ultimaCorrida = (bitacora ?? []).find((b) => b.origen === "DIRECTOR" && b.accion === "PROPUESTAS");
   const listaPendientes = ordenarPropuestas(pendientes ?? []);
   const listaAprobadas = ordenarPropuestas(aprobadas ?? []);
+  const ia = iaConfigurada();
+  const topeAlcanzado = gastoHoy + COSTO_MAXIMO_LLAMADA > config.limite_diario_usd;
+  const motivoNoDisponible = chat.faltaSql || config.faltaSql ? "Falta correr el SQL 0060 en Supabase para que exista el chat del Director." : !ia ? "Falta la llave ANTHROPIC_API_KEY en Vercel: sin ella el Director no puede contestar." : topeAlcanzado ? mensajeTopeDirector(config.limite_diario_usd) : null;
 
   return (
     <div className="space-y-8">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold text-zinc-900">Lo que el Director te propone</h2>
+          <h2 className="text-lg font-semibold text-zinc-900">Tu Director de Mercado Libre</h2>
           <p className="text-sm text-zinc-500">
-            Cada mañana a las 8:25 el Director revisa tu cuenta de Mercado Libre y deja aquí sus propuestas. Tú decides; nada se ejecuta sin tu aprobación.
-            {ultimaCorrida && <> Última corrida: {formatoFechaHoraMx(ultimaCorrida.creado_en)}.</>}
+            Le escribes aquí; él lee tu CRM, te propone y tú decides. Nada se ejecuta en Mercado Libre sin tu aprobación.
+            {config.lista_manana && <> Cada día a las {config.hora_manana} arma solo la lista de la mañana.</>}
+            {ultimaCorrida && <> Última lista: {formatoFechaHoraMx(ultimaCorrida.creado_en)}.</>}
           </p>
         </div>
         <Link href="/mercadolibre" className="text-xs text-zinc-500 underline-offset-2 hover:underline">
@@ -75,10 +90,12 @@ export default async function DirectorPage() {
       )}
       {error && !faltaSql && <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error.message}</div>}
 
+      <ChatDirector mensajes={chat.mensajes} disponible={!motivoNoDisponible} motivoNoDisponible={motivoNoDisponible} />
+
       {!faltaSql && listaPendientes.length === 0 && listaAprobadas.length === 0 && (
-        <div className="rounded-xl border border-dashed border-zinc-300 bg-white p-10 text-center">
+        <div className="rounded-xl border border-dashed border-zinc-300 bg-white p-8 text-center">
           <p className="text-base font-medium text-zinc-900">No hay propuestas pendientes</p>
-          <p className="mt-1 text-sm text-zinc-500">Mañana a las 8:25 el Director deja aquí lo que toca. También puedes decirle en el chat “revisa la cuenta de Meli”.</p>
+          <p className="mt-1 text-sm text-zinc-500">Dile arriba “¿qué toca hoy?” y el Director deja aquí su lista para que la apruebes.</p>
         </div>
       )}
 
@@ -91,8 +108,8 @@ export default async function DirectorPage() {
               Aprobadas, falta hacerlas <span className="font-normal text-zinc-400">· {listaAprobadas.length}</span>
             </h2>
             <p className="mt-0.5 text-xs text-zinc-500">
-              Por ahora las haces tú en Mercado Libre (o el Director con tu Chrome) y aquí las marcas como hechas. Cuando el CRM pueda ejecutarlas solo, aquí mismo verás “hecha por el
-              CRM”.
+              Las promociones y relámpago las aplica el CRM en Mercado Libre en cuanto las apruebas (si una falla, abajo en el historial dice por qué y puedes reintentar). Las que
+              dicen “la haces tú a mano” (Full, publicidad, publicaciones) las haces en el panel y aquí las marcas como hechas.
             </p>
           </div>
           <ul className="divide-y divide-zinc-100">
@@ -156,6 +173,20 @@ export default async function DirectorPage() {
                     </button>
                   </form>
                 )}
+                {p.estado === "FALLIDA" && (
+                  <div className="flex items-center gap-2">
+                    <form action={reintentarEjecucionForm.bind(null, p.id)}>
+                      <button type="submit" className="text-[11px] text-[#2D3277] underline-offset-2 hover:underline">
+                        reintentar
+                      </button>
+                    </form>
+                    <form action={deshacerDecisionForm.bind(null, p.id)}>
+                      <button type="submit" className="text-[11px] text-zinc-400 underline-offset-2 hover:text-zinc-700 hover:underline">
+                        regresar y cambiar precio
+                      </button>
+                    </form>
+                  </div>
+                )}
               </li>
             ))}
           </ul>
@@ -183,9 +214,13 @@ export default async function DirectorPage() {
         </details>
       )}
 
+      {!chat.faltaSql && !config.faltaSql && (
+        <AjustesDirector gastoHoy={gastoHoy} limite={config.limite_diario_usd} listaManana={config.lista_manana} horaManana={config.hora_manana} reglas={config.reglas} ultimaManana={config.ultima_manana} />
+      )}
+
       <p className="text-xs text-zinc-400">
-        El Director propone y tú decides; sus reglas (qué productos no se tocan, precios fijos, márgenes) viven en su manual y crecen con lo que le digas. Si quieres que una tarea la
-        haga sin preguntar, díselo en el chat y se anota como “hacer y avisar”.
+        El Director propone y tú decides; sus reglas (qué productos no se tocan, precios fijos, márgenes) viven en su manual y crecen con lo que le digas en el chat. Si quieres que una
+        tarea la haga sin preguntar, díselo y se anota como regla.
       </p>
     </div>
   );

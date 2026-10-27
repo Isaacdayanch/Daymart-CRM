@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { obtenerPerfilActual } from "@/lib/perfil";
-import { mensajeErrorDirector, resumenPropuesta } from "@/lib/director";
+import { ACCIONES_DIRECTOR, mensajeErrorDirector, resumenPropuesta } from "@/lib/director";
+import { ejecutarAprobadas, type ResultadoEjecucion } from "@/lib/director-ejecutar";
 import type { PropuestaDirector } from "@/lib/tipos";
 
 async function esDueno() {
@@ -34,6 +35,7 @@ export async function decidirPropuestas(decisiones: DecisionPantalla[]) {
   const ahora = new Date().toISOString();
   let aprobadas = 0;
   let rechazadas = 0;
+  const aEjecutar: string[] = [];
   for (const d of decisiones) {
     const estado = d.decision === "APROBAR" ? "APROBADA" : "RECHAZADA";
     const precio = d.precio === null || d.precio === undefined || !Number.isFinite(d.precio) ? null : d.precio;
@@ -48,8 +50,10 @@ export async function decidirPropuestas(decisiones: DecisionPantalla[]) {
     if (error) return { error: mensajeErrorDirector(error) };
     const p = data?.[0];
     if (!p) continue;
-    if (estado === "APROBADA") aprobadas++;
-    else rechazadas++;
+    if (estado === "APROBADA") {
+      aprobadas++;
+      if (ACCIONES_DIRECTOR[p.accion_tipo]?.automatica) aEjecutar.push(p.id);
+    } else rechazadas++;
     await supabase.from("director_bitacora").insert({
       origen: "ISAAC",
       accion: d.decision,
@@ -58,8 +62,38 @@ export async function decidirPropuestas(decisiones: DecisionPantalla[]) {
       resultado: resumenPropuesta(p),
     });
   }
+  // Fase 2: lo aprobado con acción automática se ejecuta en Mercado Libre
+  // en este mismo momento (si algo falla, queda FALLIDA con su motivo).
+  let ejecucion: ResultadoEjecucion[] = [];
+  let errorEjecucion: string | null = null;
+  if (aEjecutar.length) {
+    try {
+      ejecucion = await ejecutarAprobadas({ ids: aEjecutar });
+    } catch (e) {
+      errorEjecucion = e instanceof Error ? e.message : "No se pudieron ejecutar en Mercado Libre.";
+    }
+  }
   refrescar();
-  return { ok: true, aprobadas, rechazadas };
+  revalidatePath("/mercadolibre/promociones");
+  return { ok: true, aprobadas, rechazadas, ejecutadas: ejecucion.filter((r) => r.ok).length, fallidas: ejecucion.filter((r) => !r.ok).length, errorEjecucion };
+}
+
+/** Una propuesta que FALLÓ al ejecutarse se vuelve a intentar (mismo precio). */
+export async function reintentarEjecucion(id: string) {
+  if (!(await esDueno())) return { error: "Solo el dueño puede hacer esto." };
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("director_propuestas").update({ estado: "APROBADA", error: null }).eq("id", id).eq("estado", "FALLIDA").select("id").returns<{ id: string }[]>();
+  if (error) return { error: mensajeErrorDirector(error) };
+  if (!data?.[0]) return { error: "Esa propuesta ya no está en FALLIDA." };
+  try {
+    const r = await ejecutarAprobadas({ ids: [id] });
+    refrescar();
+    const x = r[0];
+    return x?.ok ? { ok: true } : { error: x?.error ?? "Volvió a fallar." };
+  } catch (e) {
+    refrescar();
+    return { error: e instanceof Error ? e.message : "Volvió a fallar." };
+  }
 }
 
 /** Fase 1: una propuesta aprobada se ejecuta a mano (Isaac la hace en ML o en
@@ -91,9 +125,9 @@ export async function deshacerDecision(id: string) {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("director_propuestas")
-    .update({ estado: "PROPUESTA", precio_aprobado: null, decidido_en: null, decidido_desde: null, nota_isaac: null })
+    .update({ estado: "PROPUESTA", precio_aprobado: null, decidido_en: null, decidido_desde: null, nota_isaac: null, error: null, ejecutado_en: null })
     .eq("id", id)
-    .in("estado", ["APROBADA", "RECHAZADA"])
+    .in("estado", ["APROBADA", "RECHAZADA", "FALLIDA"])
     .select("*")
     .returns<PropuestaDirector[]>();
   if (error) return { error: mensajeErrorDirector(error) };
@@ -114,4 +148,67 @@ export async function marcarHechaForm(id: string, formData: FormData) {
 export async function deshacerDecisionForm(id: string) {
   const r = await deshacerDecision(id);
   if ("error" in r && r.error) console.error("[director] deshacerDecision:", r.error);
+}
+
+export async function reintentarEjecucionForm(id: string) {
+  const r = await reintentarEjecucion(id);
+  if ("error" in r && r.error) console.error("[director] reintentarEjecucion:", r.error);
+}
+
+// ---- Chat del Director dentro del CRM (migración 0060) ---------------------
+
+/** Isaac le escribe al Director; el CRM llama a Claude con el manual y las
+ * herramientas (leer el CRM, dejar propuestas, registrar decisiones, guardar
+ * reglas). Trabaja máximo ~45 s por turno. */
+export async function enviarMensajeDirector(texto: string) {
+  if (!(await esDueno())) return { error: "Solo el dueño puede hablar con el Director." };
+  const limpio = String(texto ?? "").trim().slice(0, 4000);
+  if (!limpio) return { error: "Escribe algo primero." };
+  try {
+    const { responderAlDirector } = await import("@/lib/director-chat");
+    const r = await responderAlDirector({ texto: limpio, origen: "CHAT", presupuestoMs: 45000 });
+    refrescar();
+    revalidatePath("/mercadolibre/promociones");
+    return { ok: true, respuesta: r.respuesta, acciones: r.acciones, costoUsd: r.costoUsd, mensajeId: r.mensajeId };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "No se pudo contestar." };
+  }
+}
+
+export async function guardarTopeDirector(limite: number) {
+  if (!(await esDueno())) return { error: "Solo el dueño puede hacer esto." };
+  try {
+    const { guardarConfigDirector } = await import("@/lib/director-chat");
+    await guardarConfigDirector({ limite_diario_usd: limite });
+    refrescar();
+    return { ok: true };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "No se pudo guardar el tope." };
+  }
+}
+
+export async function guardarAjustesDirector(formData: FormData) {
+  if (!(await esDueno())) return;
+  try {
+    const { guardarConfigDirector } = await import("@/lib/director-chat");
+    await guardarConfigDirector({
+      lista_manana: formData.get("lista_manana") === "on",
+      hora_manana: String(formData.get("hora_manana") ?? "08:25").trim() || "08:25",
+      reglas: String(formData.get("reglas") ?? "").trim() || null,
+    });
+    refrescar();
+  } catch (e) {
+    console.error("[director] guardarAjustes:", e instanceof Error ? e.message : e);
+  }
+}
+
+export async function borrarChatDirectorAccion() {
+  if (!(await esDueno())) return;
+  try {
+    const { borrarChatDirector } = await import("@/lib/director-chat");
+    await borrarChatDirector();
+    refrescar();
+  } catch (e) {
+    console.error("[director] borrarChat:", e instanceof Error ? e.message : e);
+  }
 }
