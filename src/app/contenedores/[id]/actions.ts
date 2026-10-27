@@ -924,6 +924,41 @@ export async function moverProducto(
   revalidatePath(`/contenedores/${contenedorId}/imprimir`);
 }
 
+/** Reacomoda TODOS los productos del contenedor en el orden recibido
+ * (arrastrar y soltar en la tabla, 27 oct: "lo tengo que poner en medio").
+ * Solo se renumeran los que cambian; un producto del contenedor que no
+ * venga en la lista se queda al final, y un id que no sea del contenedor
+ * se ignora. */
+export async function reordenarProductos(contenedorId: string, idsEnOrden: string[]): Promise<{ error: string | null }> {
+  const supabase = await createClient();
+  const { data: actuales, error } = await supabase
+    .from("productos")
+    .select("id, orden")
+    .eq("contenedor_id", contenedorId)
+    .order("orden", { ascending: true })
+    .returns<{ id: string; orden: number }[]>();
+  if (error) return { error: `No se pudieron leer los productos: ${error.message}` };
+  const delContenedor = new Map((actuales ?? []).map((p) => [p.id, p.orden]));
+  const vistos = new Set<string>();
+  const final: string[] = [];
+  for (const id of idsEnOrden) {
+    if (delContenedor.has(id) && !vistos.has(id)) {
+      vistos.add(id);
+      final.push(id);
+    }
+  }
+  for (const p of actuales ?? []) if (!vistos.has(p.id)) final.push(p.id);
+
+  const cambios = final.map((id, i) => ({ id, orden: i + 1 })).filter((c) => delContenedor.get(c.id) !== c.orden);
+  const resultados = await Promise.all(cambios.map((c) => supabase.from("productos").update({ orden: c.orden }).eq("id", c.id)));
+  const fallo = resultados.find((r) => r.error);
+  if (fallo?.error) return { error: `No se pudo guardar el orden: ${fallo.error.message}` };
+
+  revalidatePath(`/contenedores/${contenedorId}`);
+  revalidatePath(`/contenedores/${contenedorId}/imprimir`);
+  return { error: null };
+}
+
 export async function subirDocumento(contenedorId: string, tipo: TipoDocumento, formData: FormData) {
   const supabase = await createClient();
 

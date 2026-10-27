@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type DragEvent } from "react";
 import Image from "next/image";
 import { formatoPesos } from "@/lib/formato";
 import { cartones, cbmProducto, costoFinalPorPieza, gastoRepartidoPorPieza, pesoProducto } from "@/lib/calculos";
@@ -8,7 +8,7 @@ import { Selector } from "@/components/selector";
 import { PastillaMancuerna } from "@/components/pastilla-mancuerna";
 import { textoPares } from "@/lib/mancuernas";
 import type { Marca, PendienteChina, Producto } from "@/lib/tipos";
-import { agregarProducto, actualizarProducto, eliminarProducto, moverProducto } from "./actions";
+import { agregarProducto, actualizarProducto, eliminarProducto, moverProducto, reordenarProductos } from "./actions";
 import { CamposProducto, type OcupacionActual } from "./campos-producto";
 
 import { BotonGuardar } from "@/components/boton-guardar";
@@ -76,6 +76,36 @@ export function Productos({
   const proveedores = Array.from(
     new Set(productos.map((p) => p.fabrica || p.proveedor).filter(Boolean)),
   );
+
+  // Arrastrar y soltar en la tabla (27 oct; Isaac: "lo tengo que poner en
+  // medio"): se toma el producto del asa ⠿ y se suelta encima de la fila
+  // donde debe quedar (arriba o abajo de ella, según la mitad de la fila).
+  const [arrastrando, setArrastrando] = useState<string | null>(null);
+  const [sobre, setSobre] = useState<{ id: string; posicion: "antes" | "despues" } | null>(null);
+
+  function alPasarSobre(productoId: string, e: DragEvent<HTMLTableRowElement>) {
+    if (!arrastrando || arrastrando === productoId) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    const rect = e.currentTarget.getBoundingClientRect();
+    const posicion = e.clientY < rect.top + rect.height / 2 ? "antes" : "despues";
+    if (sobre?.id !== productoId || sobre.posicion !== posicion) setSobre({ id: productoId, posicion });
+  }
+
+  async function soltarSobre(productoId: string, e: DragEvent<HTMLTableRowElement>) {
+    e.preventDefault();
+    const movidoId = e.dataTransfer.getData("text/plain") || arrastrando;
+    const destino = sobre?.id === productoId ? sobre : { id: productoId, posicion: "antes" as const };
+    setArrastrando(null);
+    setSobre(null);
+    if (!movidoId || movidoId === productoId) return;
+    const ids = [...productos].sort((a, b) => a.orden - b.orden).map((p) => p.id).filter((id) => id !== movidoId);
+    const indice = ids.indexOf(productoId);
+    if (indice === -1) return;
+    ids.splice(destino.posicion === "antes" ? indice : indice + 1, 0, movidoId);
+    const r = await reordenarProductos(contenedorId, ids);
+    if (r.error) alert(r.error);
+  }
 
   function mover(productoId: string, direccion: "arriba" | "abajo" | "inicio" | "final") {
     moverProducto(
@@ -167,8 +197,34 @@ export function Productos({
                     </td>
                   </tr>
                 ) : (
-                  <tr key={producto.id}>
+                  <tr
+                    key={producto.id}
+                    onDragOver={(e) => alPasarSobre(producto.id, e)}
+                    onDragLeave={() => setSobre((s) => (s?.id === producto.id ? null : s))}
+                    onDrop={(e) => soltarSobre(producto.id, e)}
+                    className={`transition ${arrastrando === producto.id ? "opacity-40" : ""} ${
+                      sobre?.id === producto.id ? (sobre.posicion === "antes" ? "shadow-[inset_0_2px_0_0_#18181b]" : "shadow-[inset_0_-2px_0_0_#18181b]") : ""
+                    }`}
+                  >
                     <td className="py-2 pr-1">
+                      <div className="flex items-center gap-1">
+                        <span
+                          draggable
+                          onDragStart={(e) => {
+                            e.dataTransfer.setData("text/plain", producto.id);
+                            e.dataTransfer.effectAllowed = "move";
+                            setArrastrando(producto.id);
+                          }}
+                          onDragEnd={() => {
+                            setArrastrando(null);
+                            setSobre(null);
+                          }}
+                          className="cursor-grab select-none text-base leading-none text-zinc-300 hover:text-zinc-700 active:cursor-grabbing"
+                          title="Arrastra para acomodarlo donde quieras"
+                          aria-label="Arrastrar para reacomodar"
+                        >
+                          ⠿
+                        </span>
                       <div className="grid grid-cols-2 gap-x-1 text-xs leading-none">
                         <button
                           type="button"
@@ -210,6 +266,7 @@ export function Productos({
                         >
                           ⤓
                         </button>
+                      </div>
                       </div>
                     </td>
                     <td className="py-2 pr-3">
@@ -290,6 +347,11 @@ export function Productos({
               )}
             </tbody>
           </table>
+          {productos.length > 1 && (
+            <p className="mt-2 text-[11px] text-zinc-400">
+              Para acomodar: arrastra el ⠿ de un producto y suéltalo sobre la fila donde lo quieres (en compu), o usa ▲ ▼ (un lugar) y ⤒ ⤓ (hasta arriba / hasta abajo).
+            </p>
+          )}
         </div>
       )}
 
