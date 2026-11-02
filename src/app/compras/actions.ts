@@ -409,6 +409,112 @@ export async function recibirOrden(ordenId: string, formData: FormData) {
   return { error: null, estado };
 }
 
+/** Corrige el precio por pieza de los productos y/o el flete de una orden
+ * AUNQUE ya haya recibido mercancía (Isaac, 2 nov: "¿cómo edito el costo de
+ * productos de compras?"). En una sola operación: el precio en la orden, el
+ * costo de las piezas que ya entraron a Stock (el costo promedio del
+ * producto se recalcula solo porque siempre se calcula del libro de
+ * movimientos) y el monto de la cuenta por pagar en Finanzas (los pagos ya
+ * registrados se respetan: solo cambia el saldo). Queda anotado en las notas
+ * internas de la orden qué cambió y cuándo. */
+export async function corregirCostosOrden(
+  ordenId: string,
+  formData: FormData,
+): Promise<{ error: string | null; hechos?: string[] }> {
+  if (!(await soloDueno())) return { error: "Solo el dueño puede hacer esto." };
+  const supabase = await createClient();
+  const datos = await cargarOrden(supabase, ordenId);
+  if (!datos) return { error: "No se encontró la orden." };
+  const { orden, lineas, factura, proveedor } = datos;
+  if (orden.estado === "CANCELADA") return { error: "Esta orden está cancelada: no hay costo que corregir." };
+
+  const fleteCrudo = formData.get("flete");
+  const fleteNuevo = typeof fleteCrudo === "string" && fleteCrudo.trim() !== "" ? Number(fleteCrudo) : orden.flete || 0;
+  if (!Number.isFinite(fleteNuevo) || fleteNuevo < 0) return { error: "El flete no puede ser negativo." };
+
+  const cambiosPrecio: { linea: OrdenCompraLinea; precio: number }[] = [];
+  for (const linea of lineas) {
+    const crudo = formData.get(`precio_${linea.id}`);
+    if (typeof crudo !== "string" || crudo.trim() === "") continue;
+    const precio = Number(crudo);
+    if (!Number.isFinite(precio) || precio < 0) return { error: `El precio de “${linea.nombre}” no es válido.` };
+    if (Math.abs(precio - linea.precio_unitario) > 0.004) cambiosPrecio.push({ linea, precio });
+  }
+  const cambiaFlete = Math.abs(fleteNuevo - (orden.flete || 0)) > 0.004;
+  if (!cambiosPrecio.length && !cambiaFlete) return { error: "No cambiaste ningún precio ni el flete." };
+
+  const hechos: string[] = [];
+  const pesos = (n: number) => `$${n.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  // 1) La orden: precios por línea y flete.
+  for (const c of cambiosPrecio) {
+    const { error } = await supabase.from("orden_compra_lineas").update({ precio_unitario: c.precio }).eq("id", c.linea.id);
+    if (error) return { error: `No se pudo guardar el precio de “${c.linea.nombre}”: ${error.message}`, hechos };
+    hechos.push(`${c.linea.nombre}: ${pesos(c.linea.precio_unitario)} → ${pesos(c.precio)} por pieza`);
+  }
+  if (cambiaFlete) {
+    const { error } = await supabase.from("ordenes_compra").update({ flete: fleteNuevo }).eq("id", ordenId);
+    if (error) return { error: `No se pudo guardar el flete: ${error.message}`, hechos };
+    hechos.push(`Flete: ${pesos(orden.flete || 0)} → ${pesos(fleteNuevo)}`);
+  }
+
+  // 2) El stock: las ENTRADAS que generó esta orden toman el costo nuevo
+  //    (precio + flete repartido), igual que se calculó al recibir. Como el
+  //    flete se reparte entre TODAS las líneas, cambiar una mueve el costo de
+  //    las demás también: se recalculan todas las que ya entraron.
+  const lineasNuevas = lineas.map((l) => {
+    const cambio = cambiosPrecio.find((c) => c.linea.id === l.id);
+    return cambio ? { ...l, precio_unitario: cambio.precio } : l;
+  });
+  const ordenNueva = { ...orden, flete: fleteNuevo };
+  let movimientos = 0;
+  for (const l of lineasNuevas) {
+    if (l.cantidad_recibida <= 0) continue;
+    const costo = Math.round(costoUnitarioConFlete(l, lineasNuevas, fleteNuevo) * 100) / 100;
+    const { data, error } = await supabase
+      .from("movimientos_stock")
+      .update({ costo_unitario_pesos: costo })
+      .eq("orden_compra_id", ordenId)
+      .eq("sku", l.sku)
+      .eq("tipo", "ENTRADA")
+      .select("id");
+    if (error) return { error: `La orden ya quedó corregida, pero no se pudo actualizar el costo en Stock de “${l.nombre}”: ${error.message}`, hechos };
+    movimientos += data?.length ?? 0;
+  }
+  if (movimientos > 0) hechos.push(`Se actualizó el costo de ${movimientos} entrada(s) de stock`);
+
+  // 3) La cuenta por pagar en Finanzas: lo recibido (si ya llegó algo) o el
+  //    total de la orden (si todavía no); los pagos se quedan como están.
+  const recibioAlgo = lineasNuevas.some((l) => l.cantidad_recibida > 0);
+  const monto = recibioAlgo ? montoRecibido(ordenNueva, lineasNuevas) : totalOrden(ordenNueva, lineasNuevas);
+  if (factura) {
+    const { error } = await supabase.from("facturas_pendientes").update({ monto: Math.max(monto, 0.01) }).eq("id", factura.id);
+    if (error) return { error: `La orden y el stock quedaron corregidos, pero no se pudo actualizar la cuenta por pagar: ${error.message}`, hechos };
+    hechos.push(`Cuenta por pagar: ${pesos(factura.monto)} → ${pesos(Math.max(monto, 0.01))}`);
+  } else if (monto > 0) {
+    const { error } = await supabase.from("facturas_pendientes").insert({
+      proveedor: proveedor?.nombre ?? "Proveedor",
+      concepto: `Orden de compra #${orden.numero}`,
+      monto,
+      moneda: "MXN",
+      fecha_emision: orden.fecha,
+      fecha_limite: fechaLimitePago(orden.condiciones_pago, orden.dias_credito, orden.fecha, orden.fecha_entrega, orden.recibida_en ?? null),
+      orden_compra_id: ordenId,
+    });
+    if (error) return { error: `La orden y el stock quedaron corregidos, pero no se pudo crear la cuenta por pagar: ${error.message}`, hechos };
+    hechos.push(`Se creó la cuenta por pagar por ${pesos(monto)}`);
+  }
+
+  // 4) Que quede anotado en la orden.
+  const fechaTexto = new Date().toLocaleDateString("es-MX", { timeZone: "America/Mexico_City", day: "numeric", month: "short", year: "numeric" });
+  const nota = `Costo corregido el ${fechaTexto}: ${hechos.filter((h) => !h.startsWith("Se ") && !h.startsWith("Cuenta")).join("; ")}.`;
+  await supabase.from("ordenes_compra").update({ notas: orden.notas ? `${orden.notas}\n${nota}` : nota }).eq("id", ordenId);
+
+  refrescarCompras(ordenId);
+  for (const l of lineasNuevas) revalidatePath(`/stock/producto/${encodeURIComponent(l.sku)}`);
+  return { error: null, hechos };
+}
+
 /** "Lo que falta ya no va a llegar": cierra la orden con lo recibido; la
  * cuenta por pagar se queda en lo que sí llegó. */
 export async function cerrarOrden(ordenId: string) {

@@ -10,6 +10,7 @@ import { EstadoOrden } from "../estado-orden";
 import { Recepcion } from "./recepcion";
 import { FacturaPagos } from "./factura-pagos";
 import { AccionesOrden } from "./acciones-orden";
+import { CorregirCosto } from "./corregir-costo";
 
 export default async function DetalleOrden({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -194,7 +195,8 @@ export default async function DetalleOrden({ params }: { params: Promise<{ id: s
       {factura && <FacturaPagos ordenId={orden.id} factura={factura} pagos={pagos} cuentas={cuentas ?? []} saldo={saldo} condiciones={orden.condiciones_pago} />}
 
       {orden.estado !== "CANCELADA" && (
-        <div className="flex justify-end">
+        <div className="flex flex-wrap items-start justify-end gap-x-6 gap-y-3">
+          <CorregirCosto ordenId={orden.id} lineas={lineas} flete={orden.flete} pagado={pagado} />
           <AccionesOrden ordenId={orden.id} numero={orden.numero} tienePagos={pagos.length > 0} recibioAlgo={piezasRecibidas > 0} />
         </div>
       )}
