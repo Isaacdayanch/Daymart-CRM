@@ -84,10 +84,16 @@ export default async function DetalleOrden({ params }: { params: Promise<{ id: s
           >
             Mandar por WhatsApp
           </a>
-          {editable && (
+          {editable ? (
             <Link href={`/compras/${orden.id}/editar`} className="rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50">
               Editar
             </Link>
+          ) : (
+            orden.estado !== "CANCELADA" && (
+              <a href="#corregir-costo" className="rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50">
+                Corregir precios
+              </a>
+            )
           )}
         </div>
       </div>

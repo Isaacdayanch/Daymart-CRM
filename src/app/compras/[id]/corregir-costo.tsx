@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CampoMonto } from "@/components/campo-monto";
 import { BotonGuardar } from "@/components/boton-guardar";
@@ -22,6 +22,26 @@ export function CorregirCosto({ ordenId, lineas, flete, pagado }: { ordenId: str
   const [error, setError] = useState<string | null>(null);
   const [hechos, setHechos] = useState<string[] | null>(null);
 
+  // El botón "Corregir precios" de arriba de la orden manda a #corregir-costo:
+  // al llegar (o al cambiar el hash) se abre la tarjeta sola.
+  useEffect(() => {
+    function revisar() {
+      if (window.location.hash === "#corregir-costo") setAbierto(true);
+    }
+    const t = setTimeout(revisar, 0);
+    window.addEventListener("hashchange", revisar);
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener("hashchange", revisar);
+    };
+  }, []);
+
+  function cerrar() {
+    setAbierto(false);
+    setError(null);
+    if (window.location.hash === "#corregir-costo") history.replaceState(null, "", window.location.pathname + window.location.search);
+  }
+
   const lineasNuevas = lineas.map((l) => ({ ...l, precio_unitario: Number(precios[l.id]) || 0 }));
   const fleteNuevo = Number(fleteTexto) || 0;
   const recibidas = lineas.reduce((s, l) => s + l.cantidad_recibida, 0);
@@ -41,13 +61,13 @@ export function CorregirCosto({ ordenId, lineas, flete, pagado }: { ordenId: str
       return;
     }
     setHechos(r.hechos ?? []);
-    setAbierto(false);
+    cerrar();
     router.refresh();
   }
 
   if (!abierto) {
     return (
-      <div className="flex flex-col items-end gap-1">
+      <div id="corregir-costo" className="flex flex-col items-end gap-1">
         {hechos && (
           <div className="mb-1 w-full rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs text-emerald-800 sm:w-auto">
             <p className="font-medium">Costo corregido.</p>
@@ -58,16 +78,16 @@ export function CorregirCosto({ ordenId, lineas, flete, pagado }: { ordenId: str
             </ul>
           </div>
         )}
-        <button type="button" onClick={() => setAbierto(true)} className="text-sm text-zinc-500 hover:text-zinc-900">
-          Corregir costo
+        <button type="button" onClick={() => setAbierto(true)} className="rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50">
+          Corregir precios o flete
         </button>
       </div>
     );
   }
 
   return (
-    <div className="w-full rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-      <p className="text-sm font-medium text-zinc-900">Corregir el costo de esta orden</p>
+    <div id="corregir-costo" className="w-full scroll-mt-24 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+      <p className="text-sm font-medium text-zinc-900">Corregir los precios de esta orden</p>
       <p className="mt-1 text-xs text-zinc-500">
         Precio por pieza con IVA incluido, como te lo da el proveedor. Al guardar se corrige el precio en la orden
         {recibidas > 0 ? `, el costo de las ${recibidas.toLocaleString("es-MX")} piezas que ya entraron a Stock (el costo promedio se recalcula solo)` : ""} y el monto de la cuenta por
@@ -133,14 +153,7 @@ export function CorregirCosto({ ordenId, lineas, flete, pagado }: { ordenId: str
       )}
 
       <div className="mt-4 flex items-center justify-end gap-3">
-        <button
-          type="button"
-          onClick={() => {
-            setAbierto(false);
-            setError(null);
-          }}
-          className="text-sm text-zinc-500 hover:text-zinc-900"
-        >
+        <button type="button" onClick={cerrar} className="text-sm text-zinc-500 hover:text-zinc-900">
           Cancelar
         </button>
         <BotonGuardar

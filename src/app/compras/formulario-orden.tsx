@@ -168,7 +168,7 @@ export function FormularioOrden({
         return;
       }
       if (skusEnLineas.has(opcionActual.sku)) {
-        setError(`"${opcionActual.nombre}" ya está en la orden: cámbiale la cantidad quitándolo y agregándolo de nuevo.`);
+        setError(`"${opcionActual.nombre}" ya está en la orden: cámbiale las piezas o el precio directo en la lista de abajo.`);
         return;
       }
       setLineas((prev) => [...prev, { id: crypto.randomUUID(), sku: opcionActual.sku, nombre: opcionActual.nombre, imagenUrl: opcionActual.imagenUrl, piezasPorCaja: opcionActual.piezasPorCaja || 1, cantidad: cant, precioUnitario: precioNum, nuevo: null }]);
@@ -206,6 +206,10 @@ export function FormularioOrden({
 
   function quitarLinea(id: string) {
     setLineas((prev) => prev.filter((l) => l.id !== id));
+  }
+
+  function cambiarLinea(id: string, cambios: Partial<Pick<Linea, "cantidad" | "precioUnitario">>) {
+    setLineas((prev) => prev.map((l) => (l.id === id ? { ...l, ...cambios } : l)));
   }
 
   async function guardar() {
@@ -446,35 +450,14 @@ export function FormularioOrden({
         </div>
 
         {lineas.length > 0 && (
-          <div className="mt-4 divide-y divide-zinc-100 rounded-xl border border-zinc-200">
-            {lineas.map((l) => (
-              <div key={l.id} className="flex items-center justify-between gap-3 px-4 py-3">
-                <div className="flex min-w-0 items-center gap-3">
-                  {l.imagenUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element -- miniatura chica en una lista
-                    <img src={l.imagenUrl} alt={l.nombre} className="h-10 w-10 shrink-0 rounded-lg object-cover" />
-                  ) : (
-                    <div className="h-10 w-10 shrink-0 rounded-lg bg-zinc-100" />
-                  )}
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-zinc-900">
-                      {l.nombre}
-                      {l.nuevo && <span className="ml-2 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700 ring-1 ring-inset ring-emerald-600/20">nuevo</span>}
-                    </p>
-                    <p className="text-xs text-zinc-400">
-                      <span className="font-mono">{l.sku}</span> · {l.cantidad.toLocaleString("es-MX")} × {formatoPesos(l.precioUnitario)}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex shrink-0 items-center gap-3">
-                  <span className="text-sm font-semibold text-zinc-900">{formatoPesos(l.cantidad * l.precioUnitario)}</span>
-                  <button type="button" onClick={() => quitarLinea(l.id)} className="text-zinc-400 hover:text-red-600" aria-label="Quitar producto">
-                    ✕
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
+          <>
+            <div className="mt-4 divide-y divide-zinc-100 rounded-xl border border-zinc-200">
+              {lineas.map((l) => (
+                <LineaEditable key={l.id} linea={l} onCambiar={(c) => cambiarLinea(l.id, c)} onQuitar={() => quitarLinea(l.id)} />
+              ))}
+            </div>
+            <p className="mt-2 text-[11px] text-zinc-400">Las piezas y el precio de cada renglón se corrigen ahí mismo; el total se actualiza solo.</p>
+          </>
         )}
       </div>
 
@@ -554,6 +537,81 @@ export function FormularioOrden({
             {inicial ? "Guardar cambios" : "Registrar orden de compra"}
           </BotonGuardar>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/** Renglón ya agregado a la orden: las piezas y el precio se corrigen ahí
+ * mismo (2 nov; Isaac: "no estoy pudiendo editar el precio de los
+ * productos" — antes solo se podía quitar el producto y volverlo a agregar).
+ * El texto del campo vive aquí mientras se escribe; al padre solo le llega
+ * un número válido (si se deja vacío o en 0, se queda el último válido y el
+ * campo se marca en rojo hasta corregirlo). */
+function LineaEditable({ linea, onCambiar, onQuitar }: { linea: Linea; onCambiar: (cambios: Partial<Pick<Linea, "cantidad" | "precioUnitario">>) => void; onQuitar: () => void }) {
+  const [cantidadTexto, setCantidadTexto] = useState(String(linea.cantidad));
+  const [precioTexto, setPrecioTexto] = useState(String(linea.precioUnitario));
+  const cantidadInvalida = !(Math.floor(Number(cantidadTexto)) > 0);
+  const precioInvalido = precioTexto === "" || !(Number(precioTexto) >= 0);
+
+  function cambiarCantidad(v: string) {
+    setCantidadTexto(v);
+    const n = Math.floor(Number(v));
+    if (v.trim() !== "" && Number.isFinite(n) && n > 0) onCambiar({ cantidad: n });
+  }
+
+  function cambiarPrecio(v: string) {
+    setPrecioTexto(v);
+    const n = Number(v);
+    if (v !== "" && Number.isFinite(n) && n >= 0) onCambiar({ precioUnitario: n });
+  }
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+      <div className="flex min-w-0 flex-1 items-center gap-3">
+        {linea.imagenUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element -- miniatura chica en una lista
+          <img src={linea.imagenUrl} alt={linea.nombre} className="h-10 w-10 shrink-0 rounded-lg object-cover" />
+        ) : (
+          <div className="h-10 w-10 shrink-0 rounded-lg bg-zinc-100" />
+        )}
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium text-zinc-900">
+            {linea.nombre}
+            {linea.nuevo && <span className="ml-2 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700 ring-1 ring-inset ring-emerald-600/20">nuevo</span>}
+          </p>
+          <p className="font-mono text-xs text-zinc-400">{linea.sku}</p>
+        </div>
+      </div>
+      <div className="flex shrink-0 flex-wrap items-center gap-2">
+        <label className="flex items-center gap-1 text-xs text-zinc-400">
+          <input
+            type="number"
+            min={1}
+            value={cantidadTexto}
+            onChange={(e) => cambiarCantidad(e.target.value)}
+            onBlur={() => {
+              if (cantidadInvalida) setCantidadTexto(String(linea.cantidad));
+            }}
+            aria-label="Piezas"
+            className={`w-20 rounded-lg border px-2 py-1.5 text-right text-sm tabular-nums text-zinc-900 focus:border-zinc-500 focus:ring-zinc-500 ${cantidadInvalida ? "border-red-300 bg-red-50" : "border-zinc-300"}`}
+          />
+          pzas
+        </label>
+        <span className="text-xs text-zinc-400">×</span>
+        <div className="w-28">
+          <CampoMonto
+            value={precioTexto}
+            onChange={cambiarPrecio}
+            placeholder="0"
+            className={`block w-full rounded-lg border px-3 py-1.5 text-sm text-zinc-900 focus:border-zinc-500 focus:ring-zinc-500 ${precioInvalido ? "border-red-300 bg-red-50" : "border-zinc-300"}`}
+          />
+        </div>
+        <span className="text-xs text-zinc-400">=</span>
+        <span className="w-24 text-right text-sm font-semibold tabular-nums text-zinc-900">{formatoPesos(linea.cantidad * linea.precioUnitario)}</span>
+        <button type="button" onClick={onQuitar} className="text-zinc-400 hover:text-red-600" aria-label="Quitar producto">
+          ✕
+        </button>
       </div>
     </div>
   );
