@@ -5,7 +5,7 @@ import { agruparPorCodigoMl, esCodigoPendiente } from "@/lib/mercadolibre-codigo
 import { envioPromedioPorItem, obtenerBitacoraPromociones, obtenerMargenMinimo, piezasVendidasPorItem, preguntasSinResponder } from "@/lib/mercadolibre-promociones";
 import { margenPublicacion } from "@/lib/mercadolibre-margen";
 import { itemsDeOrdenes, type OrdenItemMl, type OrdenMl } from "@/lib/mercadolibre-ordenes";
-import { comisionOrden, netoOrden, totalVendidoOrden } from "@/lib/mercadolibre-montos";
+import { comisionOrden, envioOrden, netoOrden, totalVendidoOrden } from "@/lib/mercadolibre-montos";
 import { analisisVentasMl } from "@/lib/mercadolibre-analisis";
 import { resumenPorSku } from "@/lib/calculos-stock";
 import { obtenerPiezasPorCajaPorSku } from "@/lib/productos-stock";
@@ -46,7 +46,7 @@ function totalesOrdenes(ordenes: OrdenMl[], items: OrdenItemMl[]) {
   for (const o of ordenes) {
     vendido += totalVendidoOrden(o);
     comisiones += comisionOrden(o);
-    envios += o.costo_envio_vendedor ?? 0;
+    envios += envioOrden(o) ?? 0;
     neto += netoOrden(o);
     piezas += piezasPorOrden.get(o.id) ?? 0;
   }
@@ -127,13 +127,12 @@ export async function cargarDatosDirector(): Promise<DatosDirector> {
   let ordenes30: OrdenMl[] = [];
   let items30: OrdenItemMl[] = [];
   try {
-    const { data, error } = await supabase
-      .from("mercadolibre_ordenes")
-      .select("id, pack_id, estado, fecha_creacion, total, comision, costo_envio_vendedor, pagado_comprador, envio_comprador, logistica")
-      .eq("estado", "paid")
-      .gte("fecha_creacion", hace30.toISOString())
-      .limit(5000)
-      .returns<OrdenMl[]>();
+    // Con los montos exactos de Mercado Pago (SQL 0063); sin el SQL, sin ellos.
+    const leer = (columnas: string) =>
+      supabase.from("mercadolibre_ordenes").select(columnas).eq("estado", "paid").gte("fecha_creacion", hace30.toISOString()).limit(5000).returns<OrdenMl[]>();
+    const base = "id, pack_id, estado, fecha_creacion, total, comision, costo_envio_vendedor, pagado_comprador, envio_comprador, logistica";
+    let { data, error } = await leer(`${base}, mp_bruto, mp_comision, mp_envio, mp_impuestos, mp_neto`);
+    if (error) ({ data, error } = await leer(base));
     if (error) throw new Error(error.message);
     ordenes30 = data ?? [];
     if (ordenes30.length) items30 = await itemsDeOrdenes(ordenes30.map((o) => o.id), "orden_id, item_id, variation_id, titulo, cantidad, precio_unitario");
