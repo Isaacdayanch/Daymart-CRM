@@ -203,8 +203,9 @@ function RenglonConcepto({
               <div className="mt-1">
                 <Selector
                   name="cuenta_id"
-                  defaultValue={sugerencias.ultimaCuenta[concepto] ?? cuentas[0]?.id ?? ""}
-                  opciones={[...cuentas.map((c) => ({ value: c.id, label: c.nombre })), { value: "", label: "Sin cuenta (fue antes de usar el sistema)" }]}
+                  defaultValue={sugerencias.ultimaCuenta[concepto] ?? ""}
+                  placeholder="Elige la cuenta"
+                  opciones={[...cuentas.map((c) => ({ value: c.id, label: c.nombre })), { value: "SIN_CUENTA", label: "Sin cuenta (fue antes de usar el sistema)" }]}
                 />
               </div>
             </div>

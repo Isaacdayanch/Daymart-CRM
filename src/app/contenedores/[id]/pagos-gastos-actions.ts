@@ -89,7 +89,11 @@ export async function registrarPagoGastoContenedor(
     .maybeSingle<{ id: string; numero: number }>();
   if (errorContenedor || !contenedor) return { error: "No se encontró el contenedor." };
 
-  const cuentaId = texto(formData, "cuenta_id") || null;
+  // La cuenta se elige a propósito (sin preselección): "" = no eligió nada,
+  // "SIN_CUENTA" = pago de antes del sistema, sin movimiento en Finanzas.
+  const cuentaCrudo = texto(formData, "cuenta_id");
+  if (!cuentaCrudo) return { error: "Elige de qué cuenta salió el dinero (o “Sin cuenta” si fue antes de usar el sistema)." };
+  const cuentaId = cuentaCrudo === "SIN_CUENTA" ? null : cuentaCrudo;
   const montoPesos = numero(formData, "monto_pesos");
   const comisionPesos = numero(formData, "comision_pesos");
   const montoDolares = definicion.enDolares ? numero(formData, "monto_dolares") : 0;
