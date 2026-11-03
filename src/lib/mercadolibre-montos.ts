@@ -24,6 +24,18 @@ export interface MontosOrden {
   pagado_comprador?: number | null;
   /** Envío pagado por el comprador (parte de `pagado_comprador`). */
   envio_comprador?: number | null;
+  /** Lo que dijo Mercado Pago en su reporte de liberaciones (migración
+   * 0062). Si `mp_neto` existe, es la verdad: no se calcula nada. */
+  mp_bruto?: number | null;
+  mp_comision?: number | null;
+  mp_envio?: number | null;
+  mp_impuestos?: number | null;
+  mp_neto?: number | null;
+}
+
+/** ¿Esta venta ya tiene el dato exacto de Mercado Pago? */
+export function tieneDatoExacto(o: MontosOrden) {
+  return o.mp_neto != null;
 }
 
 export const redondearCentavos = (n: number) => Math.round(n * 100) / 100;
@@ -33,6 +45,7 @@ export const redondearCentavos = (n: number) => Math.round(n * 100) / 100;
  * orden. Nunca menor al total de la orden (un cupón de ML lo paga ML, no
  * Isaac). */
 export function totalVendidoOrden(o: MontosOrden) {
+  if (tieneDatoExacto(o) && o.mp_bruto != null && o.mp_bruto > 0) return redondearCentavos(o.mp_bruto);
   if (o.pagado_comprador != null && o.pagado_comprador > 0) {
     return Math.max(o.total, redondearCentavos(o.pagado_comprador - (o.envio_comprador ?? 0)));
   }
@@ -45,6 +58,7 @@ export function totalVendidoOrden(o: MontosOrden) {
  * si ya se conoce; mientras no, la diferencia completa se muestra como
  * comisión (el "te queda" sale bien en ambos casos). */
 export function comisionOrden(o: MontosOrden) {
+  if (tieneDatoExacto(o)) return redondearCentavos(o.mp_comision ?? 0);
   if (o.comision > 0) return o.comision;
   const diferencia = totalVendidoOrden(o) - o.total;
   if (diferencia <= 0.5) return 0;
@@ -52,14 +66,35 @@ export function comisionOrden(o: MontosOrden) {
 }
 
 /** De dónde salió la comisión, para explicarlo en pantalla. */
-export function origenComisionOrden(o: MontosOrden & { comision_mp?: number | null }): "mercado_pago" | "sale_fee" | "derivada" | "ninguna" {
+export function origenComisionOrden(o: MontosOrden & { comision_mp?: number | null }): "reporte_mp" | "mercado_pago" | "sale_fee" | "derivada" | "ninguna" {
+  if (tieneDatoExacto(o)) return "reporte_mp";
   if (o.comision > 0) return o.comision_mp && o.comision_mp > 0 ? "mercado_pago" : "sale_fee";
   return comisionOrden(o) > 0 ? "derivada" : "ninguna";
 }
 
-/** Lo que le queda a Isaac antes de su costo de producto. */
+/** Envío a cargo del vendedor: el de Mercado Pago si ya está; si no, el
+ * que publicó Mercado Libre en el envío (null = todavía no se sabe). */
+export function envioOrden(o: MontosOrden): number | null {
+  if (tieneDatoExacto(o)) return redondearCentavos(o.mp_envio ?? 0);
+  return o.costo_envio_vendedor;
+}
+
+/** Impuestos que Mercado Pago retuvo (solo se saben con el dato exacto). */
+export function impuestosOrden(o: MontosOrden) {
+  return tieneDatoExacto(o) ? redondearCentavos(o.mp_impuestos ?? 0) : 0;
+}
+
+/** Lo que le queda a Isaac antes de su costo de producto. Con el dato de
+ * Mercado Pago es exactamente lo que le depositaron; si no, se calcula. */
 export function netoOrden(o: MontosOrden) {
-  return redondearCentavos(totalVendidoOrden(o) - comisionOrden(o) - (o.costo_envio_vendedor ?? 0));
+  if (tieneDatoExacto(o)) return redondearCentavos(o.mp_neto!);
+  return netoCalculado(o);
+}
+
+/** Lo que el CRM calculaba (sin el dato de Mercado Pago), para el cuadre. */
+export function netoCalculado(o: MontosOrden) {
+  const sinMp = { ...o, mp_neto: null, mp_bruto: null, mp_comision: null, mp_envio: null, mp_impuestos: null };
+  return redondearCentavos(totalVendidoOrden(sinMp) - comisionOrden(sinMp) - (o.costo_envio_vendedor ?? 0));
 }
 
 /** Reparte un monto de la orden entre sus renglones en proporción a lo

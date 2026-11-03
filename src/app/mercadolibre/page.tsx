@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { todasLasFilas } from "@/lib/cargar-todo";
 import { Suspense } from "react";
 import { after } from "next/server";
 import { createServiceClient } from "@/lib/supabase/servicio";
@@ -13,7 +14,7 @@ import {
   type OrdenItemMl,
   type OrdenMl,
 } from "@/lib/mercadolibre-ordenes";
-import { comisionOrden, netoOrden, parteDelRenglon, totalVendidoOrden } from "@/lib/mercadolibre-montos";
+import { comisionOrden, envioOrden, impuestosOrden, netoOrden, parteDelRenglon, tieneDatoExacto, totalVendidoOrden } from "@/lib/mercadolibre-montos";
 import {
   fechaTextoMx,
   formatoFechaHoraMx,
@@ -87,14 +88,18 @@ export default async function VentasMercadoLibre({
       (s) => ({ s, error: null as string | null }),
       (e: unknown) => ({ s: null, error: e instanceof Error ? e.message : "No se pudo leer la sincronización." }),
     ),
-    supabase
-      .from("mercadolibre_ordenes")
-      .select("*")
-      .gte("fecha_creacion", desde.toISOString())
-      .lt("fecha_creacion", hasta.toISOString())
-      .order("fecha_creacion", { ascending: false })
-      .limit(1000)
-      .returns<OrdenMl[]>(),
+    // Todas las ventas del periodo: un mes pasa de 1,000 y Supabase corta en
+    // 1,000 sin avisar (los totales salían de menos).
+    todasLasFilas<OrdenMl>((d, h) =>
+      supabase
+        .from("mercadolibre_ordenes")
+        .select("*", { count: "exact" })
+        .gte("fecha_creacion", desde.toISOString())
+        .lt("fecha_creacion", hasta.toISOString())
+        .order("fecha_creacion", { ascending: false })
+        .order("id", { ascending: true })
+        .range(d, h),
+    ),
   ]);
   const sync = syncLeido.s;
   let ordenes: OrdenMl[] = [];
@@ -172,8 +177,11 @@ export default async function VentasMercadoLibre({
   const piezas = pagadas.reduce((s, o) => s + itemsDe(o.id).reduce((a, i) => a + i.cantidad, 0), 0);
   const totalVendido = pagadas.reduce((s, o) => s + totalVendidoOrden(o), 0);
   const comisiones = pagadas.reduce((s, o) => s + comisionOrden(o), 0);
-  const envios = pagadas.reduce((s, o) => s + (o.costo_envio_vendedor ?? 0), 0);
+  const envios = pagadas.reduce((s, o) => s + (envioOrden(o) ?? 0), 0);
+  const impuestos = pagadas.reduce((s, o) => s + Math.abs(impuestosOrden(o)), 0);
   const neto = pagadas.reduce((s, o) => s + netoOrden(o), 0);
+  // Cuántas ventas ya traen el dato exacto del reporte de Mercado Pago.
+  const exactas = pagadas.filter((o) => tieneDatoExacto(o)).length;
   // Un carrito (varias órdenes con el mismo pack_id) Mercado Libre lo cuenta
   // como UNA venta en su panel — aquí se muestran ambas cifras.
   const paquetes = new Set(pagadas.map((o) => o.pack_id ?? o.id)).size;
@@ -254,9 +262,22 @@ export default async function VentasMercadoLibre({
         />
         <Tarjeta titulo="Total vendido" valor={formatoPesos(totalVendido)} />
         <Tarjeta titulo="Comisiones ML" valor={formatoPesos(comisiones)} tono="rojo" />
-        <Tarjeta titulo="Envíos (a tu cargo)" valor={formatoPesos(envios)} tono="rojo" />
-        <Tarjeta titulo="Te queda" valor={formatoPesos(neto)} tono="verde" sub="antes de tu costo de producto" />
+        <Tarjeta titulo="Envíos (a tu cargo)" valor={formatoPesos(envios)} tono="rojo" sub={impuestos > 0 ? `+ ${formatoPesos(impuestos)} de impuestos retenidos` : undefined} />
+        <Tarjeta
+          titulo="Te queda"
+          valor={formatoPesos(neto)}
+          tono="verde"
+          sub={pagadas.length ? (exactas === pagadas.length ? "exacto de Mercado Pago" : `${exactas} de ${pagadas.length} exactas de Mercado Pago · el resto calculado`) : "antes de tu costo de producto"}
+        />
       </div>
+      {pagadas.length > 0 && exactas < pagadas.length && (
+        <p className="text-xs text-zinc-500">
+          Las ventas que todavía no aparecen en el reporte de Mercado Pago van calculadas por el CRM.{" "}
+          <Link href="/mercadolibre/dinero" className="font-medium text-zinc-900 underline">
+            Traer el dato exacto →
+          </Link>
+        </p>
+      )}
 
       {(pendientes.length > 0 || canceladas.length > 0) && (
         <p className="text-xs text-zinc-500">
@@ -411,7 +432,7 @@ export default async function VentasMercadoLibre({
                   <td className="px-3 py-3 text-right font-medium text-zinc-900">{formatoPesos(totalVendidoOrden(o))}</td>
                   <td className="px-3 py-3 text-right text-red-600">{comisionOrden(o) ? `-${formatoPesos(comisionOrden(o))}` : "—"}</td>
                   <td className="px-3 py-3 text-right text-red-600">
-                    {o.costo_envio_vendedor !== null ? (o.costo_envio_vendedor ? `-${formatoPesos(o.costo_envio_vendedor)}` : "$0") : <span className="text-zinc-300">…</span>}
+                    {envioOrden(o) !== null ? (envioOrden(o) ? `-${formatoPesos(envioOrden(o)!)}` : "$0") : <span className="text-zinc-300">…</span>}
                   </td>
                   <td className="px-3 py-3 text-xs text-zinc-600">{o.logistica ?? "—"}</td>
                   <td className="px-5 py-3">

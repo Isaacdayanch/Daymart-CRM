@@ -55,6 +55,22 @@ export async function GET(request: NextRequest) {
     resultado.preguntas = { error: e instanceof Error ? e.message : "Falló atender preguntas." };
   }
 
+  // Dinero real de Mercado Pago: baja los reportes listos y pide uno nuevo
+  // cada 12 h (solo si hay llave). Casi siempre tarda poco: solo lista.
+  try {
+    const { mercadoPagoConfigurado, sincronizarDineroMp } = await import("@/lib/mercadopago-dinero");
+    if (mercadoPagoConfigurado() && Date.now() - inicio < 30000) {
+      const r = await sincronizarDineroMp({ presupuestoMs: Math.max(12000, 30000 - (Date.now() - inicio)) });
+      resultado.dineroMp = r;
+      if (r.importados) {
+        revalidatePath("/mercadolibre/dinero");
+        revalidatePath("/mercadolibre");
+      }
+    }
+  } catch (e) {
+    resultado.dineroMp = { error: e instanceof Error ? e.message : "Falló Mercado Pago." };
+  }
+
   try {
     const { avanzarSyncPublicaciones } = await import("@/lib/mercadolibre-stock");
     const stock = await avanzarSyncPublicaciones({ presupuestoMs: Math.max(10000, 40000 - (Date.now() - inicio)), cadaMinutos: 55 });
