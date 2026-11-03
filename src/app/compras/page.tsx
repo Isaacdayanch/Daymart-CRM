@@ -5,6 +5,7 @@ import { ordenesPorRecibir } from "@/lib/calculos-compras";
 import { fechaTextoMx } from "@/lib/fechas-mx";
 import { formatoFecha, formatoPesos } from "@/lib/formato";
 import { EstadoOrden } from "./estado-orden";
+import { FilaLink } from "@/components/fila-link";
 
 export default async function ListaOrdenes() {
   const supabase = await createClient();
@@ -20,7 +21,7 @@ export default async function ListaOrdenes() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="max-w-2xl text-sm text-zinc-500">
-          Lo que le compras a proveedores de México. Cada orden entra al stock cuando la recibes y su cuenta por pagar vive en Finanzas → Facturas; los pagos se registran aquí o allá, es el mismo registro.
+          Lo que le compras a proveedores de México. Pícale a cualquier orden para ver qué pediste, recibirla, editarla o corregir su costo. Cada orden entra al stock cuando la recibes y su cuenta por pagar vive en Finanzas → Facturas; los pagos se registran aquí o allá, es el mismo registro.
         </p>
         <Link href="/compras/nueva" className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700">
           + Nueva orden
@@ -70,12 +71,13 @@ export default async function ListaOrdenes() {
                 <th className="px-3 py-3 text-right font-medium">Piezas</th>
                 <th className="px-3 py-3 text-right font-medium">Total</th>
                 <th className="px-3 py-3 text-right font-medium">Por pagar</th>
-                <th className="px-5 py-3 font-medium">Estado</th>
+                <th className="px-3 py-3 font-medium">Estado</th>
+                <th className="px-5 py-3" />
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-50">
               {ordenes.map((o) => (
-                <tr key={o.orden.id} className={`transition hover:bg-zinc-50 ${o.orden.estado === "CANCELADA" ? "text-zinc-400" : ""}`}>
+                <FilaLink key={o.orden.id} href={`/compras/${o.orden.id}`} className={`transition hover:bg-zinc-50 ${o.orden.estado === "CANCELADA" ? "text-zinc-400" : ""}`}>
                   <td className="px-5 py-3">
                     <Link href={`/compras/${o.orden.id}`} className="font-semibold text-zinc-900 hover:underline">
                       #{o.orden.numero}
@@ -96,10 +98,15 @@ export default async function ListaOrdenes() {
                   </td>
                   <td className="px-3 py-3 text-right font-medium tabular-nums text-zinc-900">{formatoPesos(o.total)}</td>
                   <td className={`px-3 py-3 text-right tabular-nums ${o.saldo > 0.01 ? "font-medium text-amber-700" : "text-zinc-400"}`}>{o.saldo > 0.01 ? formatoPesos(o.saldo) : "—"}</td>
-                  <td className="px-5 py-3">
+                  <td className="px-3 py-3">
                     <EstadoOrden estado={o.orden.estado} vencida={vencidas.has(o.orden.id)} />
                   </td>
-                </tr>
+                  <td className="px-5 py-3 text-right">
+                    <Link href={`/compras/${o.orden.id}`} className="whitespace-nowrap text-xs font-medium text-zinc-500 hover:text-zinc-900">
+                      Ver orden →
+                    </Link>
+                  </td>
+                </FilaLink>
               ))}
             </tbody>
           </table>

@@ -395,6 +395,36 @@ export interface RecepcionFull {
   movimiento_stock_id: string | null;
 }
 
+/** Flete / aduana / otros gastos del contenedor: a qué concepto va un pago. */
+export type ConceptoGastoContenedor = "FLETE" | "ADUANA" | "OTROS";
+
+export const CONCEPTOS_GASTO_CONTENEDOR: { valor: ConceptoGastoContenedor; etiqueta: string; enDolares: boolean }[] = [
+  { valor: "FLETE", etiqueta: "Flete", enDolares: true },
+  { valor: "ADUANA", etiqueta: "Aduana", enDolares: false },
+  { valor: "OTROS", etiqueta: "Otros gastos", enDolares: true },
+];
+
+/** Pago de flete / aduana / otros gastos de un contenedor (migración 0062),
+ * ligado a su movimiento de Finanzas con el mismo mecanismo que los abonos
+ * de mercancía: una sola captura, nunca dos registros sueltos. */
+export interface PagoGastoContenedor {
+  id: string;
+  contenedor_id: string;
+  concepto: ConceptoGastoContenedor;
+  fecha: string;
+  /** Pesos que salieron de la cuenta, sin la comisión. */
+  monto_pesos: number;
+  comision_pesos: number;
+  /** Dólares pagados (flete / otros gastos); la aduana va en pesos → null. */
+  monto_dolares: number | null;
+  proveedor: string | null;
+  notas: string | null;
+  cuenta_id: string | null;
+  movimiento_financiero_id: string | null;
+  abono_deuda_id: string | null;
+  creado_en: string;
+}
+
 export type TipoCuentaFinanciera = "EFECTIVO" | "BANCO" | "OTRO";
 
 export interface CuentaFinanciera {

@@ -10,6 +10,7 @@ import { EstadoOrden } from "../estado-orden";
 import { Recepcion } from "./recepcion";
 import { FacturaPagos } from "./factura-pagos";
 import { AccionesOrden } from "./acciones-orden";
+import { CorregirCosto } from "./corregir-costo";
 
 export default async function DetalleOrden({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -83,10 +84,16 @@ export default async function DetalleOrden({ params }: { params: Promise<{ id: s
           >
             Mandar por WhatsApp
           </a>
-          {editable && (
+          {editable ? (
             <Link href={`/compras/${orden.id}/editar`} className="rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50">
               Editar
             </Link>
+          ) : (
+            orden.estado !== "CANCELADA" && (
+              <a href="#corregir-costo" className="rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50">
+                Corregir precios
+              </a>
+            )
           )}
         </div>
       </div>
@@ -194,7 +201,8 @@ export default async function DetalleOrden({ params }: { params: Promise<{ id: s
       {factura && <FacturaPagos ordenId={orden.id} factura={factura} pagos={pagos} cuentas={cuentas ?? []} saldo={saldo} condiciones={orden.condiciones_pago} />}
 
       {orden.estado !== "CANCELADA" && (
-        <div className="flex justify-end">
+        <div className="flex flex-wrap items-start justify-end gap-x-6 gap-y-3">
+          <CorregirCosto ordenId={orden.id} lineas={lineas} flete={orden.flete} pagado={pagado} />
           <AccionesOrden ordenId={orden.id} numero={orden.numero} tienePagos={pagos.length > 0} recibioAlgo={piezasRecibidas > 0} />
         </div>
       )}

@@ -18,6 +18,7 @@ export default async function MovimientosFinanzas({ searchParams }: { searchPara
     { data: pagosFactura },
     { data: cobrosVenta },
     { data: enviosChina },
+    { data: pagosGastos },
   ] = await Promise.all([
     supabase
       .from("movimientos_financieros")
@@ -35,6 +36,7 @@ export default async function MovimientosFinanzas({ searchParams }: { searchPara
     supabase.from("pagos_factura").select("movimiento_financiero_id").not("movimiento_financiero_id", "is", null),
     supabase.from("cobros_venta").select("movimiento_financiero_id").not("movimiento_financiero_id", "is", null),
     supabase.from("envios_china").select("movimiento_transferencia_id").eq("estado", "PENDIENTE").not("movimiento_transferencia_id", "is", null),
+    supabase.from("pagos_gastos_contenedor").select("movimiento_financiero_id").not("movimiento_financiero_id", "is", null),
   ]);
 
   // Filtro por categoría (?categoria=<id>; "sin" = sin categoría).
@@ -58,6 +60,7 @@ export default async function MovimientosFinanzas({ searchParams }: { searchPara
   anotar(pagosFactura, "un pago de factura");
   anotar(cobrosVenta, "un cobro de venta");
   anotar((enviosChina ?? []).map((e) => ({ movimiento_financiero_id: e.movimiento_transferencia_id })), "un pago a proveedores pendiente");
+  anotar(pagosGastos, "un pago de flete o aduana de un contenedor");
 
   // Comisiones ligadas: una comisión (referencia_tipo COMISION) apunta a su
   // movimiento principal. Se pasan los dos lados a la fila para decir "comisión

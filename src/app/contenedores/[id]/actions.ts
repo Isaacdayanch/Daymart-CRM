@@ -447,9 +447,9 @@ export async function actualizarContenedor(contenedorId: string, formData: FormD
       fabrica_principal: texto(formData, "fabrica_principal"),
       proveedor_principal: texto(formData, "proveedor_principal"),
       credito_dias: numero(formData, "credito_dias") || null,
-      flete_estimado: formData.get("flete_estimado") === "true",
-      aduana_estimada: formData.get("aduana_estimada") === "true",
-      otros_gastos_estimado: formData.get("otros_gastos_estimado") === "true",
+      // flete_estimado / aduana_estimada / otros_gastos_estimado ya no se
+      // editan aquí (3 nov): cambian solo al registrar o quitar pagos en la
+      // tarjeta "Pagos del contenedor" (pagos-gastos-actions.ts).
     })
     .eq("id", contenedorId);
   // Límite de peso y capacidad (migración 0047), aparte para que sin el SQL

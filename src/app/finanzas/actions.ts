@@ -328,11 +328,16 @@ async function movimientoEstaLigado(supabase: Awaited<ReturnType<typeof createCl
     .select("id", { count: "exact", head: true })
     .eq("estado", "PENDIENTE")
     .eq("movimiento_transferencia_id", movimientoId);
-  return Boolean(enMercancia || enDeudaProveedor || enFactura || enCobroVenta || enEnvioChina);
+  // Pago de flete / aduana / otros gastos de un contenedor (migración 0062).
+  const { count: enGastoContenedor } = await supabase
+    .from("pagos_gastos_contenedor")
+    .select("id", { count: "exact", head: true })
+    .eq("movimiento_financiero_id", movimientoId);
+  return Boolean(enMercancia || enDeudaProveedor || enFactura || enCobroVenta || enEnvioChina || enGastoContenedor);
 }
 
 const MENSAJE_MOVIMIENTO_LIGADO =
-  "Este movimiento viene de un abono de contenedor, de proveedores, de una factura o de un cobro de venta — edítalo desde esa pantalla para no desincronizar los datos.";
+  "Este movimiento viene de un abono o pago de contenedor, de proveedores, de una factura o de un cobro de venta — edítalo desde esa pantalla para no desincronizar los datos.";
 
 /** Edita un movimiento "suelto" (sin dueño en otra pantalla) — ej. cuando
  * Isaac saca un sueldo y luego quiere sumarle un complemento del mismo

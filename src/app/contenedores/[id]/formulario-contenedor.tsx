@@ -12,16 +12,28 @@ import { BotonGuardar } from "@/components/boton-guardar";
 const claseCampo =
   "mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:ring-zinc-500";
 
+/** Un concepto "pagado" (flete / aduana / otros gastos con pagos registrados
+ * y ya no estimado) no se edita aquí: su monto sale de los pagos. */
+export interface ConceptosPagados {
+  flete: boolean;
+  aduana: boolean;
+  otros: boolean;
+}
+
 export function FormularioContenedor({
   contenedor,
   fabricas,
   proveedores,
+  pagados = { flete: false, aduana: false, otros: false },
 }: {
   contenedor: Contenedor;
   fabricas: string[];
   proveedores: string[];
+  pagados?: ConceptosPagados;
 }) {
   const guardar = actualizarContenedor.bind(null, contenedor.id);
+  const notaPagado = "Viene de los pagos registrados en la tarjeta “Pagos del contenedor”; para cambiarlo, quita o agrega pagos ahí.";
+  const notaEstimado = "Estimado: cuenta como real cuando registres su pago en la tarjeta “Pagos del contenedor”.";
 
   return (
     <form action={guardar} className="space-y-6 rounded-xl border border-zinc-200 bg-white p-6">
@@ -117,62 +129,63 @@ export function FormularioContenedor({
 
       <div className="border-t border-zinc-100 pt-4">
         <p className="text-sm font-medium text-zinc-700">Flete (dólares)</p>
-        <div className="mt-2 grid grid-cols-2 gap-4">
-          <div>
-            <label htmlFor="flete_dolares" className="block text-xs font-medium text-zinc-500">
-              Monto USD
-            </label>
-            <CampoMonto
-              id="flete_dolares"
-              name="flete_dolares"
-              defaultValue={contenedor.flete_dolares}
-              className={claseCampo}
-            />
+        {pagados.flete ? (
+          <div className="mt-2 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+            <input type="hidden" name="flete_dolares" value={contenedor.flete_dolares} />
+            <input type="hidden" name="flete_tipo_cambio" value={contenedor.flete_tipo_cambio} />
+            Pagado: ${contenedor.flete_dolares.toLocaleString("es-MX")} USD a {contenedor.flete_tipo_cambio.toFixed(4)}. {notaPagado}
           </div>
-          <div>
-            <label htmlFor="flete_tipo_cambio" className="block text-xs font-medium text-zinc-500">
-              Tipo de cambio
-            </label>
-            <CampoNumero
-              id="flete_tipo_cambio"
-              name="flete_tipo_cambio"
-              defaultValue={contenedor.flete_tipo_cambio}
-              className={claseCampo}
-            />
-          </div>
-        </div>
-        <label className="mt-2 flex items-center gap-2 text-xs font-medium text-zinc-600">
-          <input
-            type="checkbox"
-            name="flete_estimado"
-            value="true"
-            defaultChecked={contenedor.flete_estimado}
-            className="h-4 w-4 rounded border-zinc-300"
-          />
-          Es estimado (todavía no tengo la factura real)
-        </label>
+        ) : (
+          <>
+            <div className="mt-2 grid grid-cols-2 gap-4">
+              <div>
+                <label htmlFor="flete_dolares" className="block text-xs font-medium text-zinc-500">
+                  Monto USD
+                </label>
+                <CampoMonto
+                  id="flete_dolares"
+                  name="flete_dolares"
+                  defaultValue={contenedor.flete_dolares}
+                  className={claseCampo}
+                />
+              </div>
+              <div>
+                <label htmlFor="flete_tipo_cambio" className="block text-xs font-medium text-zinc-500">
+                  Tipo de cambio
+                </label>
+                <CampoNumero
+                  id="flete_tipo_cambio"
+                  name="flete_tipo_cambio"
+                  defaultValue={contenedor.flete_tipo_cambio}
+                  className={claseCampo}
+                />
+              </div>
+            </div>
+            {contenedor.flete_estimado && <p className="mt-2 text-[11px] text-amber-700">{notaEstimado}</p>}
+          </>
+        )}
       </div>
 
       <div className="border-t border-zinc-100 pt-4">
         <label htmlFor="aduana_pesos" className="block text-sm font-medium text-zinc-700">
           Aduana (pesos)
         </label>
-        <CampoMonto
-          id="aduana_pesos"
-          name="aduana_pesos"
-          defaultValue={contenedor.aduana_pesos}
-          className={`${claseCampo} w-40`}
-        />
-        <label className="mt-2 flex items-center gap-2 text-xs font-medium text-zinc-600">
-          <input
-            type="checkbox"
-            name="aduana_estimada"
-            value="true"
-            defaultChecked={contenedor.aduana_estimada}
-            className="h-4 w-4 rounded border-zinc-300"
-          />
-          Es estimado (todavía no tengo la factura real)
-        </label>
+        {pagados.aduana ? (
+          <div className="mt-1 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+            <input type="hidden" name="aduana_pesos" value={contenedor.aduana_pesos} />
+            Pagada: ${contenedor.aduana_pesos.toLocaleString("es-MX")}. {notaPagado}
+          </div>
+        ) : (
+          <>
+            <CampoMonto
+              id="aduana_pesos"
+              name="aduana_pesos"
+              defaultValue={contenedor.aduana_pesos}
+              className={`${claseCampo} w-40`}
+            />
+            {contenedor.aduana_estimada && <p className="mt-2 text-[11px] text-amber-700">{notaEstimado}</p>}
+          </>
+        )}
       </div>
 
       <details
@@ -185,40 +198,41 @@ export function FormularioContenedor({
         <p className="mt-1 text-xs text-zinc-500">
           Para fletes internos en China u otros cargos que no siempre aplican.
         </p>
-        <div className="mt-2 grid grid-cols-2 gap-4">
-          <div>
-            <label htmlFor="otros_gastos_dolares" className="block text-xs font-medium text-zinc-500">
-              Monto USD
-            </label>
-            <CampoMonto
-              id="otros_gastos_dolares"
-              name="otros_gastos_dolares"
-              defaultValue={contenedor.otros_gastos_dolares}
-              className={claseCampo}
-            />
+        {pagados.otros ? (
+          <div className="mt-2 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+            <input type="hidden" name="otros_gastos_dolares" value={contenedor.otros_gastos_dolares} />
+            <input type="hidden" name="otros_gastos_tipo_cambio" value={contenedor.otros_gastos_tipo_cambio} />
+            Pagados: ${contenedor.otros_gastos_dolares.toLocaleString("es-MX")} USD a {contenedor.otros_gastos_tipo_cambio.toFixed(4)}. {notaPagado}
           </div>
-          <div>
-            <label htmlFor="otros_gastos_tipo_cambio" className="block text-xs font-medium text-zinc-500">
-              Tipo de cambio
-            </label>
-            <CampoNumero
-              id="otros_gastos_tipo_cambio"
-              name="otros_gastos_tipo_cambio"
-              defaultValue={contenedor.otros_gastos_tipo_cambio}
-              className={claseCampo}
-            />
-          </div>
-        </div>
-        <label className="mt-2 flex items-center gap-2 text-xs font-medium text-zinc-600">
-          <input
-            type="checkbox"
-            name="otros_gastos_estimado"
-            value="true"
-            defaultChecked={contenedor.otros_gastos_estimado}
-            className="h-4 w-4 rounded border-zinc-300"
-          />
-          Es estimado (todavía no tengo la factura real)
-        </label>
+        ) : (
+          <>
+            <div className="mt-2 grid grid-cols-2 gap-4">
+              <div>
+                <label htmlFor="otros_gastos_dolares" className="block text-xs font-medium text-zinc-500">
+                  Monto USD
+                </label>
+                <CampoMonto
+                  id="otros_gastos_dolares"
+                  name="otros_gastos_dolares"
+                  defaultValue={contenedor.otros_gastos_dolares}
+                  className={claseCampo}
+                />
+              </div>
+              <div>
+                <label htmlFor="otros_gastos_tipo_cambio" className="block text-xs font-medium text-zinc-500">
+                  Tipo de cambio
+                </label>
+                <CampoNumero
+                  id="otros_gastos_tipo_cambio"
+                  name="otros_gastos_tipo_cambio"
+                  defaultValue={contenedor.otros_gastos_tipo_cambio}
+                  className={claseCampo}
+                />
+              </div>
+            </div>
+            {contenedor.otros_gastos_estimado && <p className="mt-2 text-[11px] text-amber-700">{notaEstimado}</p>}
+          </>
+        )}
       </details>
 
       <div className="flex items-center justify-between border-t border-zinc-100 pt-4">

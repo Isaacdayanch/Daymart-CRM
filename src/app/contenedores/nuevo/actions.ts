@@ -22,9 +22,11 @@ export async function crearContenedor(formData: FormData) {
       fabrica_principal: texto(formData, "fabrica_principal"),
       proveedor_principal: texto(formData, "proveedor_principal"),
       credito_dias: numero(formData, "credito_dias") || null,
-      flete_estimado: formData.get("flete_estimado") === "true",
-      aduana_estimada: formData.get("aduana_estimada") === "true",
-      otros_gastos_estimado: formData.get("otros_gastos_estimado") === "true",
+      // Sin casilla de "estimado" (3 nov): todo monto capturado al crear es
+      // una estimación hasta que se registre su pago en el contenedor.
+      flete_estimado: numero(formData, "flete_dolares") > 0,
+      aduana_estimada: numero(formData, "aduana_pesos") > 0,
+      otros_gastos_estimado: numero(formData, "otros_gastos_dolares") > 0,
   };
   let { data: contenedor, error } = await supabase
     .from("contenedores")
