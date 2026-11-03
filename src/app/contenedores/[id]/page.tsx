@@ -14,11 +14,16 @@ import { obtenerSugerenciasCatalogo } from "@/lib/catalogo-proveedores";
 import { obtenerMarcas } from "@/lib/catalogo";
 import { formatoFecha, formatoPesos } from "@/lib/formato";
 import { obtenerPerfilActual } from "@/lib/perfil";
+import { saldoProveedor, proveedoresConDeuda } from "@/lib/calculos-socios-deuda";
+import { estadoGasto } from "@/lib/pagos-gastos";
 import { Logo } from "@/components/logo";
 import { MenuMas } from "../../menu-mas";
 import {
   type Contenedor,
+  type CuentaFinanciera,
   type DocumentoContenedor,
+  type MovimientoDeudaProveedor,
+  type PagoGastoContenedor,
   type HistorialEstado,
   type MovimientoStock,
   type PagoMercancia,
@@ -28,6 +33,7 @@ import {
 } from "@/lib/tipos";
 import { FormularioContenedor } from "./formulario-contenedor";
 import { Abonos } from "./abonos";
+import { PagosGastos, type DeudaAbierta, type SugerenciasPagos } from "./pagos-gastos";
 import { Productos } from "./productos";
 import { TarjetaOcupacion } from "./ocupacion-contenedor";
 import { Documentos } from "./documentos";
@@ -57,6 +63,9 @@ export default async function DetalleContenedor({
     { data: movimientosEntrada },
     { data: pendientesChina },
     datosCodigosMl,
+    { data: pagosGastosTodos },
+    { data: cuentas },
+    { data: movimientosDeuda },
   ] = await Promise.all([
     obtenerPerfilActual(),
     supabase.from("contenedores").select("*").eq("id", id).maybeSingle<Contenedor>(),
@@ -98,6 +107,11 @@ export default async function DetalleContenedor({
       .order("creado_en", { ascending: true })
       .returns<PendienteChina[]>(),
     cargarCodigosMl(),
+    // Pagos de flete/aduana/otros gastos (0062): los de TODOS los contenedores,
+    // para proponer el último forwarder/cuenta usados (la tabla es chica).
+    supabase.from("pagos_gastos_contenedor").select("*").order("fecha", { ascending: true }).returns<PagoGastoContenedor[]>(),
+    supabase.from("cuentas_financieras").select("*").is("eliminado_en", null).order("nombre").returns<CuentaFinanciera[]>(),
+    supabase.from("movimientos_deuda_proveedor").select("*").returns<MovimientoDeudaProveedor[]>(),
   ]);
   if (!contenedor) notFound();
   const verDinero = perfil?.rol !== "operadora";
@@ -152,6 +166,30 @@ export default async function DetalleContenedor({
   ].filter((e): e is string => Boolean(e));
   const hayEstimados = etiquetasEstimados.length > 0;
   const costoAproximado = hayEstimados || base.estimado;
+
+  // Pagos de flete / aduana / otros gastos de ESTE contenedor + lo que se
+  // recuerda del último pago de cada concepto (cualquier contenedor).
+  const pagosGastos = (pagosGastosTodos ?? []).filter((p) => p.contenedor_id === id);
+  const sugerenciasPagos: SugerenciasPagos = { proveedores: [], ultimoProveedor: {}, ultimaCuenta: {} };
+  for (const p of pagosGastosTodos ?? []) {
+    if (p.proveedor && !sugerenciasPagos.proveedores.includes(p.proveedor)) sugerenciasPagos.proveedores.push(p.proveedor);
+    if (p.proveedor) sugerenciasPagos.ultimoProveedor[p.concepto] = p.proveedor;
+    if (p.cuenta_id) sugerenciasPagos.ultimaCuenta[p.concepto] = p.cuenta_id;
+  }
+  sugerenciasPagos.proveedores.sort((a, b) => a.localeCompare(b));
+  const listaDeuda = movimientosDeuda ?? [];
+  const deudasAbiertas: DeudaAbierta[] = [];
+  for (const proveedor of proveedoresConDeuda(listaDeuda)) {
+    for (const moneda of ["MXN", "USD"] as const) {
+      const saldo = saldoProveedor(listaDeuda, proveedor, moneda);
+      if (saldo > 0.01) deudasAbiertas.push({ proveedor, moneda, saldo });
+    }
+  }
+  const conceptosPagados = {
+    flete: estadoGasto(contenedor, "FLETE", pagosGastos) === "PAGADO",
+    aduana: estadoGasto(contenedor, "ADUANA", pagosGastos) === "PAGADO",
+    otros: estadoGasto(contenedor, "OTROS", pagosGastos) === "PAGADO",
+  };
 
   return (
     <div className="min-h-screen bg-zinc-50">
@@ -212,9 +250,20 @@ export default async function DetalleContenedor({
 
         {verDinero && hayEstimados && (
           <p className="-mt-3 text-xs text-amber-800">
-            ⚠ Incluye montos estimados: {etiquetasEstimados.join(", ")}. Cuando tengas la factura real, edita el
-            contenedor, pon el monto y desmarca &ldquo;Es estimado&rdquo; — el costo por pieza se recalcula solo.
+            ⚠ Incluye montos estimados: {etiquetasEstimados.join(", ")}. Regístrale su pago en la tarjeta de abajo y el
+            contenedor toma el monto real — el costo por pieza se recalcula solo.
           </p>
+        )}
+
+        {verDinero && (
+          <PagosGastos
+            contenedorId={contenedor.id}
+            contenedor={contenedor}
+            pagos={pagosGastos}
+            cuentas={(cuentas ?? []).map((c) => ({ id: c.id, nombre: c.nombre }))}
+            sugerencias={sugerenciasPagos}
+            deudas={deudasAbiertas}
+          />
         )}
 
         {verDinero && contenedor.credito_dias && contenedor.credito_dias > 0 && (
@@ -310,7 +359,7 @@ export default async function DetalleContenedor({
         <Documentos contenedorId={contenedor.id} documentosPorTipo={documentosPorTipo} />
         {verDinero ? (
           <>
-            <FormularioContenedor contenedor={contenedor} fabricas={fabricas} proveedores={proveedores} />
+            <FormularioContenedor contenedor={contenedor} fabricas={fabricas} proveedores={proveedores} pagados={conceptosPagados} />
             <Abonos contenedorId={contenedor.id} abonos={listaAbonos} totalUsdMercancia={listaProductos.reduce((s, p) => s + totalUsdProducto(p), 0)} />
           </>
         ) : (
