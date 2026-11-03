@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createServiceClient } from "@/lib/supabase/servicio";
 import { ESTADOS_ORDEN, type OrdenItemMl, type OrdenMl } from "@/lib/mercadolibre-ordenes";
-import { comisionOrden, netoOrden, origenComisionOrden, totalVendidoOrden } from "@/lib/mercadolibre-montos";
+import { comisionOrden, envioOrden, impuestosOrden, netoCalculado, netoOrden, origenComisionOrden, tieneDatoExacto, totalVendidoOrden } from "@/lib/mercadolibre-montos";
 import { formatoFechaHoraMx } from "@/lib/fechas-mx";
 import { formatoPesos } from "@/lib/formato";
 
@@ -11,6 +11,7 @@ import { formatoPesos } from "@/lib/formato";
 // (por si algún número no cuadra, Isaac manda una captura de esta pantalla).
 
 const ORIGEN_COMISION: Record<ReturnType<typeof origenComisionOrden>, string> = {
+  reporte_mp: "exacta, del reporte de liberaciones de Mercado Pago",
   mercado_pago: "la reporta Mercado Pago en el cobro",
   sale_fee: "la reporta Mercado Libre en la orden",
   derivada: "diferencia entre lo que pagó el comprador y el valor del producto",
@@ -55,6 +56,10 @@ export default async function DetalleOrdenMl({ params }: { params: Promise<{ id:
   const envioComprador = orden.envio_comprador ?? 0;
   const pagado = orden.pagado_comprador ?? null;
   const valorProductoDistinto = Math.abs(vendido - orden.total) > 0.5;
+  const exacto = tieneDatoExacto(orden);
+  const envio = envioOrden(orden);
+  const impuestos = impuestosOrden(orden);
+  const calculado = netoCalculado(orden);
 
   // Datos crudos (solo lo que sirve para cuadrar montos).
   const crudo = (orden.payload ?? {}) as {
@@ -120,11 +125,20 @@ export default async function DetalleOrdenMl({ params }: { params: Promise<{ id:
           <Renglon etiqueta="Comisión de Mercado Libre" valor={comision ? `-${formatoPesos(comision)}` : "$0"} tono="rojo" nota={ORIGEN_COMISION[origen]} />
           <Renglon
             etiqueta="Envío a tu cargo"
-            valor={orden.costo_envio_vendedor !== null ? (orden.costo_envio_vendedor ? `-${formatoPesos(orden.costo_envio_vendedor)}` : "$0") : "…"}
+            valor={envio !== null ? (envio ? `-${formatoPesos(envio)}` : "$0") : "…"}
             tono="rojo"
-            nota={orden.costo_envio_vendedor === null ? "Mercado Libre todavía no publica el costo (normalmente al despachar)" : undefined}
+            nota={envio === null ? "Mercado Libre todavía no publica el costo (normalmente al despachar)" : undefined}
           />
-          <Renglon etiqueta="Te queda" valor={formatoPesos(neto)} tono="verde" nota="antes de tu costo de producto" />
+          {exacto && impuestos !== 0 && <Renglon etiqueta="Impuestos retenidos" valor={`-${formatoPesos(Math.abs(impuestos))}`} tono="rojo" nota="retenciones que hizo Mercado Pago" />}
+          <Renglon
+            etiqueta="Te queda"
+            valor={formatoPesos(neto)}
+            tono="verde"
+            nota={exacto ? "exacto: lo que Mercado Pago te liberó por esta venta (antes de tu costo de producto)" : "calculado por el CRM; todavía no llega el reporte de Mercado Pago de esta venta"}
+          />
+          {exacto && Math.abs(calculado - neto) > 0.5 && (
+            <Renglon etiqueta="Lo que calculaba el CRM" valor={formatoPesos(calculado)} nota={`diferencia de ${formatoPesos(calculado - neto)} contra lo real`} />
+          )}
           {valorProductoDistinto && (
             <Renglon etiqueta="Valor del producto según Mercado Libre" valor={formatoPesos(orden.total)} nota="Es el monto por el que le facturas a Mercado Libre (comisión y envío ya descontados)" />
           )}

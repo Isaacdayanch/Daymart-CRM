@@ -1,6 +1,7 @@
 // Sincronización de las ventas (órdenes) de Mercado Libre hacia nuestra
 // copia local. Solo lectura desde Mercado Libre: nunca modifica nada allá.
 
+import { sinColumnasFaltantes } from "./columnas-faltantes";
 import { createServiceClient } from "@/lib/supabase/servicio";
 import { mercadolibreGet, obtenerConexion } from "@/lib/mercadolibre-auth";
 
@@ -32,6 +33,13 @@ export interface OrdenMl {
   envio_comprador?: number | null;
   comision_mp?: number | null;
   montos_revisado_en?: string | null;
+  /** Montos EXACTOS del reporte de liberaciones de Mercado Pago (migración
+   * 0063). Cuando `mp_neto` existe, manda sobre lo calculado. */
+  mp_bruto?: number | null;
+  mp_comision?: number | null;
+  mp_envio?: number | null;
+  mp_impuestos?: number | null;
+  mp_neto?: number | null;
   /** Salidas automáticas de stock (migración 0035). */
   salida_generada_en?: string | null;
   devolucion_estado?: "POR_CONFIRMAR" | "REINGRESADA" | "MERMA" | null;
@@ -273,6 +281,9 @@ export async function guardarOrden(orden: OrdenApi, conEnvio: boolean) {
     sincronizado_en: new Date().toISOString(),
     ...montos,
     montos_revisado_en: new Date().toISOString(),
+    // Cobros de Mercado Pago de esta venta: con ellos se cruza el reporte de
+    // liberaciones (migración 0063; sin el SQL se guarda sin la columna).
+    pago_ids: (orden.payments ?? []).map((p) => p.id).filter((id): id is number => typeof id === "number"),
   };
   if (conEnvio) {
     fila.logistica = envio.logistica;
@@ -280,8 +291,8 @@ export async function guardarOrden(orden: OrdenApi, conEnvio: boolean) {
     fila.costo_envio_vendedor = envio.costoVendedor;
   }
 
-  const { error } = await supabase.from("mercadolibre_ordenes").upsert(fila);
-  if (error) throw new Error(`No se pudo guardar la orden ${orden.id}: ${error.message}`);
+  const { error } = await sinColumnasFaltantes(fila, (f) => supabase.from("mercadolibre_ordenes").upsert(f));
+  if (error) throw new Error(`No se pudo guardar la orden ${orden.id}: ${error}`);
 
   const items = [];
   for (const [indice, i] of (orden.order_items ?? []).entries()) {
