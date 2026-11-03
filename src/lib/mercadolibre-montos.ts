@@ -25,7 +25,7 @@ export interface MontosOrden {
   /** Envío pagado por el comprador (parte de `pagado_comprador`). */
   envio_comprador?: number | null;
   /** Lo que dijo Mercado Pago en su reporte de liberaciones (migración
-   * 0062). Si `mp_neto` existe, es la verdad: no se calcula nada. */
+   * 0063). Si `mp_neto` existe, es la verdad: no se calcula nada. */
   mp_bruto?: number | null;
   mp_comision?: number | null;
   mp_envio?: number | null;

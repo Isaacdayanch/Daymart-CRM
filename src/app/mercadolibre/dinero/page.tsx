@@ -149,7 +149,7 @@ export default async function DineroReal({ searchParams }: { searchParams: Promi
       {!llave && <ComoConectar />}
       {faltaSql && (
         <Aviso>
-          Falta correr el SQL <b>0062</b> en Supabase para que funcione esta pantalla.
+          Falta correr el SQL <b>0063</b> en Supabase para que funcione esta pantalla.
         </Aviso>
       )}
       {estado?.ultimo_error && <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">Último error con Mercado Pago: {estado.ultimo_error}</div>}

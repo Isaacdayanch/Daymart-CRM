@@ -29,7 +29,7 @@ export function mercadoPagoConfigurado() {
   return Boolean(process.env.MERCADOPAGO_ACCESS_TOKEN);
 }
 
-/** "Falta el SQL 0062" se detecta por el mensaje de PostgREST. */
+/** "Falta el SQL 0063" se detecta por el mensaje de PostgREST. */
 export function faltaSqlDinero(mensaje: string | undefined | null) {
   return Boolean(mensaje && /(mercadopago_|mp_neto|pago_ids)/.test(mensaje) && /(does not exist|schema cache|Could not find)/i.test(mensaje));
 }

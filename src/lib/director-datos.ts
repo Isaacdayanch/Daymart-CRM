@@ -127,7 +127,7 @@ export async function cargarDatosDirector(): Promise<DatosDirector> {
   let ordenes30: OrdenMl[] = [];
   let items30: OrdenItemMl[] = [];
   try {
-    // Con los montos exactos de Mercado Pago (SQL 0062); sin el SQL, sin ellos.
+    // Con los montos exactos de Mercado Pago (SQL 0063); sin el SQL, sin ellos.
     const leer = (columnas: string) =>
       supabase.from("mercadolibre_ordenes").select(columnas).eq("estado", "paid").gte("fecha_creacion", hace30.toISOString()).limit(5000).returns<OrdenMl[]>();
     const base = "id, pack_id, estado, fecha_creacion, total, comision, costo_envio_vendedor, pagado_comprador, envio_comprador, logistica";

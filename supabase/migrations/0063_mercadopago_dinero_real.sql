@@ -1,4 +1,4 @@
--- 0062 — Dinero real de Mercado Pago (3 nov 2026).
+-- 0063 — Dinero real de Mercado Pago (3 nov 2026).
 --
 -- Isaac: "siento que la matemática interna me descuenta una comisión extra a
 -- lo que realmente Mercado Libre me descuenta… que el CRM descargue solito el

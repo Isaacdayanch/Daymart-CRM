@@ -34,7 +34,7 @@ export interface OrdenMl {
   comision_mp?: number | null;
   montos_revisado_en?: string | null;
   /** Montos EXACTOS del reporte de liberaciones de Mercado Pago (migración
-   * 0062). Cuando `mp_neto` existe, manda sobre lo calculado. */
+   * 0063). Cuando `mp_neto` existe, manda sobre lo calculado. */
   mp_bruto?: number | null;
   mp_comision?: number | null;
   mp_envio?: number | null;
@@ -282,7 +282,7 @@ export async function guardarOrden(orden: OrdenApi, conEnvio: boolean) {
     ...montos,
     montos_revisado_en: new Date().toISOString(),
     // Cobros de Mercado Pago de esta venta: con ellos se cruza el reporte de
-    // liberaciones (migración 0062; sin el SQL se guarda sin la columna).
+    // liberaciones (migración 0063; sin el SQL se guarda sin la columna).
     pago_ids: (orden.payments ?? []).map((p) => p.id).filter((id): id is number => typeof id === "number"),
   };
   if (conEnvio) {
