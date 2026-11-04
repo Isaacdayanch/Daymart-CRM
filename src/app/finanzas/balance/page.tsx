@@ -5,13 +5,16 @@ import { obtenerPiezasPorCajaPorSku } from "@/lib/productos-stock";
 import { saldosPorCuenta } from "@/lib/calculos-financieras";
 import { proveedoresConDeuda, saldoProveedor } from "@/lib/calculos-socios-deuda";
 import { ventasConSaldo } from "@/lib/calculos-ventas";
+import { cuentasPorPagarPorProveedor } from "@/lib/cuentas-por-pagar";
 import { formatoPesos, formatoDolares } from "@/lib/formato";
 import type {
   CobroVenta,
   ConfiguracionStock,
   CuentaFinanciera,
+  FacturaPendiente,
   MovimientoDeudaProveedor,
   MovimientoPrestamista,
+  PagoFactura,
   Prestamista,
   Venta,
   VentaLinea,
@@ -31,6 +34,8 @@ export default async function BalanceFinanzas() {
     { data: ventas },
     { data: ventaLineas },
     { data: cobrosVenta },
+    { data: facturas },
+    { data: pagosFactura },
   ] = await Promise.all([
     todosLosMovimientosStock(supabase),
     supabase.from("configuracion_stock").select("*").single<ConfiguracionStock>(),
@@ -43,6 +48,10 @@ export default async function BalanceFinanzas() {
     supabase.from("ventas").select("*").returns<Venta[]>(),
     supabase.from("venta_lineas").select("*").returns<VentaLinea[]>(),
     supabase.from("cobros_venta").select("*").returns<CobroVenta[]>(),
+    // Cuentas por pagar (órdenes de compra y facturas sueltas): también es
+    // deuda (Isaac, 4 nov).
+    supabase.from("facturas_pendientes").select("*").returns<FacturaPendiente[]>(),
+    supabase.from("pagos_factura").select("id, factura_id, monto").returns<PagoFactura[]>(),
   ]);
 
   const resumenes = resumenPorSku(movimientosStock ?? [], configuracion?.dias_espera ?? 60, piezasPorCajaPorSku);
@@ -84,15 +93,19 @@ export default async function BalanceFinanzas() {
     0,
   );
 
+  const cuentasPorPagar = cuentasPorPagarPorProveedor(facturas ?? [], pagosFactura ?? []);
+  const cxpMxn = cuentasPorPagar.reduce((s, p) => s + p.saldoMxn, 0);
+  const cxpUsd = cuentasPorPagar.reduce((s, p) => s + p.saldoUsd, 0);
+
   const activoMxn = cajaMxn + valorInventario + porCobrarVentas;
-  const pasivoMxn = deudaPrestamosMxn + deudaProveedoresMxn;
-  const pasivoUsd = deudaPrestamosUsd + deudaProveedoresUsd;
+  const pasivoMxn = deudaPrestamosMxn + deudaProveedoresMxn + cxpMxn;
+  const pasivoUsd = deudaPrestamosUsd + deudaProveedoresUsd + cxpUsd;
 
   return (
     <div className="space-y-6">
       <p className="text-sm text-zinc-500">
-        Lo que tienes (caja + inventario + lo que te deben clientes) contra lo que debes (préstamos + proveedores) — para saber si estás
-        protegido. Ojo: todavía no incluye la mercancía ya pagada pero pendiente en China; se puede agregar
+        Lo que tienes (caja + inventario + lo que te deben clientes) contra lo que debes (préstamos + proveedores de China + cuentas por
+        pagar de órdenes de compra y facturas) — para saber si estás protegido. Ojo: todavía no incluye la mercancía ya pagada pero pendiente en China; se puede agregar
         después.
       </p>
 
@@ -131,10 +144,16 @@ export default async function BalanceFinanzas() {
               </dd>
             </div>
             <div className="flex justify-between">
-              <dt className="text-red-800">Deuda con proveedores</dt>
+              <dt className="text-red-800">Deuda con proveedores de China</dt>
               <dd className="font-medium text-red-900">
                 {formatoPesos(deudaProveedoresMxn)}{" "}
                 {deudaProveedoresUsd !== 0 && `+ ${formatoDolares(deudaProveedoresUsd)}`}
+              </dd>
+            </div>
+            <div className="flex justify-between gap-3">
+              <dt className="text-red-800">Cuentas por pagar (órdenes de compra y facturas)</dt>
+              <dd className="whitespace-nowrap font-medium text-red-900">
+                {formatoPesos(cxpMxn)} {cxpUsd !== 0 && `+ ${formatoDolares(cxpUsd)}`}
               </dd>
             </div>
           </dl>
