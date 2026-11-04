@@ -1,7 +1,9 @@
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { formatoPesos, formatoDolares, formatoFecha } from "@/lib/formato";
 import { cargosAbiertosProveedor, proveedoresConDeuda, saldoProveedor } from "@/lib/calculos-socios-deuda";
-import type { Contenedor, CuentaFinanciera, MovimientoDeudaProveedor } from "@/lib/tipos";
+import { cuentasPorPagarPorProveedor } from "@/lib/cuentas-por-pagar";
+import type { Contenedor, CuentaFinanciera, FacturaPendiente, MovimientoDeudaProveedor, PagoFactura } from "@/lib/tipos";
 import { FormularioProveedor } from "./formulario-proveedor";
 import { EnvioPuente } from "./envio-puente";
 import { FilaHistorial } from "./fila-historial";
@@ -9,7 +11,7 @@ import { ultimosPagosPorProveedor } from "@/lib/ultimos-pagos";
 
 export default async function ProveedoresFinanzas() {
   const supabase = await createClient();
-  const [{ data: movimientos }, { data: cuentas }, { data: contenedores }, { data: abonosPendientes }, { data: ligas }, ultimos] =
+  const [{ data: movimientos }, { data: cuentas }, { data: contenedores }, { data: abonosPendientes }, { data: ligas }, ultimos, { data: facturas }, { data: pagosFactura }, { data: ordenesCompra }] =
     await Promise.all([
       supabase.from("movimientos_deuda_proveedor").select("*").returns<MovimientoDeudaProveedor[]>(),
       supabase.from("cuentas_financieras").select("*").is("eliminado_en", null).returns<CuentaFinanciera[]>(),
@@ -31,6 +33,12 @@ export default async function ProveedoresFinanzas() {
         .select("cargo_deuda_id, movimiento_financiero_id")
         .returns<{ cargo_deuda_id: string | null; movimiento_financiero_id: string | null }[]>(),
       ultimosPagosPorProveedor(supabase),
+      // Cuentas por pagar (Facturas): proveedores de México y servicios. Se
+      // muestran aquí solo para ver TODO lo que se debe junto; se pagan desde
+      // la orden de compra o en Finanzas → Facturas.
+      supabase.from("facturas_pendientes").select("*").returns<FacturaPendiente[]>(),
+      supabase.from("pagos_factura").select("id, factura_id, monto").returns<PagoFactura[]>(),
+      supabase.from("ordenes_compra").select("id, numero").returns<{ id: string; numero: number }[]>(),
     ]);
   const cargosLigados = new Set((ligas ?? []).map((l) => l.cargo_deuda_id).filter(Boolean));
   const movsLigados = new Set((ligas ?? []).map((l) => l.movimiento_financiero_id).filter(Boolean));
@@ -40,13 +48,18 @@ export default async function ProveedoresFinanzas() {
   const listaCuentas = cuentas ?? [];
   const nombresProveedores = proveedoresConDeuda(listaMovimientos);
   const historial = [...listaMovimientos].sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
+  const cuentasPorPagar = cuentasPorPagarPorProveedor(facturas ?? [], pagosFactura ?? []);
+  const numeroOrden = (id: string | null) => (id ? (ordenesCompra ?? []).find((o) => o.id === id)?.numero ?? null : null);
+  const totalCxpMxn = cuentasPorPagar.reduce((s, p) => s + p.saldoMxn, 0);
+  const totalCxpUsd = cuentasPorPagar.reduce((s, p) => s + p.saldoUsd, 0);
 
   return (
     <div className="space-y-6">
       <p className="text-sm text-zinc-500">
-        Cuánto le debes a cada proveedor — el saldo se lleva por proveedor en general (no por contenedor), igual
-        que abonas &ldquo;a cuenta&rdquo;. Cada cargo puede traer su propia fecha límite; los abonos se aplican
-        al cargo más viejo primero.
+        Todo lo que debes a proveedores en un solo lugar. Arriba, la deuda con proveedores de China (se lleva por
+        proveedor en general, no por contenedor, igual que abonas &ldquo;a cuenta&rdquo;; cada cargo puede traer su
+        propia fecha límite y los abonos se aplican al cargo más viejo primero). Abajo, lo que debes a proveedores de
+        México y servicios por órdenes de compra y facturas.
       </p>
 
       <div className="grid gap-3 sm:grid-cols-2">
@@ -89,6 +102,91 @@ export default async function ProveedoresFinanzas() {
             );
           })
         )}
+      </div>
+
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <div>
+            <h2 className="text-sm font-semibold text-zinc-900">Proveedores de México y servicios (cuentas por pagar)</h2>
+            <p className="text-xs text-zinc-500">
+              Lo que debes por órdenes de compra y facturas. Se paga desde la orden o en{" "}
+              <Link href="/finanzas/facturas" className="text-[#2D3277] hover:underline">
+                Finanzas → Facturas
+              </Link>
+              , no con &ldquo;Pagar a cuenta&rdquo; de abajo (eso es para la deuda de China).
+            </p>
+          </div>
+          {cuentasPorPagar.length > 0 && (
+            <p className="text-sm text-zinc-600">
+              Total: <span className="font-semibold text-zinc-900">{formatoPesos(totalCxpMxn)}</span>
+              {totalCxpUsd > 0 && (
+                <>
+                  {" "}
+                  + <span className="font-semibold text-zinc-900">{formatoDolares(totalCxpUsd)}</span>
+                </>
+              )}
+            </p>
+          )}
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {cuentasPorPagar.length === 0 ? (
+            <p className="text-sm text-zinc-500 sm:col-span-2">No debes nada por órdenes de compra ni facturas.</p>
+          ) : (
+            cuentasPorPagar.map((p) => (
+              <div key={p.proveedor} className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <p className="text-sm font-semibold text-zinc-900">{p.proveedor}</p>
+                  <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] text-zinc-500">
+                    {p.cuentas.every((c) => c.ordenCompraId) ? "órdenes de compra" : p.cuentas.some((c) => c.ordenCompraId) ? "órdenes y facturas" : "facturas"}
+                  </span>
+                </div>
+                <div className="mt-2 flex gap-4 text-sm">
+                  {p.saldoMxn > 0 && (
+                    <p className="text-zinc-600">
+                      Debes: <span className="font-medium text-zinc-900">{formatoPesos(p.saldoMxn)}</span>
+                    </p>
+                  )}
+                  {p.saldoUsd > 0 && (
+                    <p className="text-zinc-600">
+                      Debes: <span className="font-medium text-zinc-900">{formatoDolares(p.saldoUsd)}</span>
+                    </p>
+                  )}
+                </div>
+                <div className="mt-2 space-y-1 border-t border-zinc-100 pt-2">
+                  {p.cuentas.map((c) => {
+                    const monto = c.moneda === "USD" ? formatoDolares(c.saldo) : formatoPesos(c.saldo);
+                    const numero = numeroOrden(c.ordenCompraId);
+                    const etiqueta = c.ordenCompraId ? `Orden de compra${numero ? ` #${numero}` : ""}` : c.folio ? `Factura ${c.folio}` : (c.concepto ?? "Factura sin folio");
+                    return (
+                      <p key={c.facturaId} className="flex flex-wrap justify-between gap-x-3 text-xs text-zinc-500">
+                        <span>
+                          {c.ordenCompraId ? (
+                            <Link href={`/compras/${c.ordenCompraId}`} className="text-[#2D3277] hover:underline">
+                              {etiqueta} →
+                            </Link>
+                          ) : (
+                            <Link href="/finanzas/facturas" className="text-[#2D3277] hover:underline">
+                              {etiqueta} →
+                            </Link>
+                          )}
+                        </span>
+                        <span className="tabular-nums">
+                          {monto}
+                          {c.fechaLimite ? ` · vence ${formatoFecha(c.fechaLimite)}` : ""}
+                        </span>
+                      </p>
+                    );
+                  })}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      <div className="border-t border-zinc-200 pt-6">
+        <h2 className="text-sm font-semibold text-zinc-900">Deuda con proveedores de China</h2>
+        <p className="text-xs text-zinc-500">Pagos a cuenta y envíos desde una cuenta puente. El saldo de arriba (China) baja con lo que registres aquí.</p>
       </div>
 
       <FormularioProveedor proveedores={nombresProveedores} cuentas={listaCuentas} ultimos={ultimos} />
