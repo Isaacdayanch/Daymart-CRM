@@ -29,6 +29,15 @@ export default async function DetalleOrden({ params }: { params: Promise<{ id: s
   const bodega = (bodegas ?? []).find((b) => b.id === orden.bodega_id);
   const condiciones = CONDICIONES_PAGO.find((c) => c.valor === orden.condiciones_pago)?.etiqueta ?? orden.condiciones_pago;
   const editable = orden.estado === "PEDIDA" && lineas.every((l) => l.cantidad_recibida <= 0);
+  // "Como la última vez": la cuenta del pago más reciente a este proveedor
+  // (en cualquiera de sus órdenes) se propone; si nunca le has pagado, hay
+  // que elegirla.
+  const ultimoPago = ordenes
+    .filter((o) => o.orden.proveedor_id === orden.proveedor_id)
+    .flatMap((o) => o.pagos)
+    .filter((p) => p.cuenta_id)
+    .sort((a, b) => (a.fecha < b.fecha ? 1 : -1))[0];
+  const ultimaCuenta = ultimoPago ? { cuentaId: ultimoPago.cuenta_id!, fecha: ultimoPago.fecha } : null;
   const num = (n: number) => n.toLocaleString("es-MX");
   const whatsapp = textoOrdenWhatsApp({
     numero: orden.numero,
@@ -198,7 +207,7 @@ export default async function DetalleOrden({ params }: { params: Promise<{ id: s
 
       {abierta && <Recepcion ordenId={orden.id} lineas={lineas} bodegas={bodegas ?? []} bodegaId={orden.bodega_id} parcial={orden.estado === "PARCIAL"} />}
 
-      {factura && <FacturaPagos ordenId={orden.id} factura={factura} pagos={pagos} cuentas={cuentas ?? []} saldo={saldo} condiciones={orden.condiciones_pago} />}
+      {factura && <FacturaPagos ordenId={orden.id} factura={factura} pagos={pagos} cuentas={cuentas ?? []} saldo={saldo} condiciones={orden.condiciones_pago} ultimaCuenta={ultimaCuenta} />}
 
       {orden.estado !== "CANCELADA" && (
         <div className="flex flex-wrap items-start justify-end gap-x-6 gap-y-3">

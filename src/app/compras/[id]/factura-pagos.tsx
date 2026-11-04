@@ -25,6 +25,7 @@ export function FacturaPagos({
   cuentas,
   saldo,
   condiciones,
+  ultimaCuenta,
 }: {
   ordenId: string;
   factura: FacturaPendiente;
@@ -32,6 +33,8 @@ export function FacturaPagos({
   cuentas: CuentaFinanciera[];
   saldo: number;
   condiciones: CondicionesPago;
+  /** La cuenta del último pago a este proveedor (se propone, como la última vez). */
+  ultimaCuenta: { cuentaId: string; fecha: string } | null;
 }) {
   const router = useRouter();
   const hoyTexto = new Date().toISOString().slice(0, 10);
@@ -49,15 +52,20 @@ export function FacturaPagos({
     <div className="rounded-2xl border border-zinc-200 bg-white shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-zinc-100 px-6 py-4">
         <div>
-          <h3 className="text-sm font-semibold text-zinc-900">Factura y pagos</h3>
+          <h3 className="text-sm font-semibold text-zinc-900">
+            {saldo > 0.01 ? `Le debes ${formatoPesos(saldo)} a ${factura.proveedor}` : `Pagada completa a ${factura.proveedor}`}
+          </h3>
           <p className="text-xs text-zinc-500">
             Cuenta por pagar de {formatoPesos(factura.monto)}
             {sinFacturaGuardada ? " · sin factura (nota de remisión)" : factura.folio ? ` · factura ${factura.folio}` : " · sin folio todavía"}
             {factura.fecha_limite ? ` · vence ${formatoFecha(factura.fecha_limite)}` : ""}
-            {" · "}
+          </p>
+          <p className="mt-0.5 text-xs text-zinc-500">
+            Desde que registraste la orden quedó como deuda con este proveedor en{" "}
             <Link href="/finanzas/facturas" className="text-[#2D3277] hover:underline">
-              ver en Finanzas
+              Finanzas → Facturas
             </Link>
+            ; cada pago que registres aquí sale de la cuenta que elijas y se abona a esa deuda (es un solo registro).
           </p>
         </div>
         <button type="button" onClick={() => setEditandoFactura((v) => !v)} className="text-xs text-zinc-500 hover:text-zinc-900">
@@ -180,9 +188,14 @@ export function FacturaPagos({
               </div>
             </div>
             <div>
-              <label className="block text-xs font-medium text-zinc-500">De qué cuenta sale</label>
+              <label className="block text-xs font-medium text-zinc-500">¿De qué cuenta sale?</label>
               <div className="mt-1">
-                <Selector name="cuenta_id" defaultValue={cuentas[0]?.id} opciones={cuentas.map((c) => ({ value: c.id, label: c.nombre }))} />
+                <Selector
+                  name="cuenta_id"
+                  defaultValue={ultimaCuenta?.cuentaId ?? ""}
+                  placeholder="Elige la cuenta"
+                  opciones={[...cuentas.map((c) => ({ value: c.id, label: c.nombre })), { value: "SIN_CUENTA", label: "Sin cuenta (fue antes de usar el sistema)" }]}
+                />
               </div>
             </div>
             <div>
@@ -196,7 +209,14 @@ export function FacturaPagos({
               <input type="text" name="notas" className={claseInput} />
             </div>
           </div>
-          <p className="mt-2 text-[11px] text-zinc-400">Si lo pagaste a través de una cuenta puente o con comisión, regístralo mejor en Finanzas → Facturas → &ldquo;Registrar pago de factura&rdquo;: ahí están esas opciones.</p>
+          {ultimaCuenta && (
+            <p className="mt-2 text-xs text-emerald-700">
+              La última vez ({formatoFecha(ultimaCuenta.fecha)}) le pagaste desde {nombreCuenta(ultimaCuenta.cuentaId)}. Ya lo dejé igual; cámbialo si esta vez es distinto.
+            </p>
+          )}
+          <p className="mt-2 text-[11px] text-zinc-400">
+            El dinero sale de esa cuenta en Finanzas (lo ves en Movimientos y en Facturas) y se abona a esta deuda. Si lo pagaste a través de una cuenta puente o con comisión, regístralo mejor en Finanzas → Facturas → &ldquo;Registrar pago de factura&rdquo;: ahí están esas opciones.
+          </p>
           {errorPago && <p className="mt-2 text-sm text-red-600">{errorPago}</p>}
           <div className="mt-3 flex justify-end">
             <BotonGuardar cargando={guardandoPago} textoCargando="Registrando…" className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700">

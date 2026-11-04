@@ -619,6 +619,13 @@ export async function registrarPagoOrden(ordenId: string, formData: FormData) {
   const monto = Number(formData.get("monto"));
   if (!Number.isFinite(monto) || monto <= 0) return { error: "El monto no es válido." };
   if (monto > saldo + 0.01) return { error: `Solo faltan ${saldo.toLocaleString("es-MX", { style: "currency", currency: "MXN" })} por pagar de esta orden.` };
+  // La cuenta se elige a propósito (Isaac, 4 nov: "que me pregunte de qué
+  // parte de Finanzas quiero que salga"): sin elegir nada no se guarda, y
+  // "SIN_CUENTA" es un pago de antes de usar el sistema (solo abona a la
+  // cuenta por pagar, sin movimiento de Finanzas).
+  const cuentaId = texto(formData, "cuenta_id");
+  if (!cuentaId) return { error: "Elige de qué cuenta salió el pago (o \"Sin cuenta\" si fue antes de usar el sistema)." };
+  if (cuentaId === "SIN_CUENTA") formData.set("cuenta_id", "");
   formData.set("factura_id", factura.id);
   // Categoría fija en Finanzas para estos pagos (se crea la primera vez).
   if (!texto(formData, "categoria_id") && !texto(formData, "categoria_nueva")) formData.set("categoria_nueva", "Compras a proveedores de México");
