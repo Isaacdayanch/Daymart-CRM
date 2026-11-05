@@ -9,6 +9,7 @@ Isaac, dueño de Daymart. **No sabe programar.** Reglas de trabajo obligatorias:
 - Hablarle siempre en **español mexicano**, simple y directo, sin jerga técnica. Si se usa un término técnico, explicarlo ahí mismo.
 - Antes de construir algo grande: proponer el plan y **esperar su "va"** antes de tocar código.
 - Mostrar los cambios y pedir aprobación conforme se avanza. Ir paso a paso, sin adelantarse.
+- **Cambios de diseño/aspecto visual (9 oct; Isaac: "tú déjala que corra, pero no sobre la página, sino me mandas una imagen de cómo se vería y yo te doy el va")**: antes de publicar cualquier cambio de cómo se ve una pantalla (incluido lo que proponga la skill `frontend-design` en `.claude/skills/frontend-design/`), construirlo en la rama de trabajo, correr la app aquí, tomarle **captura de pantalla (compu y celular)** y mandársela. Nada visual llega a la página real (`main`/Vercel) sin su "va" sobre esa imagen.
 - Dar recomendaciones activamente, no solo ejecutar lo que pide. Si hay una mejor forma de hacer algo, decírselo.
 - Si necesita instalar algo o correr comandos, guiarlo clic por clic. No asumir que sabe hacerlo.
 - **Cada vez que se le pida correr un SQL, darle el link directo al editor SQL de Supabase** para que solo le pique: **`https://supabase.com/dashboard/project/sytynlembvdqsddvatcg/sql/new`** (ID de su proyecto: `sytynlembvdqsddvatcg`, lo compartió Isaac). Pasos: link → pegar el SQL → botón "Run".
