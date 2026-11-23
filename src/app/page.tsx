@@ -1,12 +1,20 @@
 import { Suspense } from "react";
 import Link from "next/link";
-import { todosLosMovimientosFinancieros, todosLosMovimientosStock } from "@/lib/cargar-todo";
+import {
+  todosLosMovimientosFinancieros,
+  todosLosMovimientosStock,
+} from "@/lib/cargar-todo";
 import { createClient } from "@/lib/supabase/server";
 import { obtenerPerfilActual } from "@/lib/perfil";
 import { resumenPorSku, sugeridosReorden } from "@/lib/calculos-stock";
 import { obtenerPiezasPorCajaPorSku } from "@/lib/productos-stock";
 import { saldosPorCuenta } from "@/lib/calculos-financieras";
 import { formatoPesos, formatoDolares } from "@/lib/formato";
+import {
+  BotonOjo,
+  MontoOculto,
+  PrivacidadMontos,
+} from "@/components/monto-oculto";
 import type { ConfiguracionStock, CuentaFinanciera } from "@/lib/tipos";
 import { MenuMas } from "./menu-mas";
 import { cargarDatosFull, resumenFullDesde } from "@/lib/mercadolibre-stock";
@@ -76,24 +84,45 @@ export default async function Dashboard() {
   // Velocidad: TODO se pide de una vez (perfil, stock, finanzas y la copia
   // de Mercado Libre) en vez de en fila. Finanzas se pide siempre: a una
   // operadora la base de datos se lo niega sola (RLS) y aquí no se muestra.
-  const [perfil, { data: movimientosStock }, { data: configuracion }, piezasPorCajaPorSku, { data: cuentas }, { data: movimientosFinancieros }, datosFull] = await Promise.all([
+  const [
+    perfil,
+    { data: movimientosStock },
+    { data: configuracion },
+    piezasPorCajaPorSku,
+    { data: cuentas },
+    { data: movimientosFinancieros },
+    datosFull,
+  ] = await Promise.all([
     obtenerPerfilActual(),
     todosLosMovimientosStock(supabase),
-    supabase.from("configuracion_stock").select("*").single<ConfiguracionStock>(),
+    supabase
+      .from("configuracion_stock")
+      .select("*")
+      .single<ConfiguracionStock>(),
     obtenerPiezasPorCajaPorSku(supabase),
-    supabase.from("cuentas_financieras").select("*").is("eliminado_en", null).returns<CuentaFinanciera[]>(),
+    supabase
+      .from("cuentas_financieras")
+      .select("*")
+      .is("eliminado_en", null)
+      .returns<CuentaFinanciera[]>(),
     todosLosMovimientosFinancieros(supabase),
     cargarDatosFull(),
   ]);
   const verDinero = perfil?.rol !== "operadora";
 
-  const resumenes = resumenPorSku(movimientosStock ?? [], configuracion?.dias_espera ?? 60, piezasPorCajaPorSku);
+  const resumenes = resumenPorSku(
+    movimientosStock ?? [],
+    configuracion?.dias_espera ?? 60,
+    piezasPorCajaPorSku,
+  );
   const productosPorReordenar = sugeridosReorden(resumenes).length;
   const valorInventario = resumenes.reduce((s, r) => s + r.valorInventario, 0);
   const piezasBodega = resumenes.reduce((s, r) => s + r.stockActual, 0);
   const full = verDinero ? resumenFullDesde(datosFull, resumenes) : null;
 
-  const saldos = verDinero ? saldosPorCuenta(cuentas ?? [], movimientosFinancieros ?? []) : [];
+  const saldos = verDinero
+    ? saldosPorCuenta(cuentas ?? [], movimientosFinancieros ?? [])
+    : [];
   const saldosReales = saldos.filter((s) => !s.cuenta.cuenta_transito);
   const totalMxn = saldosReales.reduce((s, c) => s + c.saldoMxn, 0);
   const totalUsd = saldosReales.reduce((s, c) => s + c.saldoUsd, 0);
@@ -123,52 +152,87 @@ export default async function Dashboard() {
           <div className="mt-1">
             <Logo tamano="lg" />
           </div>
-          <p className="mt-3 text-sm text-zinc-500">Aquí tienes un vistazo rápido de todo el sistema.</p>
+          <p className="mt-3 text-sm text-zinc-500">
+            Aquí tienes un vistazo rápido de todo el sistema.
+          </p>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
-            <p className="text-sm font-medium text-zinc-500">
-              {verDinero ? "Valor de inventario" : "Productos por reordenar"}
-            </p>
-            {verDinero ? (
-              <>
-                <p className="mt-2 text-3xl font-semibold text-zinc-900">{formatoPesos(valorInventario + (full?.valor ?? 0))}</p>
-                {full && (
-                  <p className="mt-1 text-xs text-zinc-500">
-                    Bodega {formatoPesos(valorInventario)} · {piezasBodega.toLocaleString("es-MX")} pzas &nbsp;|&nbsp; Full{" "}
-                    {formatoPesos(full.valor)} · {full.piezas.toLocaleString("es-MX")} pzas
-                  </p>
-                )}
-                <p className="mt-1 text-xs text-zinc-400">
-                  <Link href="/stock/restock" className="hover:underline">
-                    {productosPorReordenar} {productosPorReordenar === 1 ? "producto sugerido" : "productos sugeridos"} para reordenar →
-                  </Link>
-                </p>
-              </>
-            ) : (
-              <>
-                <p className="mt-2 text-3xl font-semibold text-zinc-900">{productosPorReordenar}</p>
-                <p className="mt-1 text-xs text-zinc-400">
-                  <Link href="/stock/restock" className="hover:underline">
-                    Ver el detalle en Stock → Restock →
-                  </Link>
-                </p>
-              </>
-            )}
-          </div>
-
+        <PrivacidadMontos>
           {verDinero && (
-            <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
-              <p className="text-sm font-medium text-zinc-500">Saldo en Finanzas</p>
-              <p className="mt-2 text-3xl font-semibold text-zinc-900">{formatoPesos(totalMxn)}</p>
-              <p className="mt-1 text-xs text-zinc-400">{formatoDolares(totalUsd)} en cuentas de dólares</p>
+            <div className="mb-3 flex items-center justify-between">
+              <p className="text-xs font-medium tracking-wide text-zinc-400 uppercase">
+                Tus números
+              </p>
+              <BotonOjo />
             </div>
           )}
-        </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+              <p className="text-sm font-medium text-zinc-500">
+                {verDinero ? "Valor de inventario" : "Productos por reordenar"}
+              </p>
+              {verDinero ? (
+                <>
+                  <p className="mt-2 text-3xl font-semibold text-zinc-900">
+                    <MontoOculto>
+                      {formatoPesos(valorInventario + (full?.valor ?? 0))}
+                    </MontoOculto>
+                  </p>
+                  {full && (
+                    <p className="mt-1 text-xs text-zinc-500">
+                      Bodega{" "}
+                      <MontoOculto>{formatoPesos(valorInventario)}</MontoOculto>{" "}
+                      · {piezasBodega.toLocaleString("es-MX")} pzas
+                      &nbsp;|&nbsp; Full{" "}
+                      <MontoOculto>{formatoPesos(full.valor)}</MontoOculto> ·{" "}
+                      {full.piezas.toLocaleString("es-MX")} pzas
+                    </p>
+                  )}
+                  <p className="mt-1 text-xs text-zinc-400">
+                    <Link href="/stock/restock" className="hover:underline">
+                      {productosPorReordenar}{" "}
+                      {productosPorReordenar === 1
+                        ? "producto sugerido"
+                        : "productos sugeridos"}{" "}
+                      para reordenar →
+                    </Link>
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="mt-2 text-3xl font-semibold text-zinc-900">
+                    {productosPorReordenar}
+                  </p>
+                  <p className="mt-1 text-xs text-zinc-400">
+                    <Link href="/stock/restock" className="hover:underline">
+                      Ver el detalle en Stock → Restock →
+                    </Link>
+                  </p>
+                </>
+              )}
+            </div>
+
+            {verDinero && (
+              <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+                <p className="text-sm font-medium text-zinc-500">
+                  Saldo en Finanzas
+                </p>
+                <p className="mt-2 text-3xl font-semibold text-zinc-900">
+                  <MontoOculto>{formatoPesos(totalMxn)}</MontoOculto>
+                </p>
+                <p className="mt-1 text-xs text-zinc-400">
+                  <MontoOculto>{formatoDolares(totalUsd)}</MontoOculto> en
+                  cuentas de dólares
+                </p>
+              </div>
+            )}
+          </div>
+        </PrivacidadMontos>
 
         <div className="mt-8">
-          <p className="mb-3 text-xs font-medium tracking-wide text-zinc-400 uppercase">Accesos rápidos</p>
+          <p className="mb-3 text-xs font-medium tracking-wide text-zinc-400 uppercase">
+            Accesos rápidos
+          </p>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {accesos.map((a) => (
               <Link
@@ -176,10 +240,18 @@ export default async function Dashboard() {
                 href={a.href}
                 className="flex items-center gap-3 rounded-xl border border-zinc-200 bg-white p-4 transition hover:border-zinc-300 hover:shadow-sm"
               >
-                <svg width="20" height="20" viewBox="0 0 18 18" fill="none" className="shrink-0 text-zinc-400">
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 18 18"
+                  fill="none"
+                  className="shrink-0 text-zinc-400"
+                >
                   {a.icono}
                 </svg>
-                <span className="text-sm font-medium text-zinc-900">{a.etiqueta}</span>
+                <span className="text-sm font-medium text-zinc-900">
+                  {a.etiqueta}
+                </span>
               </Link>
             ))}
           </div>
